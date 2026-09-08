@@ -66,11 +66,19 @@ const nextConfig: NextConfig = {
     dangerouslyAllowLocalIP: true, // Allow localhost images in development
     deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
     imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
-    remotePatterns: [
-      // Derived from SPREE_IMAGES_URL (if set) or SPREE_API_URL.
-      ...spreeImagePatterns(),
-      // Hosted demo / tunnel backends whose image host differs from SPREE_API_URL.
-    ],
+remotePatterns: [
+  // Derived from SPREE_IMAGES_URL (if set) or SPREE_API_URL.
+  ...spreeImagePatterns(),
+
+  // Spree hosted console images
+  {
+    protocol: "https",
+    hostname: "console.spree.sh",
+    pathname: "/rails/active_storage/**",
+  },
+
+  // Hosted demo / tunnel backends whose image host differs from SPREE_API_URL.
+],
   },
 };
 
