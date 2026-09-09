@@ -62,6 +62,7 @@ const nextConfig: NextConfig = {
     },
   },
   images: {
+    unoptimized: true,
     qualities: [25, 50, 75, 85, 100],
     dangerouslyAllowLocalIP: true, // Allow localhost images in development
     deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
