@@ -3,6 +3,9 @@
 import type { Config } from "@puckeditor/core";
 import { useEffect, useState } from "react";
 import { PuckProductGrid } from "@/components/puck/PuckProductGrid";
+import { HomeFeaturedProductsBlock } from "@/puck/HomeFeaturedProductsBlock";
+import { HomeHeroBlock } from "@/puck/HomeHeroBlock";
+import { HomeWholesaleBlock } from "@/puck/HomeWholesaleBlock";
 
 /* =========================================================
    TYPES
@@ -120,15 +123,54 @@ type SpacerProps = {
 };
 
 type Components = {
-  Hero: HeroProps;
+  HeroHome: HeroHomeProps;
   Text: TextProps;
   Image: ImageProps;
   Carousel: CarouselProps;
   Banner: BannerProps;
   ProductGrid: ProductGridProps;
+  FeaturedProductsHome: FeaturedProductsHomeProps;
+  WholesaleHome: WholesaleHomeProps;
   ProductShowcase: ProductShowcaseProps;
   Section: SectionProps;
   Spacer: SpacerProps;
+};
+
+type HeroHomeProps = {
+  title: string;
+  text: string;
+  primaryButtonText: string;
+  primaryButtonUrl: string;
+  secondaryButtonText: string;
+  secondaryButtonUrl: string;
+  tertiaryButtonText: string;
+  tertiaryButtonUrl: string;
+  titleColor: string;
+  textColor: string;
+  backgroundColor: string;
+};
+
+type FeaturedProductsHomeProps = {
+  title: string;
+  viewAllText: string;
+  viewAllUrl: string;
+  columns: "2" | "3" | "4";
+};
+
+type WholesaleHomeProps = {
+  badge: string;
+  title: string;
+  description: string;
+  primaryButtonText: string;
+  primaryButtonUrl: string;
+  secondaryButtonText: string;
+  secondaryButtonUrl: string;
+  pricingTitle: string;
+  pricingDescription: string;
+  quickOrderTitle: string;
+  quickOrderDescription: string;
+  ordersTitle: string;
+  ordersDescription: string;
 };
 
 /* =========================================================
@@ -318,12 +360,8 @@ function CarouselRenderer({
 
 export const config: Config<Components> = {
   components: {
-    /* =====================================================
-       HERO
-       ===================================================== */
-
-    Hero: {
-      label: "Hero",
+    HeroHome: {
+      label: "Hero principal",
 
       fields: {
         title: {
@@ -333,12 +371,37 @@ export const config: Config<Components> = {
 
         text: {
           type: "textarea",
-          label: "Texto",
+          label: "Descripción",
         },
 
-        backgroundColor: {
+        primaryButtonText: {
           type: "text",
-          label: "Color de fondo",
+          label: "Botón principal",
+        },
+
+        primaryButtonUrl: {
+          type: "text",
+          label: "URL botón principal",
+        },
+
+        secondaryButtonText: {
+          type: "text",
+          label: "Botón secundario",
+        },
+
+        secondaryButtonUrl: {
+          type: "text",
+          label: "URL botón secundario",
+        },
+
+        tertiaryButtonText: {
+          type: "text",
+          label: "Botón terciario",
+        },
+
+        tertiaryButtonUrl: {
+          type: "text",
+          label: "URL botón terciario",
         },
 
         titleColor: {
@@ -351,159 +414,170 @@ export const config: Config<Components> = {
           label: "Color del texto",
         },
 
-        backgroundImage: {
+        backgroundColor: {
           type: "text",
-          label: "Imagen de fondo",
-        },
-
-        buttonText: {
-          type: "text",
-          label: "Texto del botón",
-        },
-
-        buttonUrl: {
-          type: "text",
-          label: "Enlace del botón",
-        },
-
-        contentPosition: {
-          type: "select",
-          label: "Posición del contenido",
-          options: [
-            {
-              label: "Izquierda",
-              value: "left",
-            },
-            {
-              label: "Centro",
-              value: "center",
-            },
-            {
-              label: "Derecha",
-              value: "right",
-            },
-          ],
-        },
-
-        height: {
-          type: "select",
-          label: "Altura",
-          options: [
-            {
-              label: "Pequeño",
-              value: "small",
-            },
-            {
-              label: "Medio",
-              value: "medium",
-            },
-            {
-              label: "Grande",
-              value: "large",
-            },
-          ],
-        },
-
-        overlay: {
-          type: "text",
-          label: "Overlay",
+          label: "Color de fondo",
         },
       },
 
       defaultProps: {
-        title: "Bienvenido a nuestra tienda",
-        text: "Descubre nuestros productos.",
-        backgroundColor: "#ffffff",
+        title: "",
+        text: "",
+        primaryButtonText: "",
+        primaryButtonUrl: "/products",
+        secondaryButtonText: "",
+        secondaryButtonUrl: "",
+        tertiaryButtonText: "",
+        tertiaryButtonUrl: "",
         titleColor: "#111827",
         textColor: "#4b5563",
-        backgroundImage: "",
-        buttonText: "Comprar ahora",
-        buttonUrl: "/products",
-        contentPosition: "center",
-        height: "medium",
-        overlay: "rgba(0,0,0,0.25)",
+        backgroundColor: "#ffffff",
       },
 
-      render: ({
-        title,
-        text,
-        backgroundColor,
-        titleColor,
-        textColor,
-        backgroundImage,
-        buttonText,
-        buttonUrl,
-        contentPosition,
-        height,
-        overlay,
-      }) => {
-        const heightClass =
-          height === "small"
-            ? "min-h-[400px]"
-            : height === "large"
-              ? "min-h-[700px]"
-              : "min-h-[550px]";
+      render: (props) => {
+        return <HomeHeroBlock {...props} basePath="/us/es" />;
+      },
+    },
 
-        const alignmentClass =
-          contentPosition === "left"
-            ? "text-left items-start"
-            : contentPosition === "right"
-              ? "text-right items-end"
-              : "text-center items-center";
+    FeaturedProductsHome: {
+      label: "Productos destacados",
 
-        return (
-          <section
-            className={`relative flex ${heightClass} items-center overflow-hidden border-b border-gray-200`}
-            style={{
-              backgroundColor,
-              backgroundImage: backgroundImage
-                ? `url(${backgroundImage})`
-                : undefined,
-              backgroundSize: "cover",
-              backgroundPosition: "center",
-            }}
-          >
-            {backgroundImage && overlay && (
-              <div
-                className="absolute inset-0"
-                style={{
-                  backgroundColor: overlay,
-                }}
-              />
-            )}
+      fields: {
+        title: {
+          type: "text",
+          label: "Título",
+        },
 
-            <div
-              className={`relative z-10 container mx-auto flex flex-col px-4 ${alignmentClass}`}
-            >
-              <h1
-                className="max-w-4xl text-4xl font-bold md:text-6xl"
-                style={{
-                  color: titleColor,
-                }}
-              >
-                {title}
-              </h1>
+        viewAllText: {
+          type: "text",
+          label: "Texto ver todos",
+        },
 
-              <p
-                className="mt-4 max-w-2xl text-lg md:text-xl"
-                style={{
-                  color: textColor,
-                }}
-              >
-                {text}
-              </p>
+        viewAllUrl: {
+          type: "text",
+          label: "URL ver todos",
+        },
 
-              {buttonText && (
-                <a
-                  href={buttonUrl || "#"}
-                  className="mt-8 inline-flex rounded-md bg-black px-6 py-3 font-semibold text-white transition-opacity hover:opacity-80"
-                >
-                  {buttonText}
-                </a>
-              )}
-            </div>
-          </section>
-        );
+        columns: {
+          type: "select",
+          label: "Columnas",
+          options: [
+            {
+              label: "2 columnas",
+              value: "2",
+            },
+            {
+              label: "3 columnas",
+              value: "3",
+            },
+            {
+              label: "4 columnas",
+              value: "4",
+            },
+          ],
+        },
+      },
+
+      defaultProps: {
+        title: "",
+        viewAllText: "",
+        viewAllUrl: "/products",
+        columns: "4",
+      },
+
+      render: (props) => {
+        return <HomeFeaturedProductsBlock {...props} />;
+      },
+    },
+
+    WholesaleHome: {
+      label: "Wholesale",
+
+      fields: {
+        badge: {
+          type: "text",
+          label: "Etiqueta",
+        },
+
+        title: {
+          type: "text",
+          label: "Título",
+        },
+
+        description: {
+          type: "textarea",
+          label: "Descripción",
+        },
+
+        primaryButtonText: {
+          type: "text",
+          label: "Botón principal",
+        },
+
+        primaryButtonUrl: {
+          type: "text",
+          label: "URL botón principal",
+        },
+
+        secondaryButtonText: {
+          type: "text",
+          label: "Botón secundario",
+        },
+
+        secondaryButtonUrl: {
+          type: "text",
+          label: "URL botón secundario",
+        },
+
+        pricingTitle: {
+          type: "text",
+          label: "Título beneficio 1",
+        },
+
+        pricingDescription: {
+          type: "textarea",
+          label: "Descripción beneficio 1",
+        },
+
+        quickOrderTitle: {
+          type: "text",
+          label: "Título beneficio 2",
+        },
+
+        quickOrderDescription: {
+          type: "textarea",
+          label: "Descripción beneficio 2",
+        },
+
+        ordersTitle: {
+          type: "text",
+          label: "Título beneficio 3",
+        },
+
+        ordersDescription: {
+          type: "textarea",
+          label: "Descripción beneficio 3",
+        },
+      },
+
+      defaultProps: {
+        badge: "",
+        title: "",
+        description: "",
+        primaryButtonText: "",
+        primaryButtonUrl: "/wholesale",
+        secondaryButtonText: "",
+        secondaryButtonUrl: "/wholesale/apply",
+        pricingTitle: "",
+        pricingDescription: "",
+        quickOrderTitle: "",
+        quickOrderDescription: "",
+        ordersTitle: "",
+        ordersDescription: "",
+      },
+
+      render: (props) => {
+        return <HomeWholesaleBlock {...props} basePath="/us/es" />;
       },
     },
 
