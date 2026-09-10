@@ -1,84 +1,28 @@
 "use client";
 
 import { ProductCard } from "@/components/puck/ProductCard";
-
-interface PuckProduct {
-  name: string;
-  description: string;
-  image: string;
-  price: string;
-  comparePrice: string;
-  url: string;
-  badge: string;
-  variantId?: string;
-}
+import { usePuckProducts } from "@/components/puck/PuckProductsContext";
 
 interface PuckProductGridProps {
-  basePath: string;
   title?: string;
   subtitle?: string;
-  products?: PuckProduct[];
-
   columns?: "2" | "3" | "4";
-
   imageAspect?: "square" | "4/3" | "16/9";
-
   cardRadius?: "none" | "small" | "medium" | "large";
-
   backgroundColor?: string;
   cardBackgroundColor?: string;
   titleColor?: string;
   textColor?: string;
   priceColor?: string;
-
   buttonText?: string;
   buttonColor?: string;
   buttonTextColor?: string;
+  basePath?: string;
 }
-
-const DEFAULT_PRODUCTS: PuckProduct[] = [
-  {
-    name: "Producto uno",
-    description: "Descripción del producto.",
-    image: "https://placehold.co/800x800",
-    price: "29,99 €",
-    comparePrice: "",
-    url: "/products",
-    badge: "",
-  },
-  {
-    name: "Producto dos",
-    description: "Descripción del producto.",
-    image: "https://placehold.co/800x800",
-    price: "39,99 €",
-    comparePrice: "",
-    url: "/products",
-    badge: "Nuevo",
-  },
-  {
-    name: "Producto tres",
-    description: "Descripción del producto.",
-    image: "https://placehold.co/800x800",
-    price: "49,99 €",
-    comparePrice: "59,99 €",
-    url: "/products",
-    badge: "Oferta",
-  },
-  {
-    name: "Producto cuatro",
-    description: "Descripción del producto.",
-    image: "https://placehold.co/800x800",
-    price: "24,99 €",
-    comparePrice: "",
-    url: "/products",
-    badge: "",
-  },
-];
 
 export function PuckProductGrid({
   title = "Nuestros productos",
   subtitle = "Descubre nuestra selección.",
-  products = DEFAULT_PRODUCTS,
   columns = "4",
   imageAspect = "square",
   cardRadius = "medium",
@@ -91,6 +35,8 @@ export function PuckProductGrid({
   buttonColor = "#111827",
   buttonTextColor = "#ffffff",
 }: PuckProductGridProps) {
+  const { products, basePath } = usePuckProducts();
+
   const gridClass =
     columns === "2"
       ? "grid-cols-1 sm:grid-cols-2"
@@ -115,21 +61,14 @@ export function PuckProductGrid({
           : "rounded-lg";
 
   return (
-    <section
-      className="py-16"
-      style={{
-        backgroundColor,
-      }}
-    >
+    <section className="py-16" style={{ backgroundColor }}>
       <div className="container mx-auto px-4">
         {(title || subtitle) && (
           <div className="mb-10 text-center">
             {title && (
               <h2
                 className="text-3xl font-bold md:text-4xl"
-                style={{
-                  color: titleColor,
-                }}
+                style={{ color: titleColor }}
               >
                 {title}
               </h2>
@@ -138,9 +77,7 @@ export function PuckProductGrid({
             {subtitle && (
               <p
                 className="mx-auto mt-4 max-w-2xl text-lg"
-                style={{
-                  color: textColor,
-                }}
+                style={{ color: textColor }}
               >
                 {subtitle}
               </p>
@@ -148,30 +85,52 @@ export function PuckProductGrid({
           </div>
         )}
 
-        <div className={`grid gap-6 ${gridClass}`}>
-          {products.map((product, index) => (
-            <ProductCard
-              key={`${product.name}-${index}`}
-              name={product.name}
-              description={product.description}
-              image={product.image}
-              price={product.price}
-              comparePrice={product.comparePrice}
-              url={product.url}
-              variantId={product.variantId}
-              badge={product.badge}
-              cardBackgroundColor={cardBackgroundColor}
-              titleColor={titleColor}
-              textColor={textColor}
-              priceColor={priceColor}
-              buttonText={buttonText}
-              buttonColor={buttonColor}
-              buttonTextColor={buttonTextColor}
-              radiusClass={radiusClass}
-              aspectClass={aspectClass}
-            />
-          ))}
-        </div>
+        {products.length === 0 ? (
+          <div className="py-12 text-center">
+            <p style={{ color: textColor }}>No hay productos disponibles.</p>
+          </div>
+        ) : (
+          <div className={`grid gap-6 ${gridClass}`}>
+            {products.map((product) => {
+              const price = product.price?.display_amount ?? "";
+
+              const comparePrice =
+                product.original_price?.display_amount &&
+                product.original_price.display_amount !== price
+                  ? product.original_price.display_amount
+                  : "";
+
+              const productUrl = product.slug
+                ? `${basePath}/products/${product.slug}`
+                : `${basePath}/products`;
+
+              return (
+                <ProductCard
+                  key={product.id}
+                  name={product.name}
+                  description=""
+                  image={
+                    product.thumbnail_url || "https://placehold.co/800x800"
+                  }
+                  price={price}
+                  comparePrice={comparePrice}
+                  url={productUrl}
+                  variantId={product.default_variant_id || undefined}
+                  badge=""
+                  cardBackgroundColor={cardBackgroundColor}
+                  titleColor={titleColor}
+                  textColor={textColor}
+                  priceColor={priceColor}
+                  buttonText={buttonText}
+                  buttonColor={buttonColor}
+                  buttonTextColor={buttonTextColor}
+                  radiusClass={radiusClass}
+                  aspectClass={aspectClass}
+                />
+              );
+            })}
+          </div>
+        )}
       </div>
     </section>
   );
