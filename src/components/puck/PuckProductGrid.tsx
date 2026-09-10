@@ -115,15 +115,11 @@ export function PuckProductGrid({
                   price={price}
                   comparePrice={comparePrice}
                   url={productUrl}
-                  variantId={product.default_variant_id || undefined}
                   badge=""
                   cardBackgroundColor={cardBackgroundColor}
                   titleColor={titleColor}
                   textColor={textColor}
                   priceColor={priceColor}
-                  buttonText={buttonText}
-                  buttonColor={buttonColor}
-                  buttonTextColor={buttonTextColor}
                   radiusClass={radiusClass}
                   aspectClass={aspectClass}
                 />

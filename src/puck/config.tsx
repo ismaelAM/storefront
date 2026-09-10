@@ -85,9 +85,6 @@ type ProductGridProps = {
   titleColor: string;
   textColor: string;
   priceColor: string;
-  buttonText: string;
-  buttonColor: string;
-  buttonTextColor: string;
 };
 
 type ProductShowcaseProps = {
@@ -1288,21 +1285,6 @@ export const config: Config<Components> = {
           type: "text",
           label: "Color del precio",
         },
-
-        buttonText: {
-          type: "text",
-          label: "Texto del botón",
-        },
-
-        buttonColor: {
-          type: "text",
-          label: "Color del botón",
-        },
-
-        buttonTextColor: {
-          type: "text",
-          label: "Color del texto del botón",
-        },
       },
 
       defaultProps: {
@@ -1316,9 +1298,6 @@ export const config: Config<Components> = {
         titleColor: "#111827",
         textColor: "#6b7280",
         priceColor: "#111827",
-        buttonText: "Añadir al carrito",
-        buttonColor: "#111827",
-        buttonTextColor: "#ffffff",
       },
 
       render: (props) => {
