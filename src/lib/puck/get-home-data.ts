@@ -1,6 +1,6 @@
-import type { PuckData } from "@puckeditor/core";
-import { createSupabaseClient } from "@/lib/supabase/server";
+import type { Data } from "@puckeditor/core";
 import { DEFAULT_HOME_DATA } from "@/lib/puck/home-defaults";
+import { createSupabaseClient } from "@/lib/supabase/server";
 
 /**
  * Fetch Home page data from Supabase
@@ -8,7 +8,7 @@ import { DEFAULT_HOME_DATA } from "@/lib/puck/home-defaults";
  *
  * Server-side only. Used by HomePage and EditorPage.
  */
-export async function getHomePageData(): Promise<PuckData> {
+export async function getHomePageData(): Promise<Data> {
   try {
     const supabase = createSupabaseClient();
 
@@ -28,12 +28,12 @@ export async function getHomePageData(): Promise<PuckData> {
       return DEFAULT_HOME_DATA;
     }
 
-    // Validate that it's a proper PuckData structure
+    // Validate that it's a proper Data structure
     if (
       typeof data.published_data === "object" &&
       Array.isArray(data.published_data.content)
     ) {
-      return data.published_data as PuckData;
+      return data.published_data as Data;
     }
 
     return DEFAULT_HOME_DATA;

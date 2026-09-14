@@ -1,5 +1,5 @@
+import type { Data } from "@puckeditor/core";
 import { createSupabaseClient } from "@/lib/supabase/server";
-import type { PuckData } from "@puckeditor/core";
 
 /**
  * POST /api/pages/home
@@ -19,66 +19,61 @@ export async function POST(request: Request) {
       console.error("PUCK_PUBLISH_SECRET not configured");
       return Response.json(
         { error: "Server configuration error" },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
     if (authHeader !== `Bearer ${publishSecret}`) {
       return Response.json(
         { error: "Unauthorized: invalid publish secret" },
-        { status: 401 }
+        { status: 401 },
       );
     }
 
     // Parse request body
     const body = await request.json();
-    const data = body as PuckData;
+    const data = body as Data;
 
     // Validate data structure
     if (!data || typeof data !== "object") {
       return Response.json(
         { error: "Invalid data: must be a valid Puck data object" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     if (!Array.isArray(data.content)) {
       return Response.json(
         { error: "Invalid data: content must be an array" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     // Save to Supabase
     const supabase = createSupabaseClient();
 
-    const { error } = await supabase
-      .from("pages")
-      .upsert(
-        {
-          page_id: "home",
-          published_data: data,
-          updated_at: new Date().toISOString(),
-        },
-        {
-          onConflict: "page_id",
-        }
-      );
+    const { error } = await supabase.from("pages").upsert(
+      {
+        page_id: "home",
+        published_data: data,
+        updated_at: new Date().toISOString(),
+      },
+      {
+        onConflict: "page_id",
+      },
+    );
 
     if (error) {
       console.error("Supabase error:", error);
       return Response.json(
         { error: "Failed to save page data" },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
     return Response.json({ success: true });
   } catch (err) {
     console.error("API error:", err);
-    return Response.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 }
