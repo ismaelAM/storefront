@@ -1,6 +1,7 @@
 import type { Product } from "@spree/sdk";
 import { PRODUCT_CARD_FIELDS } from "@/lib/data/cached";
 import { getProducts } from "@/lib/data/products";
+import { getHomePageData } from "@/lib/puck/get-home-data";
 import { EditorClient } from "./EditorClient";
 
 interface EditorPageProps {
@@ -29,5 +30,14 @@ export default async function EditorPage({ params }: EditorPageProps) {
     console.error("Editor: failed to load products", error);
   }
 
-  return <EditorClient products={products} country={country} locale={locale} />;
+  const initialData = await getHomePageData();
+
+  return (
+    <EditorClient
+      products={products}
+      country={country}
+      locale={locale}
+      initialData={initialData}
+    />
+  );
 }
