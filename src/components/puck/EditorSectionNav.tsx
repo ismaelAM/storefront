@@ -9,8 +9,7 @@ interface EditorSectionNavProps {
 
 const items = [
   { key: "home", label: "Inicio", path: "/editor" },
-  { key: "navigation", label: "Barra lateral", path: "/editor/navigation" },
-  { key: "cart", label: "Carrito", path: "/editor/cart" },
+  { key: "appearance", label: "Apariencia", path: "/editor/appearance" },
   { key: "categories", label: "Categorías", path: "/editor/categories" },
   { key: "products", label: "Productos", path: "/editor/products" },
 ];
