@@ -2,8 +2,11 @@
 
 import type { Data } from "@puckeditor/core";
 import { createSupabaseClient } from "@/lib/supabase/server";
+import { assertPuckEditorAccess } from "./editor-auth";
 
 export async function saveHomePageData(data: Data) {
+  await assertPuckEditorAccess();
+
   if (!data || typeof data !== "object" || !Array.isArray(data.content)) {
     throw new Error("Invalid Puck data");
   }

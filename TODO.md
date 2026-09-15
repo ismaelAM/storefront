@@ -7,6 +7,8 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 ## Prioridad alta
 
 - [ ] Verificar el nuevo Preview de Vercel tras los últimos cambios de UI/navegación y apariencia.
+- [ ] **Seguridad Puck:** configurar `PUCK_EDITOR_PASSWORD` como secreto en Vercel y comprobar que `/editor` y sus subrutas solo son accesibles con la contraseña de administrador.
+- [ ] **Seguridad Puck:** validar que el Server Action de guardado rechaza peticiones no autenticadas aunque se invoque directamente.
 - [ ] Verificar la conexión real del storefront con Spree en Vercel: `SPREE_API_URL` + `SPREE_PUBLISHABLE_KEY`, sin exponer claves.
 - [ ] Hospedar Spree en producción fuera del Sandbox y dejar configurados sus mercados, catálogo, stock, pagos, impuestos y envíos.
 - [ ] Configurar correctamente los métodos de pago por región/Market desde Spree, evitando mapas de países hardcodeados en Next.js.
@@ -80,22 +82,12 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 
 ## Historial reciente / comprobaciones
 
-### UPS
-- [x] Confirmado que el caso de BisonTCG corresponde a integración de UPS para un único negocio, no a una plataforma que representa múltiples usuarios.
-- [x] Seleccionadas únicamente las APIs `Shipping` y `Tracking` como primera fase.
-- [x] Enviado el formulario de soporte de UPS con el UPS.com User ID, Shipper Account Number/Sender ID y la explicación del objetivo de integración.
-- [ ] Esperar la respuesta de UPS antes de continuar con las credenciales.
-- [ ] No compartir Client Secret ni otras credenciales privadas en chat.
-
-### Stripe
-- [x] Conexión de Stripe Dashboard realizada y cuenta Live `BisonTCG` conectada mediante el conector; no exponer claves.
-- [x] Analizado el repositorio y no se encontró `stripe.checkout.sessions.create(...)`: se siguió el escenario B del encargo de Stripe.
-- [x] Añadido `src/app/api/create-checkout-session/route.ts` con los parámetros requeridos y placeholders explícitos para Price ID, success URL y cancel URL.
-- [x] Añadido `STRIPE_SECRET_KEY` a `.env.example` y `.env.local.example`.
-- [x] Creado `STRIPE_INTEGRATION_TODO.md` como documentación específica de Stripe.
-- [ ] Sustituir placeholder `price_...` por Price IDs reales cuando los productos de Stripe estén vinculados a Spree.
-- [ ] No considerar terminada la integración hasta probar carrito → pago → pedido real de Spree.
-- [ ] Configurar métodos de pago de Stripe según región una vez estén definidos los Markets reales.
+### Seguridad Puck
+- [x] Añadida autenticación de administrador basada en secreto de entorno para todo el árbol de rutas `/editor`.
+- [x] Añadida cookie `HttpOnly` de sesión de editor con expiración y protección `SameSite`/`Secure` en producción.
+- [x] El guardado de la home comprueba autenticación en servidor antes de tocar Supabase con la service role key.
+- [ ] Configurar el valor real de `PUCK_EDITOR_PASSWORD` en Vercel; no guardarlo en GitHub ni compartirlo por chat.
+- [ ] Validar acceso autorizado y rechazo de acceso/guardado no autenticado en un Preview `READY`.
 
 ### Vercel
 - [x] Vercel vuelve a construir correctamente el branch `puck_editor`; deployment actual verificado en estado `READY`.
