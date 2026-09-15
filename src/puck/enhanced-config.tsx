@@ -1,9 +1,28 @@
 "use client";
 
-import type { Config } from "@puckeditor/core";
+import { FieldLabel, type Config } from "@puckeditor/core";
 import { PuckProductGrid, type PuckProductGridProps } from "@/components/puck/PuckProductGrid";
 import { config as baseConfig } from "@/puck/config";
 import { RealProductShowcase, type RealProductShowcaseProps } from "@/puck/RealProductBlocks";
+
+const colorField = (label: string) => ({
+  type: "custom" as const,
+  label,
+  render: ({ field, value, onChange }: { field: { label?: string }; value?: string; onChange: (value: string) => void }) => (
+    <FieldLabel label={field.label ?? label}>
+      <div className="flex items-center gap-2">
+        <input
+          type="color"
+          aria-label={field.label ?? label}
+          value={typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value) ? value : "#ffffff"}
+          onChange={(event) => onChange(event.currentTarget.value)}
+          className="h-9 w-12 cursor-pointer rounded border border-gray-300 bg-white p-1"
+        />
+        <span className="font-mono text-xs text-gray-500">{typeof value === "string" ? value : "#ffffff"}</span>
+      </div>
+    </FieldLabel>
+  ),
+});
 
 const {
   Carousel: _Carousel,
@@ -78,11 +97,11 @@ export const enhancedConfig: Config = {
             { label: "Grande", value: "large" },
           ],
         },
-        backgroundColor: { type: "text", label: "Fondo" },
-        cardBackgroundColor: { type: "text", label: "Fondo de tarjeta" },
-        titleColor: { type: "text", label: "Color del título" },
-        textColor: { type: "text", label: "Color del texto" },
-        priceColor: { type: "text", label: "Color del precio" },
+        backgroundColor: colorField("Fondo"),
+        cardBackgroundColor: colorField("Fondo de tarjeta"),
+        titleColor: colorField("Color del título"),
+        textColor: colorField("Color del texto"),
+        priceColor: colorField("Color del precio"),
       },
       defaultProps: {
         title: "Nuestros productos",
@@ -108,12 +127,12 @@ export const enhancedConfig: Config = {
         description: { type: "textarea", label: "Texto introductorio" },
         badge: { type: "text", label: "Etiqueta" },
         buttonText: { type: "text", label: "Texto del botón" },
-        backgroundColor: { type: "text", label: "Color del bloque" },
-        titleColor: { type: "text", label: "Color del título" },
-        textColor: { type: "text", label: "Color del texto" },
-        priceColor: { type: "text", label: "Color del precio" },
-        buttonColor: { type: "text", label: "Color del botón" },
-        buttonTextColor: { type: "text", label: "Color del texto del botón" },
+        backgroundColor: colorField("Color del bloque"),
+        titleColor: colorField("Color del título"),
+        textColor: colorField("Color del texto"),
+        priceColor: colorField("Color del precio"),
+        buttonColor: colorField("Color del botón"),
+        buttonTextColor: colorField("Color del texto del botón"),
         alignment: { type: "select", label: "Alineación", options: [{ label: "Izquierda", value: "left" }, { label: "Centro", value: "center" }, { label: "Derecha", value: "right" }] },
         imagePosition: { type: "select", label: "Imagen", options: [{ label: "Izquierda", value: "left" }, { label: "Derecha", value: "right" }] },
         imageAspect: { type: "select", label: "Proporción de imagen", options: [{ label: "Cuadrada", value: "square" }, { label: "4:3", value: "4/3" }, { label: "16:9", value: "16/9" }] },
