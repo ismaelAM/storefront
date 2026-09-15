@@ -24,7 +24,11 @@ const enhancedConfig = {
         ...config.components.Carousel.defaultProps,
         productCount: 4,
       },
-      render: (props: typeof config.components.Carousel.defaultProps) => (
+      render: (
+        props: typeof config.components.Carousel.defaultProps & {
+          productCount?: number;
+        },
+      ) => (
         <RealProductCarousel
           productCount={props.productCount ?? 4}
           columns="4"
@@ -55,7 +59,11 @@ const enhancedConfig = {
         ...config.components.ProductShowcase.defaultProps,
         productPosition: 1,
       },
-      render: (props: typeof config.components.ProductShowcase.defaultProps & { productPosition?: number }) => (
+      render: (
+        props: typeof config.components.ProductShowcase.defaultProps & {
+          productPosition?: number;
+        },
+      ) => (
         <RealProductShowcase
           productPosition={props.productPosition ?? 1}
           description={props.description}
