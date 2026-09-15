@@ -56,3 +56,5 @@ export const enhancedConfig: Config = {
     },
   },
 };
+
+// Trigger a fresh Preview build from puck_editor after the type fix.
