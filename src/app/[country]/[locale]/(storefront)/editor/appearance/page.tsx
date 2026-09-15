@@ -20,6 +20,7 @@ const fallbackData: Data = {
         footerText: "#d1d5db",
         footerHeading: "#f3f4f6",
         pageBackground: "#ffffff",
+        accentColor: "#111827",
       },
     },
   ],
