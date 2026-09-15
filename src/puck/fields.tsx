@@ -21,11 +21,11 @@ function flattenCategories(categories: Category[], output: Array<{ id: string; l
 
 interface VariantOptionValue { id?: string; name?: string; option_type?: { name?: string }; }
 interface VariantRecord { id: string; sku?: string; options_text?: string; option_values?: VariantOptionValue[]; }
-interface ProductWithVariants extends Product { variants?: VariantRecord[]; }
 function getVariantItems(products: Product[]) {
   const items: Array<{ id: string; label: string; hint?: string }> = [];
-  for (const product of products as ProductWithVariants[]) {
-    for (const variant of product.variants ?? []) {
+  for (const product of products) {
+    const variants = (product as unknown as { variants?: VariantRecord[] }).variants ?? [];
+    for (const variant of variants) {
       const options = variant.options_text || (variant.option_values ?? []).map((option) => `${option.option_type?.name ?? "Opción"}: ${option.name ?? ""}`).join(" · ");
       items.push({ id: variant.id, label: product.name, hint: [variant.sku, options].filter(Boolean).join(" · ") || variant.id });
     }
