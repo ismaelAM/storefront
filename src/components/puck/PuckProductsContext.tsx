@@ -13,12 +13,12 @@ const PuckProductsContext = createContext<PuckProductsContextValue | null>(null)
 
 interface PuckProductsProviderProps {
   products: Product[];
-  categories: Category[];
+  categories?: Category[];
   basePath: string;
   children: ReactNode;
 }
 
-export function PuckProductsProvider({ products, categories, basePath, children }: PuckProductsProviderProps) {
+export function PuckProductsProvider({ products, categories = [], basePath, children }: PuckProductsProviderProps) {
   return (
     <PuckProductsContext.Provider value={{ products, categories, basePath }}>
       {children}
