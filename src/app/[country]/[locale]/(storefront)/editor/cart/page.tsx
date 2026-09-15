@@ -8,8 +8,14 @@ const fallbackData: Data = {
   root: {},
 };
 
-export default async function CartEditorPage() {
+interface Props {
+  params: Promise<{ country: string; locale: string }>;
+}
+
+export default async function CartEditorPage({ params }: Props) {
   await connection();
+  const { country, locale } = await params;
+  const basePath = `/${country}/${locale}`;
   const initialData = await getSitePageData("cart", fallbackData);
-  return <CartEditorClient initialData={initialData} />;
+  return <CartEditorClient initialData={initialData} basePath={basePath} />;
 }
