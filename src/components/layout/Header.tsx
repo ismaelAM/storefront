@@ -17,10 +17,10 @@ const LazyRegionPreferences = dynamic(() => import("@/components/layout/RegionPr
 const storeName = getStoreName();
 
 interface HeaderProps { basePath: string; locale: Locale; mobileNavigation: ReactNode }
-interface HeaderMobileMenuProps { rootCategories: Category[]; basePath: string; appearance: NavigationAppearance }
+interface HeaderMobileMenuProps { rootCategories: Category[]; basePath: string; appearance?: NavigationAppearance }
 
-export function HeaderMobileMenu({ rootCategories, basePath, appearance }: HeaderMobileMenuProps) {
-  return <LazyMobileMenu rootCategories={rootCategories} basePath={basePath} wholesaleEnabled={isWholesaleEnabled()} appearance={appearance} />;
+export function HeaderMobileMenu({ rootCategories, basePath }: HeaderMobileMenuProps) {
+  return <LazyMobileMenu rootCategories={rootCategories} basePath={basePath} wholesaleEnabled={isWholesaleEnabled()} />;
 }
 
 export async function Header({ basePath, locale, mobileNavigation }: HeaderProps) {
