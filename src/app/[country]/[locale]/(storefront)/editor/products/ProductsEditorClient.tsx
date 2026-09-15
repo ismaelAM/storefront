@@ -10,19 +10,11 @@ import { saveSitePageData } from "@/lib/puck/save-site-page-data";
 interface Props {
   products: Product[];
   basePath: string;
-  categoryId: string;
-  categoryName: string;
   pageId: string;
   initialData: Data;
 }
 
-export function ProductsEditorClient({
-  products,
-  basePath,
-  pageId,
-  initialData,
-  categoryName,
-}: Props) {
+export function ProductsEditorClient({ products, basePath, pageId, initialData }: Props) {
   return (
     <div className="min-h-0 flex-1">
       <PuckProductsProvider products={products} basePath={basePath}>
