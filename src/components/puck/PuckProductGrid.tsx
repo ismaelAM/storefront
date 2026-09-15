@@ -24,7 +24,6 @@ export interface PuckProductGridProps {
 
 type VariantOptionValue = {
   name?: string;
-  presentation?: string;
   option_type?: { name?: string };
 };
 type ProductWithVariantOptions = Omit<ReturnType<typeof usePuckProducts>["products"][number], "option_values"> & {
@@ -55,7 +54,7 @@ function matchesVariant(product: ProductWithVariantOptions, query: string) {
   if (!query.trim()) return true;
   const normalizedQuery = query.trim().toLocaleLowerCase();
   return (product.option_values ?? []).some((option) =>
-    [option.name, option.presentation, option.option_type?.name]
+    [option.name, option.option_type?.name]
       .filter(Boolean)
       .some((value) => value?.toLocaleLowerCase().includes(normalizedQuery)),
   );
