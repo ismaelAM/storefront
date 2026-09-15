@@ -1,6 +1,10 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
-import { getMarketDefaultLocale, getMarketLocales, findMarketForCountry, getDefaultMarketLocaleTarget } from "@/i18n/markets";
+import {
+  findMarketForCountry,
+  getDefaultMarketLocaleTarget,
+  getMarketLocales,
+} from "@/i18n/markets";
 import { getMarkets } from "@/lib/data/markets";
 import { SOCIAL_IMAGE_PATH } from "@/lib/seo";
 import {
