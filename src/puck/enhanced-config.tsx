@@ -2,7 +2,12 @@
 
 import type { Config } from "@puckeditor/core";
 import { config as baseConfig } from "@/puck/config";
-import { RealProductCarousel, RealProductShowcase, type RealProductCarouselProps, type RealProductShowcaseProps } from "@/puck/RealProductBlocks";
+import {
+  RealProductCarousel,
+  RealProductShowcase,
+  type RealProductCarouselProps,
+  type RealProductShowcaseProps,
+} from "@/puck/RealProductBlocks";
 
 export const enhancedConfig: Config = {
   ...baseConfig,
@@ -18,7 +23,12 @@ export const enhancedConfig: Config = {
     RealProductShowcase: {
       label: "Producto destacado real",
       fields: {
-        productPosition: { type: "number", label: "Producto de la lista", min: 1, max: 8 },
+        productPosition: {
+          type: "number",
+          label: "Producto de la lista",
+          min: 1,
+          max: 8,
+        },
         description: { type: "textarea", label: "Texto introductorio" },
         badge: { type: "text", label: "Etiqueta" },
         buttonText: { type: "text", label: "Texto del botón" },
@@ -27,7 +37,10 @@ export const enhancedConfig: Config = {
         textColor: { type: "text", label: "Color del texto" },
         priceColor: { type: "text", label: "Color del precio" },
         buttonColor: { type: "text", label: "Color del botón" },
-        buttonTextColor: { type: "text", label: "Color del texto del botón" },
+        buttonTextColor: {
+          type: "text",
+          label: "Color del texto del botón",
+        },
         alignment: {
           type: "select",
           label: "Alineación",
@@ -80,12 +93,21 @@ export const enhancedConfig: Config = {
         imageAspect: "square",
         padding: "large",
       } satisfies RealProductShowcaseProps,
-      render: (props) => <RealProductShowcase {...(props as RealProductShowcaseProps)} />,
+      render: (props) => (
+        <RealProductShowcase
+          {...(props as unknown as RealProductShowcaseProps)}
+        />
+      ),
     },
     RealProductCarousel: {
       label: "Carrusel de productos reales",
       fields: {
-        productCount: { type: "number", label: "Número de productos", min: 1, max: 8 },
+        productCount: {
+          type: "number",
+          label: "Número de productos",
+          min: 1,
+          max: 8,
+        },
         columns: {
           type: "select",
           label: "Columnas",
@@ -125,7 +147,11 @@ export const enhancedConfig: Config = {
         cardBackgroundColor: "#ffffff",
         alignment: "center",
       } satisfies RealProductCarouselProps,
-      render: (props) => <RealProductCarousel {...(props as RealProductCarouselProps)} />,
+      render: (props) => (
+        <RealProductCarousel
+          {...(props as unknown as RealProductCarouselProps)}
+        />
+      ),
     },
   },
 };
