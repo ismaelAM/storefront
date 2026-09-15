@@ -56,6 +56,7 @@ export default async function CategoryPage({
   const currency = await resolveCurrency(country);
   const listingState = parseListingSearchParams(rawSearchParams);
   const fetchCategoryProducts = getCategoryProducts.bind(null, category.id);
+  const categoryProducts = await getCategoryProducts(category.id, { limit: 8 });
   const fallbackData = {
     content: [
       {
@@ -82,7 +83,11 @@ export default async function CategoryPage({
         <JsonLd data={buildBreadcrumbJsonLd(category, basePath, storeUrl)} />
       )}
 
-      <CategoryPuckRenderer data={data} />
+      <CategoryPuckRenderer
+        data={data}
+        products={categoryProducts.data ?? []}
+        basePath={basePath}
+      />
       <CategoryBanner
         category={category}
         basePath={basePath}
