@@ -9,6 +9,7 @@ import { CartButton } from "@/components/layout/CartButton";
 import { SearchToggle } from "@/components/layout/SearchToggle";
 import { Button } from "@/components/ui/button";
 import { isWholesaleEnabled } from "@/lib/spree";
+import { getSiteAppearance, type SiteAppearance } from "@/lib/puck/get-site-appearance";
 import { getStoreName } from "@/lib/store";
 
 const LazyMobileMenu = dynamic(
@@ -39,6 +40,7 @@ interface HeaderProps {
   basePath: string;
   locale: Locale;
   mobileNavigation: ReactNode;
+  appearance?: SiteAppearance;
 }
 
 interface HeaderMobileMenuProps {
@@ -46,10 +48,7 @@ interface HeaderMobileMenuProps {
   basePath: string;
 }
 
-export function HeaderMobileMenu({
-  rootCategories,
-  basePath,
-}: HeaderMobileMenuProps) {
+export function HeaderMobileMenu({ rootCategories, basePath }: HeaderMobileMenuProps) {
   return (
     <LazyMobileMenu
       rootCategories={rootCategories}
@@ -59,57 +58,57 @@ export function HeaderMobileMenu({
   );
 }
 
-export async function Header({
-  basePath,
-  locale,
-  mobileNavigation,
-}: HeaderProps) {
+export async function Header({ basePath, locale, mobileNavigation, appearance }: HeaderProps) {
   const t = await getTranslations({ locale, namespace: "header" });
   const wholesaleEnabled = isWholesaleEnabled();
+  const colors = appearance ?? (await getSiteAppearance());
 
   return (
-    <SearchToggle
-      basePath={basePath}
-      left={mobileNavigation}
-      center={
-        <Link href={basePath || "/"} className="flex items-center min-w-0">
-          <Image
-            src="/spree.png"
-            alt={storeName}
-            width={90}
-            height={32}
-            className="max-w-full object-contain"
-            style={{ width: "auto", height: "auto" }}
-            fetchPriority="high"
-            loading="eager"
-          />
-        </Link>
-      }
-      rightStart={
-        <div className="hidden lg:flex lg:items-center lg:gap-1">
-          {wholesaleEnabled && (
-            <Link
-              href={`${basePath}/wholesale`}
-              className="px-2 py-1.5 text-sm text-gray-500 hover:text-gray-900 transition-colors whitespace-nowrap"
-            >
-              {t("wholesale")}
-            </Link>
-          )}
-          <LazyRegionPreferences variant="header" />
-        </div>
-      }
-      rightEnd={
-        <>
-          <div className="hidden md:block">
-            <Button variant="ghost" size="icon-lg" asChild>
-              <Link href={`${basePath}/account`} aria-label={t("account")}>
-                <User className="size-5" />
+    <div style={{ backgroundColor: colors.headerBackground, color: colors.headerText, borderBottom: `1px solid ${colors.headerBorder}` }}>
+      <SearchToggle
+        basePath={basePath}
+        left={mobileNavigation}
+        center={
+          <Link href={basePath || "/"} className="flex items-center min-w-0" style={{ color: colors.headerText }}>
+            <Image
+              src="/spree.png"
+              alt={storeName}
+              width={90}
+              height={32}
+              className="max-w-full object-contain"
+              style={{ width: "auto", height: "auto" }}
+              fetchPriority="high"
+              loading="eager"
+            />
+          </Link>
+        }
+        rightStart={
+          <div className="hidden lg:flex lg:items-center lg:gap-1">
+            {wholesaleEnabled && (
+              <Link
+                href={`${basePath}/wholesale`}
+                className="px-2 py-1.5 text-sm transition-colors whitespace-nowrap"
+                style={{ color: colors.headerText }}
+              >
+                {t("wholesale")}
               </Link>
-            </Button>
+            )}
+            <LazyRegionPreferences variant="header" />
           </div>
-          <CartButton />
-        </>
-      }
-    />
+        }
+        rightEnd={
+          <>
+            <div className="hidden md:block">
+              <Button variant="ghost" size="icon-lg" asChild style={{ color: colors.headerText }}>
+                <Link href={`${basePath}/account`} aria-label={t("account")}>
+                  <User className="size-5" />
+                </Link>
+              </Button>
+            </div>
+            <CartButton />
+          </>
+        }
+      />
+    </div>
   );
 }
