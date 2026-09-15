@@ -1,7 +1,10 @@
+import type { Category, Product } from "@spree/sdk";
 import type { Data } from "@puckeditor/core";
 import { connection } from "next/server";
 import { notFound } from "next/navigation";
-import { getCategory, getCategoryProducts } from "@/lib/data/categories";
+import { PRODUCT_CARD_FIELDS } from "@/lib/data/cached";
+import { getCategories, getCategory } from "@/lib/data/categories";
+import { getProducts } from "@/lib/data/products";
 import { getCategoryPageData } from "@/lib/puck/get-category-data";
 import { CategoryEditorClient } from "./CategoryEditorClient";
 
@@ -13,9 +16,7 @@ interface CategoryEditorPageProps {
   }>;
 }
 
-export default async function CategoryEditorPage({
-  params,
-}: CategoryEditorPageProps) {
+export default async function CategoryEditorPage({ params }: CategoryEditorPageProps) {
   await connection();
   const { country, locale, permalink } = await params;
   const fullPermalink = permalink.join("/");
@@ -25,7 +26,25 @@ export default async function CategoryEditorPage({
     notFound();
   }
 
-  const products = await getCategoryProducts(category.id, { limit: 8 });
+  let products: Product[] = [];
+  let categories: Category[] = [];
+  try {
+    const [productsResponse, categoriesResponse] = await Promise.all([
+      getProducts(
+        {
+          limit: 100,
+          fields: PRODUCT_CARD_FIELDS,
+          expand: ["variants", "categories"],
+        },
+        "dtc",
+      ),
+      getCategories({ depth_eq: 0, expand: ["children.children"] }, { country, locale }),
+    ]);
+    products = productsResponse.data ?? [];
+    categories = categoriesResponse.data ?? [];
+  } catch (error) {
+    console.error("Category editor: failed to load catalog options", error);
+  }
 
   const fallbackData: Data = {
     content: [
@@ -71,7 +90,8 @@ export default async function CategoryEditorPage({
     <CategoryEditorClient
       permalink={fullPermalink}
       initialData={initialData}
-      products={products.data ?? []}
+      products={products}
+      categories={categories}
       basePath={`/${country}/${locale}`}
     />
   );
