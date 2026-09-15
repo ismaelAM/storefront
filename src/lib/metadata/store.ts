@@ -1,4 +1,7 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
+import { getMarketDefaultLocale, getMarketLocales, findMarketForCountry, getDefaultMarketLocaleTarget } from "@/i18n/markets";
+import { getMarkets } from "@/lib/data/markets";
 import { SOCIAL_IMAGE_PATH } from "@/lib/seo";
 import {
   getStoreMetaDescription,
@@ -13,12 +16,59 @@ function normalizeOpenGraphLocale(locale: string): string {
   return `${parts[0].toLowerCase()}_${parts[1].toUpperCase()}`;
 }
 
+function getPathSuffix(pathname: string | null, country: string, locale: string): string {
+  if (!pathname) return "";
+  const prefix = `/${country.toLowerCase()}/${locale.toLowerCase()}`;
+  if (pathname.toLowerCase().startsWith(prefix)) {
+    return pathname.slice(prefix.length) || "";
+  }
+
+  const match = pathname.match(/^\/[a-z]{2}\/[a-z]{2,3}(?:-[a-z0-9]{2,8})*(\/.*)?$/i);
+  return match?.[1] ?? "";
+}
+
+async function buildLocaleAlternates(
+  country: string,
+  locale: string,
+  storeUrl: string,
+): Promise<NonNullable<Metadata["alternates"]> | undefined> {
+  try {
+    const requestHeaders = await headers();
+    const pathname = requestHeaders.get("x-spree-request-pathname");
+    const suffix = getPathSuffix(pathname, country, locale);
+    const base = storeUrl.replace(/\/$/, "");
+    const markets = await getMarkets({ country, locale }).then((res) => res.data);
+    const currentMarket = findMarketForCountry(markets, country);
+
+    if (!currentMarket) return undefined;
+
+    const languages: Record<string, string> = {};
+    for (const marketLocale of getMarketLocales(currentMarket)) {
+      languages[marketLocale] = `${base}/${country.toLowerCase()}/${marketLocale}${suffix}`;
+    }
+
+    const defaultTarget = getDefaultMarketLocaleTarget(markets);
+    if (defaultTarget) {
+      languages["x-default"] = `${base}/${defaultTarget.country}/${defaultTarget.locale}${suffix}`;
+    }
+
+    return {
+      canonical: `${base}/${country.toLowerCase()}/${locale}${suffix}`,
+      languages,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 interface StoreMetadataParams {
   locale: string;
+  country: string;
 }
 
 export async function generateStoreMetadata({
   locale,
+  country,
 }: StoreMetadataParams): Promise<Metadata> {
   const storeName = getStoreSeoTitle();
   const storeUrl = getStoreUrl();
@@ -35,8 +85,13 @@ export async function generateStoreMetadata({
     }
   }
 
+  const alternates = storeUrl
+    ? await buildLocaleAlternates(country, locale, storeUrl)
+    : undefined;
+
   return {
     ...metadataBaseSpread,
+    ...(alternates ? { alternates } : {}),
     title: {
       template: `%s | ${storeName}`,
       default: storeName,
