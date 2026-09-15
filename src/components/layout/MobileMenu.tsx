@@ -55,35 +55,14 @@ export function MobileMenu({ rootCategories, basePath, wholesaleEnabled }: Mobil
   const linkClass = "text-left text-gray-700 hover:text-gray-900 hover:bg-gray-50 rounded-lg px-3 py-2.5 text-base transition-colors";
   const categoryButtonClass = "flex items-center justify-between w-full text-left text-gray-700 hover:text-gray-900 hover:bg-gray-50 rounded-lg px-3 py-2.5 text-base transition-colors";
 
-  const renderCategories = (categories: Category[], level = 0): React.ReactNode => categories.map((category) => {
-    const hasChildren = Boolean(category.children?.length);
-    if (hasChildren) {
-      return (
-        <button
-          key={category.id}
-          type="button"
-          onClick={() => pushPanel({ kind: "category", category })}
-          className={categoryButtonClass}
-          style={{ paddingLeft: `${12 + level * 16}px` }}
-        >
-          <span>{category.name}</span>
-          <ChevronRight className="h-4 w-4 text-gray-400" />
-        </button>
-      );
-    }
-
-    return (
-      <Link
-        key={category.id}
-        href={`${basePath}/c/${category.permalink}`}
-        onClick={() => setOpen(false)}
-        className={`${linkClass} block`}
-        style={{ paddingLeft: `${12 + level * 16}px` }}
-      >
+  const renderCategoryLinks = (categories: Category[], level = 0): React.ReactNode => categories.map((category) => (
+    <div key={category.id}>
+      <Link href={`${basePath}/c/${category.permalink}`} onClick={() => setOpen(false)} className={`${linkClass} block`} style={{ paddingLeft: `${12 + level * 16}px` }}>
         {category.name}
       </Link>
-    );
-  });
+      {category.children?.length ? renderCategoryLinks(category.children, level + 1) : null}
+    </div>
+  ));
 
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
@@ -105,7 +84,17 @@ export function MobileMenu({ rootCategories, basePath, wholesaleEnabled }: Mobil
         <div className="relative flex-1 overflow-hidden">
           <div className={`absolute inset-0 flex flex-col bg-white transition-transform duration-300 ease-in-out ${animatedIndex === 0 && currentPanel.kind === "main" ? "translate-x-0" : "-translate-x-full"}`}>
             <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-4 pt-2">
-              {renderCategories(rootCategories)}
+              <Link href={basePath || "/"} onClick={() => setOpen(false)} className={linkClass}>{t("home")}</Link>
+              <details className="group">
+                <summary className={`${categoryButtonClass} list-none cursor-pointer`}>
+                  <span>{t("allProducts")}</span>
+                  <ChevronRight className="h-4 w-4 text-gray-400 transition-transform group-open:rotate-90" />
+                </summary>
+                <div className="ml-3 mt-1 flex flex-col gap-1 border-l border-gray-200 pl-2">
+                  <Link href={`${basePath}/products`} onClick={() => setOpen(false)} className={linkClass}>{t("allProducts")}</Link>
+                  {renderCategoryLinks(rootCategories)}
+                </div>
+              </details>
               <Link href={`${basePath}/#contact`} onClick={() => setOpen(false)} className={linkClass}>{t("contact")}</Link>
               <div className="mt-2 border-t border-gray-200 pt-2">
                 {wholesaleEnabled && <Link href={`${basePath}/wholesale`} onClick={() => setOpen(false)} className={`${linkClass} block`}>{t("wholesale")}</Link>}
