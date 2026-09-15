@@ -328,15 +328,17 @@ export function MobileMenu({
                 </nav>
 
                 {/* "View all" at the bottom */}
-                <div className="border-t border-gray-200 px-4 py-3">
-                  <Link
-                    href={`${basePath}/c/${panel.category.permalink}`}
-                    onClick={() => handleOpenChange(false)}
-                    className="block w-full text-center text-sm text-gray-500 hover:text-gray-900 py-2 transition-colors"
-                  >
-                    {t("viewAllCategory", { category: panel.category.name })}
-                  </Link>
-                </div>
+                {panel.category.permalink !== "tcg" && (
+                  <div className="border-t border-gray-200 px-4 py-3">
+                    <Link
+                      href={`${basePath}/c/${panel.category.permalink}`}
+                      onClick={() => handleOpenChange(false)}
+                      className="block w-full text-center text-sm text-gray-500 hover:text-gray-900 py-2 transition-colors"
+                    >
+                      {t("viewAllCategory", { category: panel.category.name })}
+                    </Link>
+                  </div>
+                )}
               </div>
             );
           })}
