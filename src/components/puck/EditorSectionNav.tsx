@@ -11,7 +11,6 @@ const items = [
   { key: "home", label: "Inicio", path: "/editor" },
   { key: "appearance", label: "Apariencia", path: "/editor/appearance" },
   { key: "categories", label: "Categorías", path: "/editor/categories" },
-  { key: "products", label: "Productos", path: "/editor/products" },
 ];
 
 export function EditorSectionNav({ basePath }: EditorSectionNavProps) {
