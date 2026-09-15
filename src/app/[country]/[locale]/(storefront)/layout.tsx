@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import type { Category } from "@spree/sdk";
 import Link from "next/link";
 import { connection } from "next/server";
@@ -38,12 +39,13 @@ const getNavigationCategories = cache(async (country: string, locale: string) =>
   const props = data.content.find((item) => item.type === "Navigation")?.props as { items?: NavigationItem[] } | undefined;
   const items = props?.items?.filter((item) => item.visible && item.categoryPermalink) ?? fallback;
   const byPermalink = new Map(flattenCategories(categories).map((category) => [category.permalink, category]));
-
-  return items.flatMap((item) => {
+  const configuredCategories = items.flatMap((item) => {
     const category = byPermalink.get(item.categoryPermalink);
     if (!category) return [];
     return [{ ...category, ...(item.labelOverride ? { name: item.labelOverride } : {}) }];
   });
+
+  return configuredCategories.length > 0 ? configuredCategories : categories;
 });
 
 function CategoryLinks({ categories, basePath }: { categories: Category[]; basePath: string }) {
@@ -70,9 +72,13 @@ export default async function StorefrontLayout({ children, params }: StorefrontL
   const { country, locale } = await params;
   const basePath = `/${country}/${locale}`;
   const appearance = await getSiteAppearance();
+  const themeStyle = {
+    backgroundColor: appearance.pageBackground,
+    "--primary": appearance.accentColor,
+  } as CSSProperties;
 
   return (
-    <div style={{ backgroundColor: appearance.pageBackground }}>
+    <div style={themeStyle}>
       <Header appearance={appearance} basePath={basePath} locale={locale as Locale} mobileNavigation={<Suspense fallback={<MobileNavigationFallback />}><StorefrontMobileNavigation basePath={basePath} country={country} locale={locale} /></Suspense>} />
       <Suspense fallback={null}><StorefrontCategoryNavigation basePath={basePath} country={country} locale={locale} /></Suspense>
       <main className="flex-1">{children}</main>
