@@ -22,8 +22,12 @@ export interface PuckProductGridProps {
   basePath?: string;
 }
 
-type VariantOptionValue = { name?: string; presentation?: string; option_type?: { name?: string } };
-type ProductWithVariantOptions = ReturnType<typeof usePuckProducts>["products"][number] & {
+type VariantOptionValue = {
+  name?: string;
+  presentation?: string;
+  option_type?: { name?: string };
+};
+type ProductWithVariantOptions = Omit<ReturnType<typeof usePuckProducts>["products"][number], "option_values"> & {
   option_values?: VariantOptionValue[];
 };
 
