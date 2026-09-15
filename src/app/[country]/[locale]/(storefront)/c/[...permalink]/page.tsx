@@ -1,14 +1,19 @@
-import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { ProductListing } from "@/components/products/ProductListing";
+import type { Metadata } from "next";
 import { CategoryPuckRenderer } from "@/components/puck/CategoryPuckRenderer";
+import { Breadcrumbs } from "@/components/navigation/Breadcrumbs";
 import { JsonLd } from "@/components/seo/JsonLd";
+import { ProductListing } from "@/components/products/ProductListing";
 import { getCategory, getCategoryProducts } from "@/lib/data/categories";
 import { resolveCurrency } from "@/lib/data/markets";
 import { getCategoryPageData } from "@/lib/puck/get-category-data";
 import { getProductFilters } from "@/lib/data/products";
 import { generateCategoryMetadata } from "@/lib/metadata/category";
-import { buildBreadcrumbJsonLd } from "@/lib/seo";
+import {
+  buildBreadcrumbJsonLd,
+  buildCategoryJsonLd,
+  buildCanonicalUrl,
+} from "@/lib/seo";
 import { getStoreUrl } from "@/lib/store";
 import { parseListingSearchParams } from "@/lib/utils/listing-search-params";
 import { CategoryBanner } from "./CategoryBanner";
@@ -53,6 +58,12 @@ export default async function CategoryPage({
   }
 
   const storeUrl = getStoreUrl();
+  const canonicalUrl = storeUrl
+    ? buildCanonicalUrl(
+        storeUrl,
+        `${basePath}/c/${category.permalink}`,
+      )
+    : undefined;
   const currency = await resolveCurrency(country);
   const listingState = parseListingSearchParams(rawSearchParams);
   const fetchCategoryProducts = getCategoryProducts.bind(null, category.id);
@@ -79,6 +90,9 @@ export default async function CategoryPage({
 
   return (
     <div>
+      {canonicalUrl && (
+        <JsonLd data={buildCategoryJsonLd(category, canonicalUrl)} />
+      )}
       {storeUrl && (
         <JsonLd data={buildBreadcrumbJsonLd(category, basePath, storeUrl)} />
       )}
