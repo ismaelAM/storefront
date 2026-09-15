@@ -83,7 +83,12 @@ export default async function CategoryPage({
       )}
 
       <CategoryPuckRenderer data={data} />
-      <CategoryBanner category={category} basePath={basePath} locale={locale} />
+      <CategoryBanner
+        category={category}
+        basePath={basePath}
+        locale={locale}
+        showHero={false}
+      />
 
       <div className="container mx-auto px-4 pt-4 sm:px-6 lg:px-8">
         <ProductListing
