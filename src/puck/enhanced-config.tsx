@@ -4,7 +4,7 @@ import type { Config } from "@puckeditor/core";
 import { PuckProductGrid, type PuckProductGridProps } from "@/components/puck/PuckProductGrid";
 import { config as baseConfig } from "@/puck/config";
 import { RealProductShowcase, type RealProductShowcaseProps } from "@/puck/RealProductBlocks";
-import { colorField } from "@/puck/fields";
+import { categoryPickerField, colorField, productPickerField, variantPickerField } from "@/puck/fields";
 
 const { Carousel: _Carousel, FeaturedProductsHome: _FeaturedProductsHome, ProductShowcase: _ProductShowcase, ...baseComponents } = baseConfig.components;
 
@@ -18,9 +18,12 @@ export const enhancedConfig: Config = {
       fields: {
         title: { type: "text", label: "Título" },
         subtitle: { type: "textarea", label: "Subtítulo" },
-        productCount: { type: "select", label: "Cantidad", options: [{ label: "4 productos", value: "4" }, { label: "6 productos", value: "6" }, { label: "8 productos", value: "8" }] },
-        productFilter: { type: "select", label: "Mostrar", options: [{ label: "Todos", value: "all" }, { label: "Disponibles", value: "available" }, { label: "En oferta", value: "sale" }] },
-        variantFilter: { type: "text", label: "Filtrar por variante" },
+        selectedProductIds: productPickerField("Productos concretos"),
+        selectedCategoryIds: categoryPickerField("Categorías"),
+        selectedVariantIds: variantPickerField("Variantes"),
+        productCount: { type: "select", label: "Cantidad máxima", options: [{ label: "4", value: "4" }, { label: "6", value: "6" }, { label: "8", value: "8" }, { label: "12", value: "12" }, { label: "16", value: "16" }, { label: "20", value: "20" }] },
+        productFilter: { type: "select", label: "Disponibilidad", options: [{ label: "Todos", value: "all" }, { label: "Disponibles", value: "available" }, { label: "En oferta", value: "sale" }] },
+        variantFilter: { type: "text", label: "Texto de variante" },
         columns: { type: "select", label: "Columnas", options: [{ label: "2", value: "2" }, { label: "3", value: "3" }, { label: "4", value: "4" }] },
         imageAspect: { type: "select", label: "Proporción de imagen", options: [{ label: "Cuadrada", value: "square" }, { label: "4:3", value: "4/3" }, { label: "16:9", value: "16/9" }] },
         cardRadius: { type: "select", label: "Bordes de tarjeta", options: [{ label: "Sin redondeo", value: "none" }, { label: "Pequeño", value: "small" }, { label: "Medio", value: "medium" }, { label: "Grande", value: "large" }] },
@@ -30,7 +33,7 @@ export const enhancedConfig: Config = {
         textColor: colorField("Color del texto"),
         priceColor: colorField("Color del precio"),
       },
-      defaultProps: { title: "Nuestros productos", subtitle: "Descubre nuestra selección.", productCount: "8", productFilter: "all", variantFilter: "", columns: "4", imageAspect: "square", cardRadius: "medium", backgroundColor: "#ffffff", cardBackgroundColor: "#ffffff", titleColor: "#111827", textColor: "#6b7280", priceColor: "#111827" } satisfies PuckProductGridProps,
+      defaultProps: { title: "Nuestros productos", subtitle: "Descubre nuestra selección.", selectedProductIds: [], selectedCategoryIds: [], selectedVariantIds: [], productCount: "8", productFilter: "all", variantFilter: "", columns: "4", imageAspect: "square", cardRadius: "medium", backgroundColor: "#ffffff", cardBackgroundColor: "#ffffff", titleColor: "#111827", textColor: "#6b7280", priceColor: "#111827" } satisfies PuckProductGridProps,
       render: (props) => <PuckProductGrid {...(props as unknown as PuckProductGridProps)} />,
     },
     RealProductShowcase: {
@@ -40,12 +43,7 @@ export const enhancedConfig: Config = {
         description: { type: "textarea", label: "Descripción" },
         badge: { type: "text", label: "Etiqueta" },
         buttonText: { type: "text", label: "Texto del botón" },
-        backgroundColor: colorField("Color del bloque"),
-        titleColor: colorField("Color del título"),
-        textColor: colorField("Color del texto"),
-        priceColor: colorField("Color del precio"),
-        buttonColor: colorField("Color del botón"),
-        buttonTextColor: colorField("Color del texto del botón"),
+        backgroundColor: colorField("Color del bloque"), titleColor: colorField("Color del título"), textColor: colorField("Color del texto"), priceColor: colorField("Color del precio"), buttonColor: colorField("Color del botón"), buttonTextColor: colorField("Color del texto del botón"),
         alignment: { type: "select", label: "Alineación", options: [{ label: "Izquierda", value: "left" }, { label: "Centro", value: "center" }, { label: "Derecha", value: "right" }] },
         imagePosition: { type: "select", label: "Imagen", options: [{ label: "Izquierda", value: "left" }, { label: "Derecha", value: "right" }] },
         imageAspect: { type: "select", label: "Proporción de imagen", options: [{ label: "Cuadrada", value: "square" }, { label: "4:3", value: "4/3" }, { label: "16:9", value: "16/9" }] },
