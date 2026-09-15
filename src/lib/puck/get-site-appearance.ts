@@ -9,6 +9,7 @@ export type SiteAppearance = {
   footerText: string;
   footerHeading: string;
   pageBackground: string;
+  accentColor: string;
 };
 
 const fallbackAppearance: SiteAppearance = {
@@ -19,6 +20,7 @@ const fallbackAppearance: SiteAppearance = {
   footerText: "#d1d5db",
   footerHeading: "#f3f4f6",
   pageBackground: "#ffffff",
+  accentColor: "#111827",
 };
 
 export const getSiteAppearance = cache(async (): Promise<SiteAppearance> => {
@@ -38,5 +40,6 @@ export const getSiteAppearance = cache(async (): Promise<SiteAppearance> => {
     footerText: props?.footerText ?? fallbackAppearance.footerText,
     footerHeading: props?.footerHeading ?? fallbackAppearance.footerHeading,
     pageBackground: props?.pageBackground ?? fallbackAppearance.pageBackground,
+    accentColor: props?.accentColor ?? fallbackAppearance.accentColor,
   };
 });
