@@ -1,16 +1,10 @@
 import { authenticatePuckEditor, isPuckEditorAuthenticated } from "@/lib/puck/editor-auth";
 
-async function login(formData: FormData) {
+async function login(formData: FormData): Promise<void> {
   "use server";
 
   const password = String(formData.get("password") ?? "");
-  const authenticated = await authenticatePuckEditor(password);
-
-  if (!authenticated) {
-    return { error: "Contraseña incorrecta o acceso no configurado." };
-  }
-
-  return { error: null };
+  await authenticatePuckEditor(password);
 }
 
 export default async function EditorLayout({
