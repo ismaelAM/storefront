@@ -9,6 +9,13 @@ import {
   type RealProductShowcaseProps,
 } from "@/puck/RealProductBlocks";
 
+const {
+  Carousel: _Carousel,
+  FeaturedProductsHome: _FeaturedProductsHome,
+  ProductShowcase: _ProductShowcase,
+  ...baseComponents
+} = baseConfig.components;
+
 export const enhancedConfig: Config = {
   ...baseConfig,
   categories: {
@@ -19,7 +26,7 @@ export const enhancedConfig: Config = {
     },
   },
   components: {
-    ...baseConfig.components,
+    ...baseComponents,
     RealProductShowcase: {
       label: "Producto destacado real",
       fields: {
