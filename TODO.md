@@ -13,6 +13,7 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [ ] Terminar la integración de Stripe de forma real con el checkout de Spree. La ruta `/api/create-checkout-session` actual es un endpoint mínimo separado, con placeholders de Price ID, y no debe considerarse una integración terminada.
 - [ ] Decidir y documentar la estrategia definitiva de Stripe: mantener Payment Sessions/provider de Spree o conectar Checkout Sessions a los artículos/variantes reales del carrito de Spree.
 - [ ] Validar en Vercel el SEO técnico añadido: canonical, hreflang, JSON-LD y rutas por idioma/Market.
+- [ ] Configurar y probar el método de envío propio para Madrid en Spree.
 
 ## Idiomas y traducciones
 
@@ -32,6 +33,17 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [ ] Confirmar sincronización/lectura en tiempo real desde Spree para productos, categorías, variantes, precios e inventario.
 - [ ] Configurar correctamente Markets de Europa en la futura instancia de producción de Spree.
 - [ ] Definir países por Market y revisar moneda, locale, pagos, impuestos y envío por región.
+
+## Envíos
+
+- [ ] Crear Zone exclusiva para Madrid en Spree.
+- [ ] Crear método `Entrega local BisonTCG — Madrid` con código `BISON_LOCAL_MADRID`.
+- [ ] Asociar el método a la Shipping Category física correspondiente.
+- [ ] Definir tarifa fija y tiempo estimado de entrega.
+- [ ] Probar que Madrid ofrece el método local y que fuera de Madrid no aparece.
+- [ ] Confirmar que el pedido genera correctamente su Shipment en Spree.
+- [ ] Mostrar al cliente el estado del Shipment mediante los datos nativos de Spree.
+- [ ] Añadir UPS como segundo método en una fase posterior, con API y tracking automático.
 
 ## Storefront / UI
 
@@ -86,6 +98,15 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [ ] Validar en Preview real que los `link rel="canonical"` y `link rel="alternate"` apuntan a URLs válidas.
 - [ ] Validar JSON-LD de Product y CollectionPage en páginas reales con datos de Spree.
 - [ ] Añadir/validar Google Search Console y envío del sitemap cuando el dominio definitivo esté activo.
+
+### Envíos
+- [x] Diseñada la arquitectura de envío local Madrid con Spree como fuente de verdad.
+- [x] Documentado el método `BISON_LOCAL_MADRID` y su separación de una futura integración UPS.
+- [x] Documentado que el tracking local puede gestionarse manualmente desde Spree sin API externa.
+- [ ] Ejecutar la configuración real en el panel de Spree Sandbox.
+- [ ] Probar checkout, Shipment y estado de entrega con una dirección de Madrid.
+- [ ] Probar que una dirección fuera de Madrid no recibe la opción local.
+- [ ] Integrar UPS después de estabilizar el método local.
 
 ## Regla de mantenimiento
 
