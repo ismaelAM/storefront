@@ -1,7 +1,6 @@
 "use client";
 
-import type { Config } from "@puckeditor/core";
-import type { ComponentType } from "react";
+import type { Config, Slot } from "@puckeditor/core";
 import { ProductEditorialBlock } from "@/puck/ProductEditorialBlock";
 import {
   ProductColumnsBlock,
@@ -32,15 +31,15 @@ type ProductSectionProps = {
   width: "medium" | "large" | "full";
   alignment: "left" | "center" | "right";
   padding: "small" | "medium" | "large";
-  content: ComponentType;
+  content: Slot;
 };
 
 type ProductColumnsProps = {
   backgroundColor: string;
   gap: "small" | "medium" | "large";
   padding: "small" | "medium" | "large";
-  left: ComponentType;
-  right: ComponentType;
+  left: Slot;
+  right: Slot;
 };
 
 type ProductComponents = {
@@ -223,9 +222,9 @@ export const productConfig: Config<ProductComponents> = {
         },
         borderRadius: {
           type: "select",
-          label: "Redondeado",
+          label: "Bordes",
           options: [
-            { label: "Sin redondeado", value: "none" },
+            { label: "Sin redondeo", value: "none" },
             { label: "Pequeño", value: "small" },
             { label: "Mediano", value: "medium" },
             { label: "Grande", value: "large" },
@@ -237,7 +236,7 @@ export const productConfig: Config<ProductComponents> = {
         text: "",
         image: "",
         buttonText: "",
-        buttonUrl: "#",
+        buttonUrl: "",
         backgroundColor: "#ffffff",
         titleColor: "#111827",
         textColor: "#4b5563",
