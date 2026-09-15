@@ -3,9 +3,15 @@
 import { ProductCard } from "@/components/puck/ProductCard";
 import { usePuckProducts } from "@/components/puck/PuckProductsContext";
 
-interface PuckProductGridProps {
+export type ProductGridFilter = "all" | "available" | "sale";
+export type ProductGridSort = "default" | "name-asc" | "price-asc" | "price-desc";
+
+export interface PuckProductGridProps {
   title?: string;
   subtitle?: string;
+  productCount?: "4" | "6" | "8";
+  productFilter?: ProductGridFilter;
+  productSort?: ProductGridSort;
   columns?: "2" | "3" | "4";
   imageAspect?: "square" | "4/3" | "16/9";
   cardRadius?: "none" | "small" | "medium" | "large";
@@ -14,15 +20,41 @@ interface PuckProductGridProps {
   titleColor?: string;
   textColor?: string;
   priceColor?: string;
-  buttonText?: string;
-  buttonColor?: string;
-  buttonTextColor?: string;
-  basePath?: string;
+}
+
+function parseDisplayPrice(value: string | undefined): number {
+  if (!value) return Number.POSITIVE_INFINITY;
+
+  const cleaned = value.replace(/[^\d,.-]/g, "");
+  const lastComma = cleaned.lastIndexOf(",");
+  const lastDot = cleaned.lastIndexOf(".");
+
+  if (lastComma >= 0 && lastDot >= 0) {
+    if (lastComma > lastDot) {
+      return Number(cleaned.replace(/\./g, "").replace(",", "."));
+    }
+    return Number(cleaned.replace(/,/g, ""));
+  }
+
+  if (lastComma >= 0) {
+    return Number(cleaned.replace(/\./g, "").replace(",", "."));
+  }
+
+  return Number(cleaned);
+}
+
+function isSaleProduct(product: ReturnType<typeof usePuckProducts>["products"][number]) {
+  const price = parseDisplayPrice(product.price?.display_amount);
+  const originalPrice = parseDisplayPrice(product.original_price?.display_amount);
+  return Number.isFinite(price) && Number.isFinite(originalPrice) && originalPrice > price;
 }
 
 export function PuckProductGrid({
   title = "Nuestros productos",
   subtitle = "Descubre nuestra selección.",
+  productCount = "8",
+  productFilter = "all",
+  productSort = "default",
   columns = "4",
   imageAspect = "square",
   cardRadius = "medium",
@@ -31,11 +63,29 @@ export function PuckProductGrid({
   titleColor = "#111827",
   textColor = "#6b7280",
   priceColor = "#111827",
-  buttonText = "Añadir al carrito",
-  buttonColor = "#111827",
-  buttonTextColor = "#ffffff",
 }: PuckProductGridProps) {
   const { products, basePath } = usePuckProducts();
+
+  const filteredProducts = products.filter((product) => {
+    if (productFilter === "available") return product.purchasable !== false;
+    if (productFilter === "sale") return isSaleProduct(product);
+    return true;
+  });
+
+  const sortedProducts = [...filteredProducts].sort((a, b) => {
+    if (productSort === "name-asc") {
+      return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    }
+    if (productSort === "price-asc") {
+      return parseDisplayPrice(a.price?.display_amount) - parseDisplayPrice(b.price?.display_amount);
+    }
+    if (productSort === "price-desc") {
+      return parseDisplayPrice(b.price?.display_amount) - parseDisplayPrice(a.price?.display_amount);
+    }
+    return 0;
+  });
+
+  const visibleProducts = sortedProducts.slice(0, Number(productCount));
 
   const gridClass =
     columns === "2"
@@ -73,7 +123,6 @@ export function PuckProductGrid({
                 {title}
               </h2>
             )}
-
             {subtitle && (
               <p
                 className="mx-auto mt-4 max-w-2xl text-lg"
@@ -85,21 +134,19 @@ export function PuckProductGrid({
           </div>
         )}
 
-        {products.length === 0 ? (
+        {visibleProducts.length === 0 ? (
           <div className="py-12 text-center">
-            <p style={{ color: textColor }}>No hay productos disponibles.</p>
+            <p style={{ color: textColor }}>No hay productos para esta selección.</p>
           </div>
         ) : (
           <div className={`grid gap-6 ${gridClass}`}>
-            {products.map((product) => {
+            {visibleProducts.map((product) => {
               const price = product.price?.display_amount ?? "";
-
               const comparePrice =
                 product.original_price?.display_amount &&
                 product.original_price.display_amount !== price
                   ? product.original_price.display_amount
                   : "";
-
               const productUrl = product.slug
                 ? `${basePath}/products/${product.slug}`
                 : `${basePath}/products`;
@@ -109,9 +156,7 @@ export function PuckProductGrid({
                   key={product.id}
                   name={product.name}
                   description=""
-                  image={
-                    product.thumbnail_url || "https://placehold.co/800x800"
-                  }
+                  image={product.thumbnail_url || "https://placehold.co/800x800"}
                   price={price}
                   comparePrice={comparePrice}
                   url={productUrl}
