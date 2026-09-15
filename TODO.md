@@ -12,6 +12,7 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [ ] Configurar correctamente los métodos de pago por región/Market desde Spree, evitando mapas de países hardcodeados en Next.js.
 - [ ] Terminar la integración de Stripe de forma real con el checkout de Spree. La ruta `/api/create-checkout-session` actual es un endpoint mínimo separado, con placeholders de Price ID, y no debe considerarse una integración terminada.
 - [ ] Decidir y documentar la estrategia definitiva de Stripe: mantener Payment Sessions/provider de Spree o conectar Checkout Sessions a los artículos/variantes reales del carrito de Spree.
+- [ ] Validar en Vercel el SEO técnico añadido: canonical, hreflang y rutas por idioma/Market.
 
 ## Idiomas y traducciones
 
@@ -38,7 +39,10 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [ ] Mantener Puck como capa editorial y Spree como fuente de verdad del catálogo.
 - [ ] No reintroducir Carousel, FeaturedProductsHome, ProductShowcase, Cart ni Sidebar como componentes dedicados salvo petición explícita.
 - [ ] Mantener el menú móvil mostrando categorías/subcategorías reales de Spree.
-- [ ] Revisar SEO/hreflang para ES/EN/PT/FR una vez validadas las rutas.
+- [x] Implementada base de canonical y `hreflang` dinámicos según el Market y sus idiomas soportados.
+- [ ] Revisar SEO/hreflang para ES/EN/PT/FR en una Preview real.
+- [ ] Revisar datos estructurados de productos/variantes y cobertura de Merchant Listings.
+- [ ] Configurar y revisar presencia en Google Business Profile/Maps cuando la marca, dominio y datos de contacto estén definitivos.
 
 ## Historial reciente / comprobaciones
 
@@ -71,6 +75,15 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [x] Añadidos `pt` y traducciones PT-PT en `puck_editor`.
 - [ ] Verificar comportamiento real de `/es/pt` cuando exista un Preview nuevo.
 - [ ] Revisar que el selector Región e idioma muestre únicamente idiomas habilitados por el Market.
+
+### SEO
+- [x] Auditado el estado existente de `sitemap.ts`, `robots.ts`, metadata y JSON-LD.
+- [x] Confirmado que el sitemap ya incluye URLs de productos y categorías por Market/idioma.
+- [x] Confirmado que `robots.ts` enlaza los sitemaps generados dinámicamente.
+- [x] Añadidos canonical y `hreflang` dinámicos al metadata del storefront según los idiomas soportados por el Market.
+- [ ] Validar en Preview real que los `link rel="canonical"` y `link rel="alternate"` apuntan a URLs válidas.
+- [ ] Validar JSON-LD de Product en páginas de producto con datos reales de Spree.
+- [ ] Añadir/validar Google Search Console y envío del sitemap cuando el dominio definitivo esté activo.
 
 ## Regla de mantenimiento
 
