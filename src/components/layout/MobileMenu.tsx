@@ -32,7 +32,7 @@ export function MobileMenu({ rootCategories, basePath, wholesaleEnabled }: Mobil
           <ChevronRight className="size-4 shrink-0 text-gray-400 transition-transform group-open:rotate-90" />
         </summary>
         <div className="mt-0.5 flex flex-col gap-0.5 border-l border-gray-200 pl-1">
-          <Link href={`${basePath}/c/${category.permalink}`} onClick={close} className={linkClass} style={{ paddingLeft: `${24 + level * 12}px` }}>Ver todo en {category.name}</Link>
+          {category.permalink !== "tcg" && <Link href={`${basePath}/c/${category.permalink}`} onClick={close} className={linkClass} style={{ paddingLeft: `${24 + level * 12}px` }}>Ver todo en {category.name}</Link>}
           {renderCategoryLinks(category.children ?? [], level + 1)}
         </div>
       </details>
