@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ProductListing } from "@/components/products/ProductListing";
+import { CategoryPuckRenderer } from "@/components/puck/CategoryPuckRenderer";
 import { JsonLd } from "@/components/seo/JsonLd";
 import { getCategory, getCategoryProducts } from "@/lib/data/categories";
 import { resolveCurrency } from "@/lib/data/markets";
+import { getCategoryPageData } from "@/lib/puck/get-category-data";
 import { getProductFilters } from "@/lib/data/products";
 import { generateCategoryMetadata } from "@/lib/metadata/category";
 import { buildBreadcrumbJsonLd } from "@/lib/seo";
@@ -53,12 +55,26 @@ export default async function CategoryPage({
   const storeUrl = getStoreUrl();
   const currency = await resolveCurrency(country);
   const listingState = parseListingSearchParams(rawSearchParams);
-
-  // Pre-bind categoryId onto the server action so the client-side
-  // InfiniteProductList island gets a single-arg (params) fetcher it can
-  // call directly. Inline arrow closures don't serialize across the
-  // server→client boundary; `.bind()` on a server action reference does.
   const fetchCategoryProducts = getCategoryProducts.bind(null, category.id);
+  const fallbackData = {
+    content: [
+      {
+        type: "CategoryHero" as const,
+        props: {
+          id: "category-hero",
+          title: category.name,
+          description: category.description ?? "",
+          backgroundImage: category.image_url ?? "",
+          backgroundColor: "#f9fafb",
+          titleColor: "#111827",
+          textColor: "#4b5563",
+          minHeight: "medium" as const,
+        },
+      },
+    ],
+    root: {},
+  };
+  const data = await getCategoryPageData(fullPermalink, fallbackData);
 
   return (
     <div>
@@ -66,9 +82,10 @@ export default async function CategoryPage({
         <JsonLd data={buildBreadcrumbJsonLd(category, basePath, storeUrl)} />
       )}
 
+      <CategoryPuckRenderer data={data} />
       <CategoryBanner category={category} basePath={basePath} locale={locale} />
 
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 pt-4">
+      <div className="container mx-auto px-4 pt-4 sm:px-6 lg:px-8">
         <ProductListing
           state={listingState}
           basePath={basePath}
