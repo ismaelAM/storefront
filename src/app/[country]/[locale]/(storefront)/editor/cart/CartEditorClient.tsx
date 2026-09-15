@@ -1,10 +1,11 @@
 "use client";
 
 import { Puck } from "@puckeditor/core";
-import { siteConfig } from "@/puck/site-config";
+import type { Data } from "@puckeditor/core";
 import { saveSitePageData } from "@/lib/puck/save-site-page-data";
+import { siteConfig } from "@/puck/site-config";
 
-export function CartEditorClient({ initialData }: { initialData: Parameters<typeof Puck>[0]["data"] }) {
+export function CartEditorClient({ initialData }: { initialData: Data }) {
   return (
     <Puck
       config={siteConfig}
