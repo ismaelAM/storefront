@@ -13,14 +13,20 @@ interface Props {
   searchParams: Promise<{ category?: string }>;
 }
 
-type CategoryLike = Pick<Category, "id" | "name" | "permalink">;
+type CategoryLike = Category & { children?: CategoryLike[] };
 
-function flattenCategories(categories: Category[], output: CategoryLike[] = []) {
+function flattenCategories(categories: Category[], output: CategoryLike[] = [], depth = 0) {
   for (const category of categories) {
-    output.push(category);
-    if (category.children?.length) flattenCategories(category.children, output);
+    const item = { ...category, children: category.children?.map((child) => child) } as CategoryLike;
+    (item as CategoryLike & { editorDepth?: number }).editorDepth = depth;
+    output.push(item);
+    if (category.children?.length) flattenCategories(category.children, output, depth + 1);
   }
   return output;
+}
+
+function collectCategoryIds(category: CategoryLike): string[] {
+  return [category.id, ...(category.children ?? []).flatMap(collectCategoryIds)];
 }
 
 function fallbackData(): Data {
@@ -61,9 +67,9 @@ export default async function ProductsEditorPage({ params, searchParams }: Props
     getProducts({ limit: 50, fields: PRODUCT_CARD_FIELDS }, "dtc"),
   ]);
 
-  const categories = flattenCategories(categoriesResponse.data ?? []);
-  const selectedCategory =
-    categories.find((category) => category.permalink === requestedCategory) ?? categories[0];
+  const rootCategories = (categoriesResponse.data ?? []) as CategoryLike[];
+  const categories = flattenCategories(rootCategories);
+  const selectedCategory = categories.find((category) => category.permalink === requestedCategory) ?? categories[0];
 
   if (!selectedCategory) {
     return (
@@ -76,9 +82,11 @@ export default async function ProductsEditorPage({ params, searchParams }: Props
     );
   }
 
+  const selectedCategoryIds = new Set(collectCategoryIds(selectedCategory));
   const products = (productsResponse.data ?? []).filter((product) =>
-    (product.categories ?? []).some((productCategory) => productCategory.id === selectedCategory.id),
+    (product.categories ?? []).some((productCategory) => selectedCategoryIds.has(productCategory.id)),
   );
+
   const pageId = `products:${selectedCategory.permalink}`;
   const initialData = await getSitePageData(pageId, fallbackData());
 
@@ -86,34 +94,28 @@ export default async function ProductsEditorPage({ params, searchParams }: Props
     <div className="flex h-screen flex-col overflow-hidden">
       <EditorSectionNav basePath={basePath} />
       <div className="flex shrink-0 items-center gap-3 border-b bg-gray-50 px-4 py-3">
+        <label htmlFor="products-category" className="text-sm font-medium text-gray-700">Categoría</label>
         <form method="get" className="flex items-center gap-3">
-          <label htmlFor="products-category" className="text-sm font-medium text-gray-700">
-            Categoría
-          </label>
           <select
             id="products-category"
             name="category"
             defaultValue={selectedCategory.permalink}
-            className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm"
+            className="min-w-72 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm"
           >
-            {categories.map((category) => (
-              <option key={category.id} value={category.permalink}>
-                {category.name}
-              </option>
-            ))}
+            {categories.map((category) => {
+              const depth = (category as CategoryLike & { editorDepth?: number }).editorDepth ?? 0;
+              return (
+                <option key={category.id} value={category.permalink}>
+                  {`${"— ".repeat(depth)}${category.name}`}
+                </option>
+              );
+            })}
           </select>
-          <button type="submit" className="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white">
-            Editar
-          </button>
+          <button type="submit" className="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white">Abrir</button>
         </form>
-        <span className="text-sm text-gray-500">Solo presentación visual: colores, columnas, proporción, bordes y filtros.</span>
+        <span className="text-sm text-gray-500">Solo presentación visual de la cuadrícula de productos.</span>
       </div>
-      <ProductsEditorClient
-        products={products as Product[]}
-        basePath={basePath}
-        pageId={pageId}
-        initialData={initialData}
-      />
+      <ProductsEditorClient products={products as Product[]} basePath={basePath} pageId={pageId} initialData={initialData} />
     </div>
   );
 }
