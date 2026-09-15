@@ -1,4 +1,5 @@
 import type { Data } from "@puckeditor/core";
+import { connection } from "next/server";
 import { getSitePageData } from "@/lib/puck/get-site-page-data";
 import CartClient, { type CartVisualConfig } from "./CartClient";
 
@@ -8,6 +9,7 @@ const fallbackData: Data = {
 };
 
 export default async function CartPage() {
+  await connection();
   const data = await getSitePageData("cart", fallbackData);
   const props = data.content.find((item) => item.type === "CartChrome")?.props as Partial<CartVisualConfig> | undefined;
 
