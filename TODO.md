@@ -6,14 +6,14 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 
 ## Prioridad alta
 
-- [ ] Verificar un nuevo deployment Preview de Vercel cuando se levante el bloqueo de builds del plan Hobby. No crear deployments innecesarios mientras siga activo `upgradeToPro=build-rate-limit`.
+- [ ] Verificar el nuevo Preview de Vercel tras los últimos cambios de UI/navegación y apariencia.
 - [ ] Verificar la conexión real del storefront con Spree en Vercel: `SPREE_API_URL` + `SPREE_PUBLISHABLE_KEY`, sin exponer claves.
 - [ ] Hospedar Spree en producción fuera del Sandbox y dejar configurados sus mercados, catálogo, stock, pagos, impuestos y envíos.
 - [ ] Configurar correctamente los métodos de pago por región/Market desde Spree, evitando mapas de países hardcodeados en Next.js.
 - [ ] Terminar la integración de Stripe de forma real con el checkout de Spree. La ruta `/api/create-checkout-session` actual es un endpoint mínimo separado, con placeholders de Price ID, y no debe considerarse una integración terminada.
 - [ ] Decidir y documentar la estrategia definitiva de Stripe: mantener Payment Sessions/provider de Spree o conectar Checkout Sessions a los artículos/variantes reales del carrito de Spree.
 - [ ] Validar en Vercel el SEO técnico añadido: canonical, hreflang, JSON-LD y rutas por idioma/Market.
-- [ ] Configurar y probar el método de envío propio para Madrid en Spree.
+- [ ] Corregir y probar la configuración del método de envío propio para Madrid en Spree.
 
 ## UPS
 
@@ -34,13 +34,15 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [x] Francés (`fr`) ya existía en el frontend y se añadió como idioma soportado en Spree.
 - [x] Portugués (`pt`) añadido al registro de idiomas del frontend.
 - [x] Traducciones de interfaz de `pt` añadidas en portugués de Portugal.
-- [ ] Comprobar `/es/pt` en un Preview de Vercel cuando haya builds disponibles.
+- [ ] Comprobar `/es/pt` en el Preview actual.
+- [ ] Confirmar si `fr` y `pt` están realmente disponibles en el Market/runtime; en el Preview actual el selector de header/footer solo muestra `EN` y `ES`.
 - [ ] Traducir en Spree nombres, descripciones y categorías de productos a `en`, `pt` y `fr`.
 - [ ] Revisar traducciones del catálogo completo y mantener terminología consistente en ES/EN/PT/FR.
 - [ ] Confirmar en Spree qué locales están realmente habilitados por cada Market antes de activar nuevos países.
 
 ## Catálogo y Spree
 
+- [x] En la revisión manual del Preview, el catálogo se ve correcto.
 - [ ] Confirmar que los productos que aparecen en la web proceden directamente del catálogo de Spree y que no existe un catálogo manual paralelo.
 - [ ] Confirmar sincronización/lectura en tiempo real desde Spree para productos, categorías, variantes, precios e inventario.
 - [ ] Configurar correctamente Markets de Europa en la futura instancia de producción de Spree.
@@ -52,6 +54,7 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [ ] Crear método `Entrega local BisonTCG — Madrid` con código `BISON_LOCAL_MADRID`.
 - [ ] Asociar el método a la Shipping Category física correspondiente.
 - [ ] Definir tarifa fija y tiempo estimado de entrega.
+- [ ] **Bug confirmado:** el método/opción de Madrid aparece también para una dirección de Lugo. El código del storefront no contiene lógica de ciudad Madrid; la corrección debe hacerse en la Zone/método de envío de Spree, no hardcodeando provincias en Next.js.
 - [ ] Probar que Madrid ofrece el método local y que fuera de Madrid no aparece.
 - [ ] Confirmar que el pedido genera correctamente su Shipment en Spree.
 - [ ] Mostrar al cliente el estado del Shipment mediante los datos nativos de Spree.
@@ -59,12 +62,18 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 
 ## Storefront / UI
 
-- [ ] Revisar selectores y filtros del ProductGrid de Puck, especialmente filtro por categoría/variante y colores, que todavía no se han verificado completamente.
+- [x] Puck comprobado manualmente en el Preview actual y funciona correctamente.
+- [x] Eliminada la pestaña/pantalla dedicada de edición de Productos.
+- [x] Eliminadas las rutas de edición por producto individual para evitar gestionar el display producto a producto.
+- [x] Añadida opción global `Color principal` dentro de Apariencia.
+- [x] El `Color principal` se aplica como variable global `--primary` al storefront.
+- [x] Corregido el fallback de navegación para que una configuración editorial antigua/vacía no oculte las categorías reales de Spree.
+- [ ] Verificar en el nuevo Preview que el desplegable/menú de productos muestra categorías y subcategorías reales de Spree.
 - [ ] Mantener Puck como capa editorial y Spree como fuente de verdad del catálogo.
 - [ ] No reintroducir Carousel, FeaturedProductsHome, ProductShowcase, Cart ni Sidebar como componentes dedicados salvo petición explícita.
 - [ ] Mantener el menú móvil mostrando categorías/subcategorías reales de Spree.
 - [x] Implementada base de canonical y `hreflang` dinámicos según el Market y sus idiomas soportados.
-- [ ] Revisar SEO/hreflang para ES/EN/PT/FR en una Preview real.
+- [ ] Revisar SEO/hreflang para ES/EN/PT/FR en un Preview real.
 - [x] Añadido JSON-LD `CollectionPage` a las páginas de categorías.
 - [ ] Revisar datos estructurados de productos/variantes y cobertura de Merchant Listings.
 - [ ] Configurar y revisar presencia en Google Business Profile/Maps solo si en el futuro tiene sentido para un negocio físico; actualmente no es prioritario para la tienda online.
@@ -89,24 +98,25 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [ ] Configurar métodos de pago de Stripe según región una vez estén definidos los Markets reales.
 
 ### Vercel
-- [x] Identificado proyecto Vercel `storefront` y rama de trabajo `puck_editor`.
-- [x] Identificados deployments READY anteriores y deployment ERROR más reciente por error de build de `RealProductShowcase`.
-- [x] Corregidos los defaults de `RealProductShowcase` para resolver el error de TypeScript de Vercel.
-- [ ] Reintentar/verificar Preview solo cuando el rate limit de Hobby permita builds.
+- [x] Vercel vuelve a construir correctamente el branch `puck_editor`; deployment actual verificado en estado `READY`.
+- [x] Preview actual usado para pruebas manuales del catálogo, idiomas y Puck.
+- [ ] Verificar nuevo deployment después de los últimos cambios de UI/navegación/apariencia.
 - [ ] No fusionar la PR temporal `#1` de `puck_editor` a `main`; es solo para verificación y no debe eliminar la regla de trabajar únicamente en `puck_editor`.
 
 ### Puck
 - [x] Restaurado/ajustado el editor Puck según las últimas decisiones del proyecto.
-- [x] Mantener Products como parte del flujo editorial sin inventar productos manualmente.
-- [ ] Revisar filtros/selectores y colores de productos en ProductGrid.
-- [ ] Seguir respetando props de `RealProductShowcase` si vuelve a editarse.
+- [x] Mantener Products como bloques reales dentro de la composición de Puck, sin editor dedicado de productos.
+- [x] Eliminado el flujo de edición de productos por separado.
+- [x] Añadido color global desde Apariencia.
+- [ ] Verificar que el color global se refleja correctamente en los elementos que usan `primary`.
 
 ### Regiones e idiomas
 - [x] Confirmado que la web ya tenía infraestructura de locales y negociación de idioma.
 - [x] Confirmado que el Market de Spain puede ofrecer `en` y que `/es/en` funciona.
 - [x] Añadidos `pt` y traducciones PT-PT en `puck_editor`.
-- [ ] Verificar comportamiento real de `/es/pt` cuando exista un Preview nuevo.
-- [ ] Revisar que el selector Región e idioma muestre únicamente idiomas habilitados por el Market.
+- [x] En Preview actual, header/footer funcionan con selector de idiomas.
+- [ ] El selector actual solo muestra `EN` y `ES`: revisar por qué `PT` y `FR` no aparecen en runtime.
+- [ ] Verificar comportamiento real de `/es/pt` y `/es/fr`.
 
 ### SEO
 - [x] Auditado el estado existente de `sitemap.ts`, `robots.ts`, metadata y JSON-LD.
@@ -122,7 +132,8 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [x] Diseñada la arquitectura de envío local Madrid con Spree como fuente de verdad.
 - [x] Documentado el método `BISON_LOCAL_MADRID` y su separación de una futura integración UPS.
 - [x] Documentado que el tracking local puede gestionarse manualmente desde Spree sin API externa.
-- [ ] Ejecutar la configuración real en el panel de Spree Sandbox.
+- [x] Confirmado manualmente en Preview que el checkout muestra métodos de envío procedentes de Spree.
+- [ ] Corregir en Spree la Zone/método para que Madrid no aparezca en Lugo.
 - [ ] Probar checkout, Shipment y estado de entrega con una dirección de Madrid.
 - [ ] Probar que una dirección fuera de Madrid no recibe la opción local.
 - [ ] Integrar UPS después de estabilizar el método local.
