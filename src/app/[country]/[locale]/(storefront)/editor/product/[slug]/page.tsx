@@ -1,4 +1,5 @@
 import type { Data } from "@puckeditor/core";
+import { connection } from "next/server";
 import { notFound } from "next/navigation";
 import { getCachedProduct, PRODUCT_PAGE_EXPAND } from "@/lib/data/cached";
 import { getProductPageData } from "@/lib/puck/get-product-data";
@@ -15,6 +16,7 @@ interface ProductEditorPageProps {
 export default async function ProductEditorPage({
   params,
 }: ProductEditorPageProps) {
+  await connection();
   const { slug } = await params;
 
   let product;
