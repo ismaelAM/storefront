@@ -11,7 +11,11 @@ interface Props {
 export default async function NavigationEditorPage({ params }: Props) {
   await connection();
   const { country, locale } = await params;
-  const response = await getCategories({ depth_eq: 0, expand: ["children.children"] }, { country, locale });
+  const basePath = `/${country}/${locale}`;
+  const response = await getCategories(
+    { depth_eq: 0, expand: ["children.children"] },
+    { country, locale },
+  );
   const categories = response.data ?? [];
   const fallbackData: Data = {
     content: [
@@ -30,5 +34,11 @@ export default async function NavigationEditorPage({ params }: Props) {
     root: {},
   };
   const initialData = await getSitePageData("navigation", fallbackData);
-  return <NavigationEditorClient categories={categories} initialData={initialData} />;
+  return (
+    <NavigationEditorClient
+      categories={categories}
+      initialData={initialData}
+      basePath={basePath}
+    />
+  );
 }
