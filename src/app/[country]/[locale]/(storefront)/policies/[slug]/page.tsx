@@ -1,5 +1,6 @@
 import type { Data } from "@puckeditor/core";
 import type { Metadata } from "next";
+import { connection } from "next/server";
 import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
 import { cachedGetPolicy, getPolicy } from "@/lib/data/policies";
@@ -41,6 +42,7 @@ export async function generateMetadata({ params }: PolicyPageProps): Promise<Met
 }
 
 export default async function PolicyPage({ params }: PolicyPageProps): Promise<React.JSX.Element> {
+  await connection();
   const { country, slug, locale } = await params;
   const [policy, t] = await Promise.all([
     getPolicy(slug, { country, locale }),
