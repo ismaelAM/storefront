@@ -5,6 +5,7 @@ import { cache, Suspense } from "react";
 import { Footer, FooterCategoryLinks } from "@/components/layout/Footer";
 import { Header, HeaderMobileMenu } from "@/components/layout/Header";
 import { getCategories } from "@/lib/data/categories";
+import { getSiteAppearance } from "@/lib/puck/get-site-appearance";
 import { getSitePageData } from "@/lib/puck/get-site-page-data";
 
 interface StorefrontLayoutProps { children: React.ReactNode; params: Promise<{ country: string; locale: string }> }
@@ -68,10 +69,14 @@ async function StorefrontFooterCategoryLinks({ basePath, country, locale }: Stor
 export default async function StorefrontLayout({ children, params }: StorefrontLayoutProps) {
   const { country, locale } = await params;
   const basePath = `/${country}/${locale}`;
-  return <>
-    <Header basePath={basePath} locale={locale as Locale} mobileNavigation={<Suspense fallback={<MobileNavigationFallback />}><StorefrontMobileNavigation basePath={basePath} country={country} locale={locale} /></Suspense>} />
-    <Suspense fallback={null}><StorefrontCategoryNavigation basePath={basePath} country={country} locale={locale} /></Suspense>
-    <main className="flex-1">{children}</main>
-    <Footer basePath={basePath} locale={locale as Locale} categoryLinks={<Suspense fallback={<FooterCategoryLinksFallback />}><StorefrontFooterCategoryLinks basePath={basePath} country={country} locale={locale} /></Suspense>} />
-  </>;
+  const appearance = await getSiteAppearance();
+
+  return (
+    <div style={{ backgroundColor: appearance.pageBackground }}>
+      <Header appearance={appearance} basePath={basePath} locale={locale as Locale} mobileNavigation={<Suspense fallback={<MobileNavigationFallback />}><StorefrontMobileNavigation basePath={basePath} country={country} locale={locale} /></Suspense>} />
+      <Suspense fallback={null}><StorefrontCategoryNavigation basePath={basePath} country={country} locale={locale} /></Suspense>
+      <main className="flex-1">{children}</main>
+      <Footer appearance={appearance} basePath={basePath} locale={locale as Locale} categoryLinks={<Suspense fallback={<FooterCategoryLinksFallback />}><StorefrontFooterCategoryLinks basePath={basePath} country={country} locale={locale} /></Suspense>} />
+    </div>
+  );
 }
