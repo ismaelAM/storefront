@@ -40,11 +40,11 @@ export function RealProductShowcase({ productPosition, description, badge, butto
     <section className={`w-full ${paddingClass}`} style={{ backgroundColor }}>
       <div className="container mx-auto grid items-center gap-8 px-4 sm:px-6 md:gap-10 lg:grid-cols-2 lg:px-8">
         <div className={imageFirst ? "" : "lg:order-2"}>
-          <div className={`relative overflow-hidden bg-gray-100 ${getPuckRadiusClass("large")}`}>
+          <div className={`relative w-full overflow-hidden bg-gray-100 ${getPuckRadiusClass("large")} ${aspectClass}`}>
             {product.thumbnail_url ? (
-              <Image src={product.thumbnail_url} alt={product.name} fill sizes="(max-width: 1023px) 100vw, 50vw" className={`object-cover ${aspectClass}`} unoptimized />
+              <Image src={product.thumbnail_url} alt={product.name} fill sizes="(max-width: 1023px) 100vw, 50vw" className="object-cover" unoptimized />
             ) : (
-              <div className={`flex w-full items-center justify-center bg-muted text-muted-foreground ${aspectClass}`}><span className="px-6 text-center text-sm">Imagen no disponible</span></div>
+              <div className="flex h-full w-full items-center justify-center bg-muted text-muted-foreground"><span className="px-6 text-center text-sm">Imagen no disponible</span></div>
             )}
             {badge && <span className="absolute left-3 top-3 rounded-full bg-black px-3 py-1.5 text-xs font-semibold text-white sm:left-5 sm:top-5 sm:px-4 sm:py-2 sm:text-sm">{badge}</span>}
           </div>

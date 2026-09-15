@@ -20,8 +20,34 @@ function FooterCategoryLinksFallback() { return <li aria-hidden="true"><span cla
 
 const getRootCategories = cache(async (country: string, locale: string) => {
   await connection();
-  return getCategories({ depth_eq: 0, expand: ["children.children"] }, { country, locale })
-    .then((res) => res.data).catch((error) => { console.error("StorefrontLayout: failed to load categories", error); return EMPTY_CATEGORIES; });
+  const filteredResponse = await getCategories(
+    { depth_eq: 0, expand: ["children.children"] },
+    { country, locale },
+  ).catch((error) => {
+    console.error("StorefrontLayout: failed to load root categories", error);
+    return null;
+  });
+
+  if (filteredResponse?.data?.length) return filteredResponse.data;
+
+  const fallbackResponse = await getCategories(
+    { expand: ["children.children"] },
+    { country, locale },
+  ).catch((error) => {
+    console.error("StorefrontLayout: failed to load categories fallback", error);
+    return null;
+  });
+
+  if (!fallbackResponse?.data?.length) return EMPTY_CATEGORIES;
+
+  const allCategories = fallbackResponse.data as Array<
+    Category & { depth?: number; parent_id?: string | null }
+  >;
+  const rootCategories = allCategories.filter(
+    (category) => category.depth === 0 || category.parent_id == null,
+  );
+
+  return rootCategories.length > 0 ? rootCategories : fallbackResponse.data;
 });
 
 function flattenCategories(categories: Category[], output: Category[] = []) {
