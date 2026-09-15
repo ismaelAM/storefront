@@ -13,11 +13,9 @@ interface ProductEditorPageProps {
   }>;
 }
 
-export default async function ProductEditorPage({
-  params,
-}: ProductEditorPageProps) {
+export default async function ProductEditorPage({ params }: ProductEditorPageProps) {
   await connection();
-  const { slug } = await params;
+  const { country, locale, slug } = await params;
 
   let product;
   try {
@@ -26,9 +24,7 @@ export default async function ProductEditorPage({
     notFound();
   }
 
-  if (!product) {
-    notFound();
-  }
+  if (!product) notFound();
 
   const fallbackData: Data = {
     content: [
@@ -59,6 +55,5 @@ export default async function ProductEditorPage({
   };
 
   const initialData = await getProductPageData(slug, fallbackData);
-
-  return <ProductEditorClient slug={slug} initialData={initialData} />;
+  return <ProductEditorClient slug={slug} initialData={initialData} basePath={`/${country}/${locale}`} />;
 }
