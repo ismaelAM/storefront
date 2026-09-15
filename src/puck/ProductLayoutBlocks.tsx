@@ -1,5 +1,7 @@
 "use client";
 
+import type { ComponentType } from "react";
+
 interface ProductLayoutProps {
   backgroundColor: string;
   width: "medium" | "large" | "full";
@@ -19,7 +21,7 @@ export function ProductLayoutBlock({
   alignment,
   padding,
   Content,
-}: ProductLayoutProps & { Content: React.ComponentType }) {
+}: ProductLayoutProps & { Content: ComponentType }) {
   const widthClass =
     width === "medium" ? "max-w-3xl" : width === "large" ? "max-w-5xl" : "max-w-none";
   const alignmentClass =
@@ -47,8 +49,8 @@ export function ProductColumnsBlock({
   Left,
   Right,
 }: ProductColumnsProps & {
-  Left: React.ComponentType;
-  Right: React.ComponentType;
+  Left: ComponentType;
+  Right: ComponentType;
 }) {
   const gapClass = gap === "small" ? "gap-4" : gap === "large" ? "gap-12" : "gap-8";
   const paddingClass =
