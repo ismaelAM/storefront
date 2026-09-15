@@ -23,6 +23,13 @@ export default async function NavigationEditorPage({ params }: Props) {
         type: "Navigation",
         props: {
           id: "navigation",
+          backgroundColor: "#ffffff",
+          textColor: "#374151",
+          hoverBackgroundColor: "#f3f4f6",
+          hoverTextColor: "#111827",
+          width: "medium",
+          itemRadius: "medium",
+          itemSpacing: "normal",
           items: categories.map((category) => ({
             categoryPermalink: category.permalink,
             labelOverride: "",
