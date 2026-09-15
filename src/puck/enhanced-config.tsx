@@ -124,9 +124,6 @@ export const enhancedConfig: Config = {
       label: "Producto destacado real",
       fields: {
         productPosition: { type: "number", label: "Producto de la lista", min: 1, max: 8 },
-        description: { type: "textarea", label: "Texto introductorio" },
-        badge: { type: "text", label: "Etiqueta" },
-        buttonText: { type: "text", label: "Texto del botón" },
         backgroundColor: colorField("Color del bloque"),
         titleColor: colorField("Color del título"),
         textColor: colorField("Color del texto"),
@@ -140,9 +137,6 @@ export const enhancedConfig: Config = {
       },
       defaultProps: {
         productPosition: 1,
-        description: "",
-        badge: "",
-        buttonText: "Ver producto",
         backgroundColor: "#f3f4f6",
         titleColor: "#111827",
         textColor: "#4b5563",
