@@ -1,10 +1,13 @@
 import type { Category } from "@spree/sdk";
+import type { Data } from "@puckeditor/core";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Breadcrumbs } from "@/components/navigation/Breadcrumbs";
+import { ProductPuckRenderer } from "@/components/puck/ProductPuckRenderer";
 import { JsonLd } from "@/components/seo/JsonLd";
 import { getCachedProduct, PRODUCT_PAGE_EXPAND } from "@/lib/data/cached";
 import { generateProductMetadata } from "@/lib/metadata/product";
+import { getProductPageData } from "@/lib/puck/get-product-data";
 import {
   buildBreadcrumbJsonLd,
   buildCanonicalUrl,
@@ -71,6 +74,12 @@ export default async function ProductPage({
     category_id,
   );
 
+  const fallbackData: Data = {
+    content: [],
+    root: {},
+  };
+  const productPageData = await getProductPageData(slug, fallbackData);
+
   return (
     <>
       {canonicalUrl && (
@@ -84,7 +93,7 @@ export default async function ProductPage({
           })}
         />
       )}
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 pt-6">
+      <div className="container mx-auto px-4 pt-6 sm:px-6 lg:px-8">
         {breadcrumbCategory && (
           <Breadcrumbs
             category={breadcrumbCategory}
@@ -94,6 +103,8 @@ export default async function ProductPage({
           />
         )}
       </div>
+
+      <ProductPuckRenderer data={productPageData} />
       <ProductDetails product={product} basePath={basePath} />
     </>
   );

@@ -12,6 +12,7 @@ const MESSAGE_LOADERS = {
   es: () => import("../../messages/es.json"),
   fr: () => import("../../messages/fr.json"),
   pl: () => import("../../messages/pl.json"),
+  pt: () => import("../../messages/pt.json"),
 } as const;
 
 export type SupportedLocale = keyof typeof MESSAGE_LOADERS;
