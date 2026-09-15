@@ -3,9 +3,7 @@
 import type { Config } from "@puckeditor/core";
 import { config as baseConfig } from "@/puck/config";
 import {
-  RealProductCarousel,
   RealProductShowcase,
-  type RealProductCarouselProps,
   type RealProductShowcaseProps,
 } from "@/puck/RealProductBlocks";
 
@@ -22,7 +20,7 @@ export const enhancedConfig: Config = {
     ...(baseConfig.categories ?? {}),
     products: {
       title: "Productos reales de Spree",
-      components: ["RealProductShowcase", "RealProductCarousel"],
+      components: ["RealProductShowcase"],
     },
   },
   components: {
@@ -39,7 +37,7 @@ export const enhancedConfig: Config = {
         description: { type: "textarea", label: "Texto introductorio" },
         badge: { type: "text", label: "Etiqueta" },
         buttonText: { type: "text", label: "Texto del botón" },
-        backgroundColor: { type: "text", label: "Color de fondo" },
+        backgroundColor: { type: "text", label: "Color del bloque" },
         titleColor: { type: "text", label: "Color del título" },
         textColor: { type: "text", label: "Color del texto" },
         priceColor: { type: "text", label: "Color del precio" },
@@ -103,60 +101,6 @@ export const enhancedConfig: Config = {
       render: (props) => (
         <RealProductShowcase
           {...(props as unknown as RealProductShowcaseProps)}
-        />
-      ),
-    },
-    RealProductCarousel: {
-      label: "Carrusel de productos reales",
-      fields: {
-        productCount: {
-          type: "number",
-          label: "Número de productos",
-          min: 1,
-          max: 8,
-        },
-        columns: {
-          type: "select",
-          label: "Columnas",
-          options: [
-            { label: "1", value: "1" },
-            { label: "2", value: "2" },
-            { label: "3", value: "3" },
-            { label: "4", value: "4" },
-          ],
-        },
-        title: { type: "text", label: "Título" },
-        subtitle: { type: "textarea", label: "Subtítulo" },
-        backgroundColor: { type: "text", label: "Color de fondo" },
-        titleColor: { type: "text", label: "Color del título" },
-        textColor: { type: "text", label: "Color del texto" },
-        priceColor: { type: "text", label: "Color del precio" },
-        cardBackgroundColor: { type: "text", label: "Color de tarjeta" },
-        alignment: {
-          type: "select",
-          label: "Alineación",
-          options: [
-            { label: "Izquierda", value: "left" },
-            { label: "Centro", value: "center" },
-            { label: "Derecha", value: "right" },
-          ],
-        },
-      },
-      defaultProps: {
-        productCount: 4,
-        columns: "4",
-        title: "Productos destacados",
-        subtitle: "Una selección de productos reales de tu catálogo.",
-        backgroundColor: "#ffffff",
-        titleColor: "#111827",
-        textColor: "#6b7280",
-        priceColor: "#111827",
-        cardBackgroundColor: "#ffffff",
-        alignment: "center",
-      } satisfies RealProductCarouselProps,
-      render: (props) => (
-        <RealProductCarousel
-          {...(props as unknown as RealProductCarouselProps)}
         />
       ),
     },
