@@ -49,6 +49,12 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [ ] Confirmar sincronización/lectura en tiempo real desde Spree para productos, categorías, variantes, precios e inventario.
 - [ ] Configurar correctamente Markets de Europa en la futura instancia de producción de Spree.
 - [ ] Definir países por Market y revisar moneda, locale, pagos, impuestos y envío por región.
+- [x] Añadida primera prueba de concepto para leer el catálogo B2B de Devir con una sesión de cliente, descubriendo productos desde categorías paginadas.
+- [x] El lector B2B de Devir extrae SKU, precio final/máximo, disponibilidad y fecha de lanzamiento sin modificar Spree.
+- [ ] Validar la prueba de concepto contra varios productos reales de Devir y juegos distintos.
+- [ ] Convertir el catálogo leído de Devir a un importador real de Spree usando SKU como clave.
+- [ ] Añadir las reglas de auto-precio BisonTCG al importador antes de escribir precios en Spree.
+- [ ] Definir proveedores múltiples y prioridad de abastecimiento cuando un producto no esté disponible en un distribuidor.
 
 ## Envíos
 
@@ -105,6 +111,7 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [x] Añadido color global desde Apariencia.
 - [x] Añadidas utilidades Puck compartidas y mejoras responsive en hero, grids, tarjetas y showcase de producto.
 - [ ] Verificar que el color global se refleja correctamente en los elementos que usan `primary`.
+- [x] Preparado lector inicial de catálogo B2B de Devir con sesión persistida fuera de Git y salida JSON local.
 
 ### Regiones e idiomas
 - [x] Confirmado que la web ya tenía infraestructura de locales y negociación de idioma.
@@ -138,9 +145,3 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 ## Regla de mantenimiento
 
 Después de cada edición relevante:
-
-1. Añadir aquí qué se cambió.
-2. Añadir cualquier comprobación nueva que quede pendiente.
-3. Mantener el estado real: no marcar como hecho algo que no haya sido verificado.
-4. Trabajar únicamente sobre `puck_editor` salvo petición explícita de usar otra rama.
-5. No afirmar que Vercel está desplegado o listo si no existe un deployment verificable en estado READY.
