@@ -1,6 +1,6 @@
 import type { Data } from "@puckeditor/core";
 import { notFound } from "next/navigation";
-import { getCategory } from "@/lib/data/categories";
+import { getCategory, getCategoryProducts } from "@/lib/data/categories";
 import { getCategoryPageData } from "@/lib/puck/get-category-data";
 import { CategoryEditorClient } from "./CategoryEditorClient";
 
@@ -15,13 +15,15 @@ interface CategoryEditorPageProps {
 export default async function CategoryEditorPage({
   params,
 }: CategoryEditorPageProps) {
-  const { permalink } = await params;
+  const { country, locale, permalink } = await params;
   const fullPermalink = permalink.join("/");
 
   const category = await getCategory(fullPermalink);
   if (!category) {
     notFound();
   }
+
+  const products = await getCategoryProducts(category.id, { limit: 8 });
 
   const fallbackData: Data = {
     content: [
@@ -48,6 +50,8 @@ export default async function CategoryEditorPage({
     <CategoryEditorClient
       permalink={fullPermalink}
       initialData={initialData}
+      products={products.data ?? []}
+      basePath={`/${country}/${locale}`}
     />
   );
 }
