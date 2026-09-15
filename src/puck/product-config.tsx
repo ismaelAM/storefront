@@ -1,7 +1,12 @@
 "use client";
 
 import type { Config } from "@puckeditor/core";
+import type { ComponentType } from "react";
 import { ProductEditorialBlock } from "@/puck/ProductEditorialBlock";
+import {
+  ProductColumnsBlock,
+  ProductLayoutBlock,
+} from "@/puck/ProductLayoutBlocks";
 
 type ProductEditorialProps = {
   title: string;
@@ -22,61 +27,153 @@ type ProductEditorialProps = {
   borderRadius: "none" | "small" | "medium" | "large";
 };
 
+type ProductSectionProps = {
+  backgroundColor: string;
+  width: "medium" | "large" | "full";
+  alignment: "left" | "center" | "right";
+  padding: "small" | "medium" | "large";
+  content: ComponentType;
+};
+
+type ProductColumnsProps = {
+  backgroundColor: string;
+  gap: "small" | "medium" | "large";
+  padding: "small" | "medium" | "large";
+  left: ComponentType;
+  right: ComponentType;
+};
+
 type ProductComponents = {
   ProductEditorial: ProductEditorialProps;
+  ProductSection: ProductSectionProps;
+  ProductColumns: ProductColumnsProps;
 };
 
 export const productConfig: Config<ProductComponents> = {
   categories: {
     content: {
       title: "Contenido del producto",
-      components: ["ProductEditorial"],
+      components: ["ProductSection", "ProductColumns", "ProductEditorial"],
     },
   },
   components: {
-    ProductEditorial: {
-      label: "Bloque de contenido",
+    ProductSection: {
+      label: "Sección de contenido",
       fields: {
-        title: {
-          type: "text",
-          label: "Título",
-        },
-        text: {
-          type: "textarea",
-          label: "Texto",
-        },
-        image: {
-          type: "text",
-          label: "Imagen (URL)",
-        },
-        buttonText: {
-          type: "text",
-          label: "Texto del botón",
-        },
-        buttonUrl: {
-          type: "text",
-          label: "URL del botón",
-        },
         backgroundColor: {
           type: "text",
           label: "Color de fondo",
         },
-        titleColor: {
-          type: "text",
-          label: "Color del título",
+        width: {
+          type: "select",
+          label: "Ancho",
+          options: [
+            { label: "Mediano", value: "medium" },
+            { label: "Grande", value: "large" },
+            { label: "Completo", value: "full" },
+          ],
         },
-        textColor: {
-          type: "text",
-          label: "Color del texto",
+        alignment: {
+          type: "select",
+          label: "Posición horizontal",
+          options: [
+            { label: "Izquierda", value: "left" },
+            { label: "Centro", value: "center" },
+            { label: "Derecha", value: "right" },
+          ],
         },
-        buttonColor: {
-          type: "text",
-          label: "Color del botón",
+        padding: {
+          type: "select",
+          label: "Espaciado",
+          options: [
+            { label: "Pequeño", value: "small" },
+            { label: "Mediano", value: "medium" },
+            { label: "Grande", value: "large" },
+          ],
         },
-        buttonTextColor: {
-          type: "text",
-          label: "Color del texto del botón",
+        content: {
+          type: "slot",
         },
+      },
+      defaultProps: {
+        backgroundColor: "#ffffff",
+        width: "large",
+        alignment: "center",
+        padding: "medium",
+        content: [],
+      },
+      render: ({ backgroundColor, width, alignment, padding, content: Content }) => (
+        <ProductLayoutBlock
+          backgroundColor={backgroundColor}
+          width={width}
+          alignment={alignment}
+          padding={padding}
+          Content={Content}
+        />
+      ),
+    },
+    ProductColumns: {
+      label: "Dos columnas",
+      fields: {
+        backgroundColor: {
+          type: "text",
+          label: "Color de fondo",
+        },
+        gap: {
+          type: "select",
+          label: "Separación",
+          options: [
+            { label: "Pequeña", value: "small" },
+            { label: "Mediana", value: "medium" },
+            { label: "Grande", value: "large" },
+          ],
+        },
+        padding: {
+          type: "select",
+          label: "Espaciado",
+          options: [
+            { label: "Pequeño", value: "small" },
+            { label: "Mediano", value: "medium" },
+            { label: "Grande", value: "large" },
+          ],
+        },
+        left: {
+          type: "slot",
+        },
+        right: {
+          type: "slot",
+        },
+      },
+      defaultProps: {
+        backgroundColor: "#ffffff",
+        gap: "medium",
+        padding: "medium",
+        left: [],
+        right: [],
+      },
+      render: ({ backgroundColor, gap, padding, left: Left, right: Right }) => (
+        <ProductColumnsBlock
+          backgroundColor={backgroundColor}
+          gap={gap}
+          padding={padding}
+          Left={Left}
+          Right={Right}
+        />
+      ),
+    },
+    ProductEditorial: {
+      label: "Bloque de contenido",
+      fields: {
+        title: { type: "text", label: "Título" },
+        text: { type: "textarea", label: "Texto" },
+        image: { type: "text", label: "Imagen (URL)" },
+        buttonText: { type: "text", label: "Texto del botón" },
+        buttonUrl: { type: "text", label: "URL del botón" },
+        backgroundColor: { type: "text", label: "Color de fondo" },
+        titleColor: { type: "text", label: "Color del título" },
+        textColor: { type: "text", label: "Color del texto" },
+        buttonColor: { type: "text", label: "Color del botón" },
+        buttonTextColor: { type: "text", label: "Color del texto del botón" },
         alignment: {
           type: "select",
           label: "Alineación",
