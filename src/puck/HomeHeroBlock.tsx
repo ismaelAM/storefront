@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { usePuckProducts } from "@/components/puck/PuckProductsContext";
+import { isExternalPuckUrl, resolvePuckUrl } from "@/puck/utils";
 
 interface HomeHeroBlockProps {
   title: string;
@@ -14,7 +16,7 @@ interface HomeHeroBlockProps {
   titleColor: string;
   textColor: string;
   backgroundColor: string;
-  basePath: string;
+  basePath?: string;
 }
 
 export function HomeHeroBlock({
@@ -29,39 +31,42 @@ export function HomeHeroBlock({
   titleColor,
   textColor,
   backgroundColor,
-  basePath,
 }: HomeHeroBlockProps) {
-  const resolveUrl = (url: string) =>
-    url.startsWith("/") && !url.startsWith(basePath)
-      ? `${basePath}${url}`
-      : url;
+  const { basePath } = usePuckProducts();
+  const primaryUrl = resolvePuckUrl(primaryButtonUrl, basePath);
+  const secondaryUrl = resolvePuckUrl(secondaryButtonUrl, basePath);
+  const tertiaryUrl = resolvePuckUrl(tertiaryButtonUrl, basePath);
 
   return (
     <section
-      className="flex min-h-[823px] items-center border-b border-gray-200 md:min-h-0"
+      className="flex min-h-[560px] items-center border-b border-gray-200 sm:min-h-[620px] md:min-h-[680px] lg:min-h-[720px]"
       style={{ backgroundColor }}
     >
-      <div className="container mx-auto px-4 py-12 sm:px-6 md:py-24 lg:px-8">
-        <div className="text-center">
-          <h1
-            className="text-4xl font-bold tracking-tight md:text-5xl"
-            style={{ color: titleColor }}
-          >
-            {title}
-          </h1>
+      <div className="container mx-auto px-4 py-10 sm:px-6 sm:py-16 lg:px-8 lg:py-24">
+        <div className="mx-auto max-w-4xl text-center">
+          {title && (
+            <h1
+              className="text-3xl font-bold leading-tight tracking-tight sm:text-4xl md:text-5xl lg:text-6xl"
+              style={{ color: titleColor }}
+            >
+              {title}
+            </h1>
+          )}
 
-          <p
-            className="mx-auto mt-4 max-w-2xl text-lg"
-            style={{ color: textColor }}
-          >
-            {text}
-          </p>
+          {text && (
+            <p
+              className="mx-auto mt-4 max-w-2xl text-base leading-7 sm:mt-5 sm:text-lg md:text-xl md:leading-8"
+              style={{ color: textColor }}
+            >
+              {text}
+            </p>
+          )}
 
-          <div className="mt-8 flex flex-wrap justify-center gap-4">
+          <div className="mt-7 flex flex-col items-stretch justify-center gap-3 sm:mt-8 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
             {primaryButtonText && (
               <Link
-                href={resolveUrl(primaryButtonUrl)}
-                className="inline-flex items-center rounded-md bg-black px-6 py-3 text-lg font-semibold text-white transition-opacity hover:opacity-80"
+                href={primaryUrl}
+                className="inline-flex w-full items-center justify-center rounded-md bg-primary px-6 py-3 text-base font-semibold text-primary-foreground shadow-sm transition-opacity hover:opacity-80 sm:w-auto sm:text-lg"
               >
                 {primaryButtonText}
               </Link>
@@ -69,10 +74,10 @@ export function HomeHeroBlock({
 
             {secondaryButtonText && (
               <Link
-                href={secondaryButtonUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center rounded-md border border-gray-300 bg-white px-6 py-3 text-lg font-semibold text-gray-900 transition-opacity hover:opacity-80"
+                href={secondaryUrl}
+                target={isExternalPuckUrl(secondaryButtonUrl) ? "_blank" : undefined}
+                rel={isExternalPuckUrl(secondaryButtonUrl) ? "noopener noreferrer" : undefined}
+                className="inline-flex w-full items-center justify-center rounded-md border border-gray-300 bg-white px-6 py-3 text-base font-semibold text-gray-900 transition-opacity hover:opacity-80 sm:w-auto sm:text-lg"
               >
                 {secondaryButtonText}
               </Link>
@@ -80,10 +85,10 @@ export function HomeHeroBlock({
 
             {tertiaryButtonText && (
               <Link
-                href={tertiaryButtonUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center rounded-md border border-gray-300 bg-white px-6 py-3 text-lg font-semibold text-gray-900 transition-opacity hover:opacity-80"
+                href={tertiaryUrl}
+                target={isExternalPuckUrl(tertiaryButtonUrl) ? "_blank" : undefined}
+                rel={isExternalPuckUrl(tertiaryButtonUrl) ? "noopener noreferrer" : undefined}
+                className="inline-flex w-full items-center justify-center rounded-md border border-gray-300 bg-white px-6 py-3 text-base font-semibold text-gray-900 transition-opacity hover:opacity-80 sm:w-auto sm:text-lg"
               >
                 {tertiaryButtonText} →
               </Link>

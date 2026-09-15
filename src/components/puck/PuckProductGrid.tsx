@@ -2,6 +2,11 @@
 
 import { ProductCard } from "@/components/puck/ProductCard";
 import { usePuckProducts } from "@/components/puck/PuckProductsContext";
+import {
+  getPuckAspectClass,
+  getPuckGridColumnsClass,
+  getPuckRadiusClass,
+} from "@/puck/utils";
 
 export type ProductGridFilter = "all" | "available" | "sale";
 
@@ -19,6 +24,7 @@ export interface PuckProductGridProps {
   titleColor?: string;
   textColor?: string;
   priceColor?: string;
+  /** Kept for backwards-compatible saved Puck data; the provider is authoritative. */
   basePath?: string;
 }
 
@@ -26,37 +32,45 @@ type VariantOptionValue = {
   name?: string;
   option_type?: { name?: string };
 };
+
 type ProductWithVariantOptions = Omit<ReturnType<typeof usePuckProducts>["products"][number], "option_values"> & {
   option_values?: VariantOptionValue[];
 };
 
 function parseDisplayPrice(value: string | null | undefined): number {
   if (!value) return Number.POSITIVE_INFINITY;
+
   const cleaned = value.replace(/[^\d,.-]/g, "");
   const lastComma = cleaned.lastIndexOf(",");
   const lastDot = cleaned.lastIndexOf(".");
+
   if (lastComma >= 0 && lastDot >= 0) {
     return lastComma > lastDot
       ? Number(cleaned.replace(/\./g, "").replace(",", "."))
       : Number(cleaned.replace(/,/g, ""));
   }
-  if (lastComma >= 0) return Number(cleaned.replace(/\./g, "").replace(",", "."));
+
+  if (lastComma >= 0) {
+    return Number(cleaned.replace(/\./g, "").replace(",", "."));
+  }
+
   return Number(cleaned);
 }
 
-function isSaleProduct(product: ProductWithVariantOptions) {
+function isSaleProduct(product: ProductWithVariantOptions): boolean {
   const price = parseDisplayPrice(product.price?.display_amount);
   const originalPrice = parseDisplayPrice(product.original_price?.display_amount);
   return Number.isFinite(price) && Number.isFinite(originalPrice) && originalPrice > price;
 }
 
-function matchesVariant(product: ProductWithVariantOptions, query: string) {
-  if (!query.trim()) return true;
+function matchesVariant(product: ProductWithVariantOptions, query: string): boolean {
   const normalizedQuery = query.trim().toLocaleLowerCase();
+  if (!normalizedQuery) return true;
+
   return (product.option_values ?? []).some((option) =>
     [option.name, option.option_type?.name]
-      .filter(Boolean)
-      .some((value) => value?.toLocaleLowerCase().includes(normalizedQuery)),
+      .filter((value): value is string => Boolean(value))
+      .some((value) => value.toLocaleLowerCase().includes(normalizedQuery)),
   );
 }
 
@@ -74,10 +88,8 @@ export function PuckProductGrid({
   titleColor = "#111827",
   textColor = "#6b7280",
   priceColor = "#111827",
-  basePath: basePathProp,
 }: PuckProductGridProps) {
-  const { products, basePath: contextBasePath } = usePuckProducts();
-  const basePath = basePathProp ?? contextBasePath;
+  const { products, basePath } = usePuckProducts();
 
   const filteredProducts = (products as ProductWithVariantOptions[]).filter((product) => {
     if (productFilter === "available" && product.purchasable === false) return false;
@@ -86,35 +98,58 @@ export function PuckProductGrid({
   });
 
   const visibleProducts = filteredProducts.slice(0, Number(productCount));
-
-  const gridClass = columns === "2" ? "grid-cols-1 sm:grid-cols-2" : columns === "3" ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3" : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4";
-  const aspectClass = imageAspect === "4/3" ? "aspect-[4/3]" : imageAspect === "16/9" ? "aspect-video" : "aspect-square";
-  const radiusClass = cardRadius === "none" ? "rounded-none" : cardRadius === "small" ? "rounded-sm" : cardRadius === "large" ? "rounded-2xl" : "rounded-lg";
+  const gridClass = getPuckGridColumnsClass(columns);
+  const aspectClass = getPuckAspectClass(imageAspect);
+  const radiusClass = getPuckRadiusClass(cardRadius);
 
   return (
-    <section className="py-16" style={{ backgroundColor }}>
-      <div className="container mx-auto px-4">
+    <section className="py-10 sm:py-14 lg:py-16" style={{ backgroundColor }}>
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         {(title || subtitle) && (
-          <div className="mb-10 text-center">
-            {title && <h2 className="text-3xl font-bold md:text-4xl" style={{ color: titleColor }}>{title}</h2>}
-            {subtitle && <p className="mx-auto mt-4 max-w-2xl text-lg" style={{ color: textColor }}>{subtitle}</p>}
+          <div className="mx-auto mb-8 max-w-3xl text-center sm:mb-10">
+            {title && (
+              <h2
+                className="text-2xl font-bold tracking-tight sm:text-3xl md:text-4xl"
+                style={{ color: titleColor }}
+              >
+                {title}
+              </h2>
+            )}
+            {subtitle && (
+              <p
+                className="mx-auto mt-3 max-w-2xl text-sm leading-6 sm:mt-4 sm:text-base md:text-lg"
+                style={{ color: textColor }}
+              >
+                {subtitle}
+              </p>
+            )}
           </div>
         )}
 
         {visibleProducts.length === 0 ? (
-          <div className="py-12 text-center"><p style={{ color: textColor }}>No hay productos para esta selección.</p></div>
+          <div className="py-10 text-center sm:py-12">
+            <p className="text-sm sm:text-base" style={{ color: textColor }}>
+              No hay productos para esta selección.
+            </p>
+          </div>
         ) : (
-          <div className={`grid gap-6 ${gridClass}`}>
+          <div className={`grid gap-3 sm:gap-5 lg:gap-6 ${gridClass}`}>
             {visibleProducts.map((product) => {
               const price = product.price?.display_amount ?? "";
-              const comparePrice = product.original_price?.display_amount && product.original_price.display_amount !== price ? product.original_price.display_amount : "";
-              const productUrl = product.slug ? `${basePath}/products/${product.slug}` : `${basePath}/products`;
+              const comparePrice =
+                product.original_price?.display_amount &&
+                product.original_price.display_amount !== price
+                  ? product.original_price.display_amount
+                  : "";
+              const productUrl = product.slug
+                ? `${basePath}/products/${product.slug}`
+                : `${basePath}/products`;
+
               return (
                 <ProductCard
                   key={product.id}
                   name={product.name}
-                  description=""
-                  image={product.thumbnail_url || "https://placehold.co/800x800"}
+                  image={product.thumbnail_url || ""}
                   price={price}
                   comparePrice={comparePrice}
                   url={productUrl}

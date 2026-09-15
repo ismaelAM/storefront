@@ -70,6 +70,7 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [x] Añadida opción global `Color principal` dentro de Apariencia.
 - [x] El `Color principal` se aplica como variable global `--primary` al storefront.
 - [x] Corregido el fallback de navegación para que una configuración editorial antigua/vacía no oculte las categorías reales de Spree.
+- [x] Refactorizadas utilidades compartidas de Puck para enlaces, grids, proporciones y radios; mejorados hero, tarjetas y bloques de producto para móvil.
 - [ ] Verificar en el nuevo Preview que el desplegable/menú de productos muestra categorías y subcategorías reales de Spree.
 - [ ] Mantener Puck como capa editorial y Spree como fuente de verdad del catálogo.
 - [ ] No reintroducir Carousel, FeaturedProductsHome, ProductShowcase, Cart ni Sidebar como componentes dedicados salvo petición explícita.
@@ -102,6 +103,7 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [x] Mantener Products como bloques reales dentro de la composición de Puck, sin editor dedicado de productos.
 - [x] Eliminado el flujo de edición de productos por separado.
 - [x] Añadido color global desde Apariencia.
+- [x] Añadidas utilidades Puck compartidas y mejoras responsive en hero, grids, tarjetas y showcase de producto.
 - [ ] Verificar que el color global se refleja correctamente en los elementos que usan `primary`.
 
 ### Regiones e idiomas
