@@ -9,9 +9,17 @@ export type NavigationItem = {
   visible: boolean;
 };
 
-type NavigationProps = {
-  items: NavigationItem[];
+export type NavigationAppearance = {
+  backgroundColor: string;
+  textColor: string;
+  hoverBackgroundColor: string;
+  hoverTextColor: string;
+  width: "small" | "medium" | "large";
+  itemRadius: "none" | "small" | "medium" | "large";
+  itemSpacing: "compact" | "normal" | "large";
 };
+
+type NavigationProps = NavigationAppearance & { items: NavigationItem[] };
 
 function flattenCategories(categories: Category[], output: Category[] = []) {
   for (const category of categories) {
@@ -22,25 +30,50 @@ function flattenCategories(categories: Category[], output: Category[] = []) {
 }
 
 export function createNavigationConfig(categories: Category[]): Config<{ Navigation: NavigationProps }> {
-  const options = flattenCategories(categories).map((category) => ({
-    label: category.name,
-    value: category.permalink,
-  }));
+  const options = flattenCategories(categories).map((category) => ({ label: category.name, value: category.permalink }));
 
   return {
-    categories: { content: { title: "Tienda", components: ["Navigation"] } },
+    categories: { content: { title: "Barra lateral", components: ["Navigation"] } },
     components: {
       Navigation: {
-        label: "Navegación de categorías",
+        label: "Barra lateral",
         fields: {
+          backgroundColor: { type: "text", label: "Fondo" },
+          textColor: { type: "text", label: "Texto" },
+          hoverBackgroundColor: { type: "text", label: "Fondo al pasar" },
+          hoverTextColor: { type: "text", label: "Texto al pasar" },
+          width: {
+            type: "select",
+            label: "Ancho",
+            options: [
+              { label: "Pequeña", value: "small" },
+              { label: "Mediana", value: "medium" },
+              { label: "Grande", value: "large" },
+            ],
+          },
+          itemRadius: {
+            type: "select",
+            label: "Redondeado de enlaces",
+            options: [
+              { label: "Ninguno", value: "none" },
+              { label: "Pequeño", value: "small" },
+              { label: "Medio", value: "medium" },
+              { label: "Grande", value: "large" },
+            ],
+          },
+          itemSpacing: {
+            type: "select",
+            label: "Espaciado",
+            options: [
+              { label: "Compacto", value: "compact" },
+              { label: "Normal", value: "normal" },
+              { label: "Amplio", value: "large" },
+            ],
+          },
           items: {
             type: "array",
             arrayFields: {
-              categoryPermalink: {
-                type: "select",
-                label: "Categoría",
-                options,
-              },
+              categoryPermalink: { type: "select", label: "Categoría", options },
               labelOverride: { type: "text", label: "Nombre mostrado (opcional)" },
               visible: { type: "radio", label: "Visible", options: [{ label: "Sí", value: true }, { label: "No", value: false }] },
             },
@@ -49,21 +82,31 @@ export function createNavigationConfig(categories: Category[]): Config<{ Navigat
           },
         },
         defaultProps: {
+          backgroundColor: "#ffffff",
+          textColor: "#374151",
+          hoverBackgroundColor: "#f3f4f6",
+          hoverTextColor: "#111827",
+          width: "medium",
+          itemRadius: "medium",
+          itemSpacing: "normal",
           items: categories.map((category) => ({ categoryPermalink: category.permalink, labelOverride: "", visible: true })),
         },
-        render: ({ items }) => (
-          <nav className="rounded-xl border bg-white p-6">
-            <h2 className="text-lg font-semibold">Navegación</h2>
-            <p className="mt-1 text-sm text-gray-500">Arrastra para ordenar. Las categorías siguen siendo las reales de Spree.</p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {items.filter((item) => item.visible).map((item) => (
-                <span key={item.categoryPermalink} className="rounded-full border px-3 py-1 text-sm">
-                  {item.labelOverride || item.categoryPermalink}
-                </span>
-              ))}
-            </div>
-          </nav>
-        ),
+        render: ({ items, backgroundColor, textColor, hoverBackgroundColor, hoverTextColor, width, itemRadius, itemSpacing }) => {
+          const widthClass = width === "small" ? "max-w-xs" : width === "large" ? "max-w-lg" : "max-w-md";
+          const radiusClass = itemRadius === "none" ? "rounded-none" : itemRadius === "small" ? "rounded-sm" : itemRadius === "large" ? "rounded-xl" : "rounded-md";
+          const spacingClass = itemSpacing === "compact" ? "gap-0.5" : itemSpacing === "large" ? "gap-3" : "gap-1.5";
+          return (
+            <nav className={`${widthClass} rounded-xl border bg-white p-4`}>
+              <div className={`flex flex-col ${spacingClass}`}>
+                {items.filter((item) => item.visible).map((item) => (
+                  <div key={item.categoryPermalink} className={`${radiusClass} px-3 py-2 text-sm`} style={{ color: textColor, backgroundColor: hoverBackgroundColor }}>
+                    {item.labelOverride || item.categoryPermalink}
+                  </div>
+                ))}
+              </div>
+            </nav>
+          );
+        },
       },
     },
   };
