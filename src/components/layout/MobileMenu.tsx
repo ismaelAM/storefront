@@ -55,9 +55,26 @@ export function MobileMenu({ rootCategories, basePath, wholesaleEnabled }: Mobil
   const linkClass = "text-left text-gray-700 hover:text-gray-900 hover:bg-gray-50 rounded-lg px-3 py-2.5 text-base transition-colors";
   const categoryButtonClass = "flex items-center justify-between w-full text-left text-gray-700 hover:text-gray-900 hover:bg-gray-50 rounded-lg px-3 py-2.5 text-base transition-colors";
 
-  const renderCategories = (categories: Category[], level = 0): React.ReactNode => categories.map((category) => (
-    <div key={category.id}>
+  const renderCategories = (categories: Category[], level = 0): React.ReactNode => categories.map((category) => {
+    const hasChildren = Boolean(category.children?.length);
+    if (hasChildren) {
+      return (
+        <button
+          key={category.id}
+          type="button"
+          onClick={() => pushPanel({ kind: "category", category })}
+          className={categoryButtonClass}
+          style={{ paddingLeft: `${12 + level * 16}px` }}
+        >
+          <span>{category.name}</span>
+          <ChevronRight className="h-4 w-4 text-gray-400" />
+        </button>
+      );
+    }
+
+    return (
       <Link
+        key={category.id}
         href={`${basePath}/c/${category.permalink}`}
         onClick={() => setOpen(false)}
         className={`${linkClass} block`}
@@ -65,9 +82,8 @@ export function MobileMenu({ rootCategories, basePath, wholesaleEnabled }: Mobil
       >
         {category.name}
       </Link>
-      {category.children?.length ? renderCategories(category.children, level + 1) : null}
-    </div>
-  ));
+    );
+  });
 
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
