@@ -53,7 +53,11 @@ export const categoryConfig: Config = {
         textColor: "#4b5563",
         minHeight: "medium",
       } satisfies CategoryHeroProps,
-      render: (props) => <CategoryHeroBlock {...props} />,
+      render: (props) => (
+        <CategoryHeroBlock
+          {...(props as unknown as CategoryHeroProps)}
+        />
+      ),
     },
   },
 };
