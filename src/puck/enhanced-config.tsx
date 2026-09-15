@@ -1,6 +1,7 @@
 "use client";
 
 import type { Config } from "@puckeditor/core";
+import { PuckProductGrid, type PuckProductGridProps } from "@/components/puck/PuckProductGrid";
 import { config as baseConfig } from "@/puck/config";
 import {
   RealProductShowcase,
@@ -19,12 +20,98 @@ export const enhancedConfig: Config = {
   categories: {
     ...(baseConfig.categories ?? {}),
     products: {
-      title: "Productos reales de Spree",
-      components: ["RealProductShowcase"],
+      title: "Productos",
+      components: ["ProductGrid", "RealProductShowcase"],
     },
   },
   components: {
     ...baseComponents,
+    ProductGrid: {
+      label: "Productos",
+      fields: {
+        title: { type: "text", label: "Título" },
+        subtitle: { type: "textarea", label: "Subtítulo" },
+        productCount: {
+          type: "select",
+          label: "Cantidad",
+          options: [
+            { label: "4 productos", value: "4" },
+            { label: "6 productos", value: "6" },
+            { label: "8 productos", value: "8" },
+          ],
+        },
+        productFilter: {
+          type: "select",
+          label: "Mostrar",
+          options: [
+            { label: "Todos", value: "all" },
+            { label: "Disponibles", value: "available" },
+            { label: "En oferta", value: "sale" },
+          ],
+        },
+        productSort: {
+          type: "select",
+          label: "Ordenar",
+          options: [
+            { label: "Orden del catálogo", value: "default" },
+            { label: "Nombre A–Z", value: "name-asc" },
+            { label: "Precio menor a mayor", value: "price-asc" },
+            { label: "Precio mayor a menor", value: "price-desc" },
+          ],
+        },
+        columns: {
+          type: "select",
+          label: "Columnas",
+          options: [
+            { label: "2", value: "2" },
+            { label: "3", value: "3" },
+            { label: "4", value: "4" },
+          ],
+        },
+        imageAspect: {
+          type: "select",
+          label: "Proporción de imagen",
+          options: [
+            { label: "Cuadrada", value: "square" },
+            { label: "4:3", value: "4/3" },
+            { label: "16:9", value: "16/9" },
+          ],
+        },
+        cardRadius: {
+          type: "select",
+          label: "Bordes de tarjeta",
+          options: [
+            { label: "Sin redondeo", value: "none" },
+            { label: "Pequeño", value: "small" },
+            { label: "Medio", value: "medium" },
+            { label: "Grande", value: "large" },
+          ],
+        },
+        backgroundColor: { type: "text", label: "Fondo" },
+        cardBackgroundColor: { type: "text", label: "Fondo de tarjeta" },
+        titleColor: { type: "text", label: "Color del título" },
+        textColor: { type: "text", label: "Color del texto" },
+        priceColor: { type: "text", label: "Color del precio" },
+      },
+      defaultProps: {
+        title: "Nuestros productos",
+        subtitle: "Descubre nuestra selección.",
+        productCount: "8",
+        productFilter: "all",
+        productSort: "default",
+        columns: "4",
+        imageAspect: "square",
+        cardRadius: "medium",
+        backgroundColor: "#ffffff",
+        cardBackgroundColor: "#ffffff",
+        titleColor: "#111827",
+        textColor: "#6b7280",
+        priceColor: "#111827",
+      } satisfies PuckProductGridProps,
+      render: (props) => (
+        <PuckProductGrid {...(props as unknown as PuckProductGridProps)} />
+      ),
+    },
     RealProductShowcase: {
       label: "Producto destacado real",
       fields: {
