@@ -20,6 +20,7 @@ export interface PuckProductGridProps {
   titleColor?: string;
   textColor?: string;
   priceColor?: string;
+  basePath?: string;
 }
 
 function parseDisplayPrice(value: string | null | undefined): number {
@@ -63,8 +64,10 @@ export function PuckProductGrid({
   titleColor = "#111827",
   textColor = "#6b7280",
   priceColor = "#111827",
+  basePath: basePathProp,
 }: PuckProductGridProps) {
-  const { products, basePath } = usePuckProducts();
+  const { products, basePath: contextBasePath } = usePuckProducts();
+  const basePath = basePathProp ?? contextBasePath;
 
   const filteredProducts = products.filter((product) => {
     if (productFilter === "available") return product.purchasable !== false;
