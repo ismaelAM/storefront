@@ -22,7 +22,7 @@ export interface PuckProductGridProps {
   priceColor?: string;
 }
 
-function parseDisplayPrice(value: string | undefined): number {
+function parseDisplayPrice(value: string | null | undefined): number {
   if (!value) return Number.POSITIVE_INFINITY;
 
   const cleaned = value.replace(/[^\d,.-]/g, "");
