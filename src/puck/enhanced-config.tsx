@@ -18,12 +18,7 @@ export const enhancedConfig: Config = {
     RealProductShowcase: {
       label: "Producto destacado real",
       fields: {
-        productPosition: {
-          type: "number",
-          label: "Producto de la lista",
-          min: 1,
-          max: 8,
-        },
+        productPosition: { type: "number", label: "Producto de la lista", min: 1, max: 8 },
         description: { type: "textarea", label: "Texto introductorio" },
         badge: { type: "text", label: "Etiqueta" },
         buttonText: { type: "text", label: "Texto del botón" },
@@ -85,17 +80,12 @@ export const enhancedConfig: Config = {
         imageAspect: "square",
         padding: "large",
       } satisfies RealProductShowcaseProps,
-      render: (props) => <RealProductShowcase {...props} />,
+      render: (props) => <RealProductShowcase {...(props as RealProductShowcaseProps)} />,
     },
     RealProductCarousel: {
       label: "Carrusel de productos reales",
       fields: {
-        productCount: {
-          type: "number",
-          label: "Número de productos",
-          min: 1,
-          max: 8,
-        },
+        productCount: { type: "number", label: "Número de productos", min: 1, max: 8 },
         columns: {
           type: "select",
           label: "Columnas",
@@ -135,7 +125,7 @@ export const enhancedConfig: Config = {
         cardBackgroundColor: "#ffffff",
         alignment: "center",
       } satisfies RealProductCarouselProps,
-      render: (props) => <RealProductCarousel {...props} />,
+      render: (props) => <RealProductCarousel {...(props as RealProductCarouselProps)} />,
     },
   },
-} as Config;
+};
