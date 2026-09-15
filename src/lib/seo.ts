@@ -73,6 +73,33 @@ export function buildProductJsonLd(
 }
 
 /**
+ * Build JSON-LD CollectionPage schema for a category listing.
+ * https://schema.org/CollectionPage
+ */
+export function buildCategoryJsonLd(
+  category: Category,
+  canonicalUrl: string,
+): Record<string, unknown> {
+  const schema: Record<string, unknown> = {
+    "@context": "https://schema.org",
+    "@type": "CollectionPage",
+    name: category.name,
+    url: canonicalUrl,
+  };
+
+  const description = category.description
+    ? stripHtml(category.description)
+    : null;
+  if (description) schema.description = description;
+
+  if (category.image_url) {
+    schema.image = [category.image_url];
+  }
+
+  return schema;
+}
+
+/**
  * Build JSON-LD BreadcrumbList schema from a category with ancestors.
  * https://schema.org/BreadcrumbList
  */
