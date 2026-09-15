@@ -6,7 +6,7 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 
 ## Prioridad alta
 
-- [ ] Verificar el nuevo Preview de Vercel tras los últimos cambios de UI/navegación y apariencia.
+- [ ] Verificar el nuevo Preview de Vercel tras los últimos cambios de UI/navegación/apariencia y seguridad.
 - [ ] **Seguridad Puck:** configurar `PUCK_EDITOR_PASSWORD` como secreto en Vercel y comprobar que `/editor` y sus subrutas solo son accesibles con la contraseña de administrador.
 - [ ] **Seguridad Puck:** validar que el Server Action de guardado rechaza peticiones no autenticadas aunque se invoque directamente.
 - [ ] Verificar la conexión real del storefront con Spree en Vercel: `SPREE_API_URL` + `SPREE_PUBLISHABLE_KEY`, sin exponer claves.
@@ -37,7 +37,7 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [x] Portugués (`pt`) añadido al registro de idiomas del frontend.
 - [x] Traducciones de interfaz de `pt` añadidas en portugués de Portugal.
 - [ ] Comprobar `/es/pt` en el Preview actual.
-- [ ] Confirmar si `fr` y `pt` están realmente disponibles en el Market/runtime; en el Preview actual el selector de header/footer solo muestra `EN` y `ES`.
+- [ ] Confirmar si `fr` y `pt` están realmente disponibles en el Market/runtime; en el Preview anterior el selector de header/footer solo mostraba `EN` y `ES`.
 - [ ] Traducir en Spree nombres, descripciones y categorías de productos a `en`, `pt` y `fr`.
 - [ ] Revisar traducciones del catálogo completo y mantener terminología consistente en ES/EN/PT/FR.
 - [ ] Confirmar en Spree qué locales están realmente habilitados por cada Market antes de activar nuevos países.
@@ -64,7 +64,7 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 
 ## Storefront / UI
 
-- [x] Puck comprobado manualmente en el Preview actual y funciona correctamente.
+- [x] Puck comprobado manualmente en el Preview anterior y funciona correctamente.
 - [x] Eliminada la pestaña/pantalla dedicada de edición de Productos.
 - [x] Eliminadas las rutas de edición por producto individual para evitar gestionar el display producto a producto.
 - [x] Añadida opción global `Color principal` dentro de Apariencia.
@@ -78,7 +78,7 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [ ] Revisar SEO/hreflang para ES/EN/PT/FR en un Preview real.
 - [x] Añadido JSON-LD `CollectionPage` a las páginas de categorías.
 - [ ] Revisar datos estructurados de productos/variantes y cobertura de Merchant Listings.
-- [ ] Configurar y revisar presencia en Google Business Profile/Maps solo si en el futuro tiene sentido para un negocio físico; actualmente no es prioritario para la tienda online.
+- [ ] Configurar/revisar Google Business Profile/Maps solo si en el futuro tiene sentido para un negocio físico; actualmente no es prioritario para la tienda online.
 
 ## Historial reciente / comprobaciones
 
@@ -86,13 +86,15 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [x] Añadida autenticación de administrador basada en secreto de entorno para todo el árbol de rutas `/editor`.
 - [x] Añadida cookie `HttpOnly` de sesión de editor con expiración y protección `SameSite`/`Secure` en producción.
 - [x] El guardado de la home comprueba autenticación en servidor antes de tocar Supabase con la service role key.
+- [x] Corregido el error de TypeScript en la Server Action de login para que el build pueda superar esa comprobación de tipos.
 - [ ] Configurar el valor real de `PUCK_EDITOR_PASSWORD` en Vercel; no guardarlo en GitHub ni compartirlo por chat.
 - [ ] Validar acceso autorizado y rechazo de acceso/guardado no autenticado en un Preview `READY`.
 
 ### Vercel
-- [x] Vercel vuelve a construir correctamente el branch `puck_editor`; deployment actual verificado en estado `READY`.
-- [x] Preview actual usado para pruebas manuales del catálogo, idiomas y Puck.
-- [ ] Verificar nuevo deployment después de los últimos cambios de UI/navegación/apariencia.
+- [x] Vercel tuvo deployments `READY` antes de la capa de seguridad.
+- [x] Identificado el fallo del último deployment de seguridad: TypeScript rechazaba `form action={login}` porque la Server Action devolvía un objeto en lugar de `void`/`Promise<void>`.
+- [x] Corregido ese fallo en el commit posterior de `puck_editor`.
+- [ ] Verificar un nuevo deployment después de la corrección de seguridad y los últimos cambios.
 - [ ] No fusionar la PR temporal `#1` de `puck_editor` a `main`; es solo para verificación y no debe eliminar la regla de trabajar únicamente en `puck_editor`.
 
 ### Puck
@@ -106,9 +108,9 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [x] Confirmado que la web ya tenía infraestructura de locales y negociación de idioma.
 - [x] Confirmado que el Market de Spain puede ofrecer `en` y que `/es/en` funciona.
 - [x] Añadidos `pt` y traducciones PT-PT en `puck_editor`.
-- [x] En Preview actual, header/footer funcionan con selector de idiomas.
-- [ ] El selector actual solo muestra `EN` y `ES`: revisar por qué `PT` y `FR` no aparecen en runtime.
-- [ ] Verificar comportamiento real de `/es/pt` y `/es/fr`.
+- [x] En Preview anterior, header/footer funcionaban con selector de idiomas.
+- [ ] El selector visible depende de los locales realmente devueltos por el Market de Spree; ahora mismo solo se han verificado `EN` y `ES` en runtime.
+- [ ] Verificar comportamiento real de `/es/pt` y `/es/fr` cuando esos locales estén habilitados en el Market.
 
 ### SEO
 - [x] Auditado el estado existente de `sitemap.ts`, `robots.ts`, metadata y JSON-LD.
@@ -125,6 +127,7 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [x] Documentado el método `BISON_LOCAL_MADRID` y su separación de una futura integración UPS.
 - [x] Documentado que el tracking local puede gestionarse manualmente desde Spree sin API externa.
 - [x] Confirmado manualmente en Preview que el checkout muestra métodos de envío procedentes de Spree.
+- [x] Homogeneizada la selección visual del método de envío con el color global `--primary` del storefront.
 - [ ] Corregir en Spree la Zone/método para que Madrid no aparezca en Lugo.
 - [ ] Probar checkout, Shipment y estado de entrega con una dirección de Madrid.
 - [ ] Probar que una dirección fuera de Madrid no recibe la opción local.

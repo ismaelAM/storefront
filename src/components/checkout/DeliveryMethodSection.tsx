@@ -80,8 +80,8 @@ export function DeliveryMethodSection({
                       key={rate.id}
                       className={`flex items-center justify-between px-4 py-3.5 cursor-pointer transition-colors ${
                         rate.selected
-                          ? "bg-blue-50"
-                          : "bg-white hover:bg-gray-50"
+                          ? "bg-primary/10"
+                          : "bg-white hover:bg-primary/5"
                       } ${rateIndex > 0 ? "border-t" : ""}`}
                     >
                       <div className="flex items-center gap-3">
