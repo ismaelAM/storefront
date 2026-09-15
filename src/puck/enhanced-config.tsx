@@ -3,10 +3,7 @@
 import type { Config } from "@puckeditor/core";
 import { PuckProductGrid, type PuckProductGridProps } from "@/components/puck/PuckProductGrid";
 import { config as baseConfig } from "@/puck/config";
-import {
-  RealProductShowcase,
-  type RealProductShowcaseProps,
-} from "@/puck/RealProductBlocks";
+import { RealProductShowcase, type RealProductShowcaseProps } from "@/puck/RealProductBlocks";
 
 const {
   Carousel: _Carousel,
@@ -49,15 +46,9 @@ export const enhancedConfig: Config = {
             { label: "En oferta", value: "sale" },
           ],
         },
-        productSort: {
-          type: "select",
-          label: "Ordenar",
-          options: [
-            { label: "Orden del catálogo", value: "default" },
-            { label: "Nombre A–Z", value: "name-asc" },
-            { label: "Precio menor a mayor", value: "price-asc" },
-            { label: "Precio mayor a menor", value: "price-desc" },
-          ],
+        variantFilter: {
+          type: "text",
+          label: "Filtrar por variante",
         },
         columns: {
           type: "select",
@@ -98,7 +89,7 @@ export const enhancedConfig: Config = {
         subtitle: "Descubre nuestra selección.",
         productCount: "8",
         productFilter: "all",
-        productSort: "default",
+        variantFilter: "",
         columns: "4",
         imageAspect: "square",
         cardRadius: "medium",
@@ -108,19 +99,12 @@ export const enhancedConfig: Config = {
         textColor: "#6b7280",
         priceColor: "#111827",
       } satisfies PuckProductGridProps,
-      render: (props) => (
-        <PuckProductGrid {...(props as unknown as PuckProductGridProps)} />
-      ),
+      render: (props) => <PuckProductGrid {...(props as unknown as PuckProductGridProps)} />,
     },
     RealProductShowcase: {
       label: "Producto destacado real",
       fields: {
-        productPosition: {
-          type: "number",
-          label: "Producto de la lista",
-          min: 1,
-          max: 8,
-        },
+        productPosition: { type: "number", label: "Producto de la lista", min: 1, max: 8 },
         description: { type: "textarea", label: "Texto introductorio" },
         badge: { type: "text", label: "Etiqueta" },
         buttonText: { type: "text", label: "Texto del botón" },
@@ -129,45 +113,11 @@ export const enhancedConfig: Config = {
         textColor: { type: "text", label: "Color del texto" },
         priceColor: { type: "text", label: "Color del precio" },
         buttonColor: { type: "text", label: "Color del botón" },
-        buttonTextColor: {
-          type: "text",
-          label: "Color del texto del botón",
-        },
-        alignment: {
-          type: "select",
-          label: "Alineación",
-          options: [
-            { label: "Izquierda", value: "left" },
-            { label: "Centro", value: "center" },
-            { label: "Derecha", value: "right" },
-          ],
-        },
-        imagePosition: {
-          type: "select",
-          label: "Imagen",
-          options: [
-            { label: "Izquierda", value: "left" },
-            { label: "Derecha", value: "right" },
-          ],
-        },
-        imageAspect: {
-          type: "select",
-          label: "Proporción de imagen",
-          options: [
-            { label: "Cuadrada", value: "square" },
-            { label: "4:3", value: "4/3" },
-            { label: "16:9", value: "16/9" },
-          ],
-        },
-        padding: {
-          type: "select",
-          label: "Espaciado",
-          options: [
-            { label: "Pequeño", value: "small" },
-            { label: "Medio", value: "medium" },
-            { label: "Grande", value: "large" },
-          ],
-        },
+        buttonTextColor: { type: "text", label: "Color del texto del botón" },
+        alignment: { type: "select", label: "Alineación", options: [{ label: "Izquierda", value: "left" }, { label: "Centro", value: "center" }, { label: "Derecha", value: "right" }] },
+        imagePosition: { type: "select", label: "Imagen", options: [{ label: "Izquierda", value: "left" }, { label: "Derecha", value: "right" }] },
+        imageAspect: { type: "select", label: "Proporción de imagen", options: [{ label: "Cuadrada", value: "square" }, { label: "4:3", value: "4/3" }, { label: "16:9", value: "16/9" }] },
+        padding: { type: "select", label: "Espaciado", options: [{ label: "Pequeño", value: "small" }, { label: "Medio", value: "medium" }, { label: "Grande", value: "large" }] },
       },
       defaultProps: {
         productPosition: 1,
@@ -185,11 +135,7 @@ export const enhancedConfig: Config = {
         imageAspect: "square",
         padding: "large",
       } satisfies RealProductShowcaseProps,
-      render: (props) => (
-        <RealProductShowcase
-          {...(props as unknown as RealProductShowcaseProps)}
-        />
-      ),
+      render: (props) => <RealProductShowcase {...(props as unknown as RealProductShowcaseProps)} />,
     },
   },
 };
