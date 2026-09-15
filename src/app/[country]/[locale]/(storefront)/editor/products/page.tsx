@@ -1,12 +1,17 @@
-import type { Category } from "@spree/sdk";
-import Link from "next/link";
+import type { Data } from "@puckeditor/core";
+import type { Category, Product } from "@spree/sdk";
 import { connection } from "next/server";
 import { EditorSectionNav } from "@/components/puck/EditorSectionNav";
-import { getCategories } from "@/lib/data/categories";
 import { PRODUCT_CARD_FIELDS } from "@/lib/data/cached";
+import { getCategories } from "@/lib/data/categories";
 import { getProducts } from "@/lib/data/products";
+import { getSitePageData } from "@/lib/puck/get-site-page-data";
+import { ProductsEditorClient } from "./ProductsEditorClient";
 
-interface Props { params: Promise<{ country: string; locale: string }> }
+interface Props {
+  params: Promise<{ country: string; locale: string }>;
+  searchParams: Promise<{ category?: string }>;
+}
 
 type CategoryLike = Pick<Category, "id" | "name" | "permalink">;
 
@@ -18,82 +23,97 @@ function flattenCategories(categories: Category[], output: CategoryLike[] = []) 
   return output;
 }
 
-export default async function ProductsEditorPage({ params }: Props) {
+function fallbackData(): Data {
+  return {
+    content: [
+      {
+        type: "ProductGrid",
+        props: {
+          id: "products-grid",
+          title: "Nuestros productos",
+          subtitle: "Descubre nuestra selección.",
+          productCount: "8",
+          productFilter: "all",
+          variantFilter: "",
+          columns: "4",
+          imageAspect: "square",
+          cardRadius: "medium",
+          backgroundColor: "#ffffff",
+          cardBackgroundColor: "#ffffff",
+          titleColor: "#111827",
+          textColor: "#6b7280",
+          priceColor: "#111827",
+        },
+      },
+    ],
+    root: {},
+  };
+}
+
+export default async function ProductsEditorPage({ params, searchParams }: Props) {
   await connection();
   const { country, locale } = await params;
+  const { category: requestedCategory } = await searchParams;
   const basePath = `/${country}/${locale}`;
 
-  const [productsResponse, categoriesResponse] = await Promise.all([
-    getProducts({ limit: 50, fields: PRODUCT_CARD_FIELDS }, "dtc"),
+  const [categoriesResponse, productsResponse] = await Promise.all([
     getCategories({ depth_eq: 0, expand: ["children.children"] }, { country, locale }),
+    getProducts({ limit: 50, fields: PRODUCT_CARD_FIELDS }, "dtc"),
   ]);
 
-  const products = productsResponse.data ?? [];
   const categories = flattenCategories(categoriesResponse.data ?? []);
+  const selectedCategory =
+    categories.find((category) => category.permalink === requestedCategory) ?? categories[0];
 
-  const productsForCategory = (category: CategoryLike) =>
-    products.filter((product) =>
-      (product.categories ?? []).some((productCategory) => productCategory.id === category.id),
+  if (!selectedCategory) {
+    return (
+      <div className="flex h-screen flex-col overflow-hidden">
+        <EditorSectionNav basePath={basePath} />
+        <main className="flex flex-1 items-center justify-center px-6">
+          <p className="text-gray-600">No hay categorías disponibles.</p>
+        </main>
+      </div>
     );
+  }
+
+  const products = (productsResponse.data ?? []).filter((product) =>
+    (product.categories ?? []).some((productCategory) => productCategory.id === selectedCategory.id),
+  );
+  const pageId = `products:${selectedCategory.permalink}`;
+  const initialData = await getSitePageData(pageId, fallbackData());
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="flex h-screen flex-col overflow-hidden">
       <EditorSectionNav basePath={basePath} />
-      <main className="mx-auto max-w-7xl px-6 py-10">
-        <h1 className="text-3xl font-bold text-gray-900">Editar productos</h1>
-        <p className="mt-2 text-gray-600">Las categorías y subcategorías se muestran automáticamente.</p>
-
-        <div className="mt-8 space-y-10">
-          {categories.map((category) => {
-            const categoryProducts = productsForCategory(category);
-            return (
-              <section key={category.id}>
-                <div className="mb-4 flex items-end justify-between gap-4">
-                  <div>
-                    <h2 className="text-xl font-semibold text-gray-900">{category.name}</h2>
-                    <p className="mt-1 text-sm text-gray-500">/{category.permalink}</p>
-                  </div>
-                  <Link href={`${basePath}/c/${category.permalink}`} className="text-sm text-gray-500 hover:text-gray-900">
-                    Ver categoría →
-                  </Link>
-                </div>
-
-                {categoryProducts.length === 0 ? (
-                  <div className="rounded-xl border border-dashed bg-white px-5 py-6 text-sm text-gray-500">
-                    No hay productos cargados en esta categoría todavía.
-                  </div>
-                ) : (
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                    {categoryProducts.map((product) => (
-                      <Link key={`${category.id}-${product.id}`} href={`${basePath}/editor/product/${product.slug}`} className="overflow-hidden rounded-xl border bg-white transition hover:border-gray-400 hover:shadow-sm">
-                        <img src={product.thumbnail_url || "https://placehold.co/600x600"} alt={product.name} className="aspect-square w-full object-cover" />
-                        <div className="p-4">
-                          <h3 className="font-semibold text-gray-900">{product.name}</h3>
-                          <p className="mt-1 text-sm text-gray-500">{product.price?.display_amount ?? ""}</p>
-                        </div>
-                      </Link>
-                    ))}
-                  </div>
-                )}
-              </section>
-            );
-          })}
-
-          {products.some((product) => !(product.categories ?? []).length) && (
-            <section>
-              <h2 className="mb-4 text-xl font-semibold text-gray-900">Sin categoría</h2>
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                {products.filter((product) => !(product.categories ?? []).length).map((product) => (
-                  <Link key={product.id} href={`${basePath}/editor/product/${product.slug}`} className="overflow-hidden rounded-xl border bg-white transition hover:border-gray-400 hover:shadow-sm">
-                    <img src={product.thumbnail_url || "https://placehold.co/600x600"} alt={product.name} className="aspect-square w-full object-cover" />
-                    <div className="p-4"><h3 className="font-semibold text-gray-900">{product.name}</h3><p className="mt-1 text-sm text-gray-500">{product.price?.display_amount ?? ""}</p></div>
-                  </Link>
-                ))}
-              </div>
-            </section>
-          )}
-        </div>
-      </main>
+      <div className="flex shrink-0 items-center gap-3 border-b bg-gray-50 px-4 py-3">
+        <form method="get" className="flex items-center gap-3">
+          <label htmlFor="products-category" className="text-sm font-medium text-gray-700">
+            Categoría
+          </label>
+          <select
+            id="products-category"
+            name="category"
+            defaultValue={selectedCategory.permalink}
+            className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm"
+          >
+            {categories.map((category) => (
+              <option key={category.id} value={category.permalink}>
+                {category.name}
+              </option>
+            ))}
+          </select>
+          <button type="submit" className="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white">
+            Editar
+          </button>
+        </form>
+        <span className="text-sm text-gray-500">Solo presentación visual: colores, columnas, proporción, bordes y filtros.</span>
+      </div>
+      <ProductsEditorClient
+        products={products as Product[]}
+        basePath={basePath}
+        pageId={pageId}
+        initialData={initialData}
+      />
     </div>
   );
 }
