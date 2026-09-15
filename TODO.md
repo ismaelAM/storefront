@@ -15,6 +15,18 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [ ] Validar en Vercel el SEO técnico añadido: canonical, hreflang, JSON-LD y rutas por idioma/Market.
 - [ ] Configurar y probar el método de envío propio para Madrid en Spree.
 
+## UPS
+
+- [x] Creada cuenta UPS para la futura integración de BisonTCG.
+- [x] Creada/avanzada la aplicación de UPS orientada a integrar la tecnología de UPS en el propio negocio, no a representar múltiples usuarios.
+- [x] Seleccionadas las APIs iniciales `Shipping` y `Tracking`.
+- [x] Enviado formulario de soporte a UPS para verificar la información de la cuenta y habilitar el acceso necesario a las credenciales de API.
+- [ ] Esperar respuesta de soporte de UPS (indican hasta 1 día laborable).
+- [ ] Obtener/confirmar Client ID y Client Secret OAuth de la aplicación sin compartir el secreto por chat.
+- [ ] Configurar las credenciales como secretos del entorno cuando corresponda.
+- [ ] Integrar UPS con el flujo real de envíos de Spree: crear envío/etiqueta y guardar tracking en Spree.
+- [ ] Mostrar al cliente el tracking UPS mediante los datos nativos del Shipment de Spree.
+
 ## Idiomas y traducciones
 
 - [x] Inglés habilitado en el Market `Spain` de Spree y comprobado que la ruta inglesa funciona.
@@ -58,6 +70,13 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [ ] Configurar y revisar presencia en Google Business Profile/Maps solo si en el futuro tiene sentido para un negocio físico; actualmente no es prioritario para la tienda online.
 
 ## Historial reciente / comprobaciones
+
+### UPS
+- [x] Confirmado que el caso de BisonTCG corresponde a integración de UPS para un único negocio, no a una plataforma que representa múltiples usuarios.
+- [x] Seleccionadas únicamente las APIs `Shipping` y `Tracking` como primera fase.
+- [x] Enviado el formulario de soporte de UPS con el UPS.com User ID, Shipper Account Number/Sender ID y la explicación del objetivo de integración.
+- [ ] Esperar la respuesta de UPS antes de continuar con las credenciales.
+- [ ] No compartir Client Secret ni otras credenciales privadas en chat.
 
 ### Stripe
 - [x] Conexión de Stripe Dashboard realizada y cuenta Live `BisonTCG` conectada mediante el conector; no exponer claves.
