@@ -1,4 +1,5 @@
 import type { Data } from "@puckeditor/core";
+import { connection } from "next/server";
 import { notFound } from "next/navigation";
 import { getCategory, getCategoryProducts } from "@/lib/data/categories";
 import { getCategoryPageData } from "@/lib/puck/get-category-data";
@@ -15,6 +16,7 @@ interface CategoryEditorPageProps {
 export default async function CategoryEditorPage({
   params,
 }: CategoryEditorPageProps) {
+  await connection();
   const { country, locale, permalink } = await params;
   const fullPermalink = permalink.join("/");
 
