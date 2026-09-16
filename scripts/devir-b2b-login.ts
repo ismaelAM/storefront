@@ -19,6 +19,33 @@ async function waitForEnter(message: string): Promise<string> {
   });
 }
 
+async function getLoginDiagnostics(page: Page): Promise<string[]> {
+  const diagnostics = await page.evaluate(() => {
+    const selectors = [
+      ".message-error",
+      ".messages .message",
+      "[data-ui-id='message-error']",
+      ".field-error",
+      ".mage-error",
+    ];
+    const messages = selectors.flatMap((selector) =>
+      Array.from(document.querySelectorAll<HTMLElement>(selector)).map((node) =>
+        node.textContent?.replace(/\s+/g, " ").trim() ?? "",
+      ),
+    );
+
+    const uniqueMessages = Array.from(new Set(messages.filter(Boolean)));
+    if (uniqueMessages.length > 0) return uniqueMessages;
+
+    const bodyText = document.body?.innerText?.replace(/\s+/g, " ").trim() ?? "";
+    return bodyText
+      ? [bodyText.slice(0, 1000)]
+      : [];
+  });
+
+  return diagnostics;
+}
+
 async function hasAuthenticatedCustomer(page: Page): Promise<boolean> {
   const loginFormPresent =
     (await page.locator('input[name="login[username]"]').count()) > 0;
@@ -65,9 +92,16 @@ async function hasAuthenticatedCustomer(page: Page): Promise<boolean> {
 async function waitForAuthenticatedSession(page: Page): Promise<boolean> {
   await page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => undefined);
 
-  for (let attempt = 0; attempt < 30; attempt += 1) {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
     if (await hasAuthenticatedCustomer(page)) return true;
-    console.log(`Comprobando sesión (${attempt + 1}/30)...`);
+    if (page.url().includes("/customer/account/login")) {
+      const diagnostics = await getLoginDiagnostics(page);
+      if (diagnostics.length > 0) {
+        console.error(`Devir mantiene la pantalla de login: ${diagnostics[0]}`);
+        return false;
+      }
+    }
+    console.log(`Comprobando sesión (${attempt + 1}/10)...`);
     await page.waitForTimeout(1000);
   }
 
@@ -110,6 +144,7 @@ async function main(): Promise<void> {
 
   const authenticated = await waitForAuthenticatedSession(page);
   if (!authenticated) {
+    const diagnostics = await getLoginDiagnostics(page);
     const cookieNames = (await context.cookies())
       .filter((cookie) => cookie.domain.endsWith("devir.es"))
       .map((cookie) => cookie.name)
@@ -117,8 +152,11 @@ async function main(): Promise<void> {
     console.error(
       `El login de Devir no ha quedado autenticado. URL final: ${page.url()}. Cookies Devir presentes: ${cookieNames.join(", ") || "ninguna"}.`,
     );
+    if (diagnostics.length > 0) {
+      console.error(`Respuesta visible de Devir: ${diagnostics[0]}`);
+    }
     console.error(
-      "La sesión no se guardará hasta que Devir devuelva un cliente autenticado. Completa el login en la ventana y vuelve a ejecutar este comando.",
+      "La sesión no se guardará hasta que Devir devuelva un cliente autenticado.",
     );
     await context.close();
     process.exitCode = 1;
