@@ -10,7 +10,7 @@ type CategoryNode = {
   children?: CategoryNode[];
 };
 
-function collectLeafCategories(categories: CategoryNode[], parents: string[] = []) {
+function collectLeafCategories(categories: CategoryNode[], parents: string[] = []): Array<CategoryNode & { labelPath: string }> {
   return categories.flatMap((category) => {
     const path = [...parents, category.name];
     return category.children?.length
