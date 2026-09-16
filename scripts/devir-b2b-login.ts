@@ -1,3 +1,5 @@
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { randomBytes } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { chromium, type Page } from "@playwright/test";
@@ -10,6 +12,7 @@ const statePath = resolve(
 );
 const accountUrl = "https://b2bdevir.es/customer/account/";
 const defaultLoginUrl = "https://b2bdevir.es/customer/account/login";
+const controlPort = Number(process.env.DEVIR_B2B_LOGIN_PORT ?? "8787");
 
 async function waitForEnter(message: string): Promise<string> {
   process.stdin.setEncoding("utf8");
@@ -20,7 +23,7 @@ async function waitForEnter(message: string): Promise<string> {
 }
 
 async function getLoginDiagnostics(page: Page): Promise<string[]> {
-  const diagnostics = await page.evaluate(() => {
+  return await page.evaluate(() => {
     const selectors = [
       ".message-error",
       ".messages .message",
@@ -33,23 +36,15 @@ async function getLoginDiagnostics(page: Page): Promise<string[]> {
         node.textContent?.replace(/\s+/g, " ").trim() ?? "",
       ),
     );
-
     const uniqueMessages = Array.from(new Set(messages.filter(Boolean)));
     if (uniqueMessages.length > 0) return uniqueMessages;
 
     const bodyText = document.body?.innerText?.replace(/\s+/g, " ").trim() ?? "";
-    return bodyText
-      ? [bodyText.slice(0, 1000)]
-      : [];
+    return bodyText ? [bodyText.slice(0, 1000)] : [];
   });
-
-  return diagnostics;
 }
 
 async function hasAuthenticatedCustomer(page: Page): Promise<boolean> {
-  // Do not use the presence of the login form as the first signal: Magento can
-  // keep login-form markup in the DOM (for example in a header/modal) even
-  // after the customer session is authenticated.
   const hasLogoutLink =
     (await page.locator(
       'a[href*="/customer/account/logout"], a[href*="/customer/account/logout/"]',
@@ -58,14 +53,11 @@ async function hasAuthenticatedCustomer(page: Page): Promise<boolean> {
 
   const hasCustomerSection = await page.evaluate(async () => {
     try {
-      const response = await fetch(
-        "/customer/section/load/?sections=customer",
-        {
-          credentials: "include",
-          cache: "no-store",
-          headers: { Accept: "application/json" },
-        },
-      );
+      const response = await fetch("/customer/section/load/?sections=customer", {
+        credentials: "include",
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+      });
       if (!response.ok) return false;
       const payload = (await response.json()) as {
         customer?: {
@@ -86,13 +78,7 @@ async function hasAuthenticatedCustomer(page: Page): Promise<boolean> {
       return false;
     }
   });
-  if (hasCustomerSection) return true;
-
-  const loginFormPresent =
-    (await page.locator('input[name="login[username]"]').count()) > 0;
-  if (loginFormPresent) return false;
-
-  return false;
+  return hasCustomerSection;
 }
 
 async function waitForAuthenticatedSession(page: Page): Promise<boolean> {
@@ -120,12 +106,203 @@ async function waitForAuthenticatedSession(page: Page): Promise<boolean> {
   return await hasAuthenticatedCustomer(page);
 }
 
+function readRequestBody(request: IncomingMessage): Promise<string> {
+  return new Promise((resolvePromise, reject) => {
+    let body = "";
+    request.on("data", (chunk) => {
+      body += chunk;
+      if (body.length > 100_000) {
+        reject(new Error("Request body too large"));
+        request.destroy();
+      }
+    });
+    request.on("end", () => resolvePromise(body));
+    request.on("error", reject);
+  });
+}
+
+function writeJson(response: ServerResponse, status: number, payload: unknown): void {
+  response.writeHead(status, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Cache-Control": "no-store",
+  });
+  response.end(JSON.stringify(payload));
+}
+
+function loginControlHtml(token: string): string {
+  return `<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Login B2B Devir</title>
+<style>
+body{font-family:system-ui,sans-serif;margin:0;background:#111;color:#eee}
+header{position:sticky;top:0;background:#181818;padding:10px;display:flex;gap:8px;align-items:center;z-index:2}
+button{padding:8px 12px;border:0;border-radius:6px;cursor:pointer}
+#done{background:#54b37a;color:#fff}#refresh{background:#444;color:#fff}
+#status{font-size:13px;opacity:.8}
+main{display:flex;justify-content:center;padding:12px}
+#screen{max-width:100%;height:auto;cursor:crosshair}
+#keyboard{position:fixed;left:-10000px;opacity:0}
+</style>
+</head>
+<body>
+<header>
+<button id="done">He terminado el login</button>
+<button id="refresh">Actualizar</button>
+<span id="status">Cargando…</span>
+</header>
+<main><img id="screen" alt="Pantalla de Devir"></main>
+<input id="keyboard" autocomplete="off" autofocus>
+<script>
+const token=${JSON.stringify(token)};
+const qs="?token="+encodeURIComponent(token);
+const img=document.getElementById("screen");
+const input=document.getElementById("keyboard");
+const status=document.getElementById("status");
+async function refresh(){
+  const r=await fetch("/api/screenshot"+qs,{cache:"no-store"});
+  if(!r.ok){status.textContent="Error al obtener la pantalla";return}
+  const blob=await r.blob();
+  img.src=URL.createObjectURL(blob);
+  status.textContent="Haz clic en los campos de Devir y escribe normalmente. La sesión no se almacena en esta interfaz.";
+}
+img.addEventListener("click",async e=>{
+  const rect=img.getBoundingClientRect();
+  const x=(e.clientX-rect.left)*(img.naturalWidth/rect.width);
+  const y=(e.clientY-rect.top)*(img.naturalHeight/rect.height);
+  await fetch("/api/click"+qs,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({x,y})});
+  input.focus();
+  await refresh();
+});
+input.addEventListener("input",async()=>{
+  const text=input.value;
+  if(!text)return;
+  input.value="";
+  await fetch("/api/type"+qs,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text})});
+  await refresh();
+});
+input.addEventListener("keydown",async e=>{
+  const keys={Enter:"Enter",Tab:"Tab",Backspace:"Backspace",Delete:"Delete"," ":"Space",ArrowLeft:"ArrowLeft",ArrowRight:"ArrowRight",ArrowUp:"ArrowUp",ArrowDown:"ArrowDown"};
+  if(!keys[e.key])return;
+  e.preventDefault();
+  await fetch("/api/key"+qs,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({key:keys[e.key]})});
+  await refresh();
+});
+document.getElementById("refresh").onclick=refresh;
+document.getElementById("done").onclick=async()=>{
+  await fetch("/api/done"+qs,{method:"POST"});
+  status.textContent="Comprobando la sesión…";
+};
+refresh();
+setInterval(refresh,1500);
+input.focus();
+</script>
+</body>
+</html>`;
+}
+
+async function startLoginControl(page: Page): Promise<void> {
+  const token = randomBytes(24).toString("hex");
+  let finish!: () => void;
+  const finished = new Promise<void>((resolvePromise) => {
+    finish = resolvePromise;
+  });
+
+  const server = createServer(async (request, response) => {
+    try {
+      const requestUrl = new URL(request.url ?? "/", `http://127.0.0.1:${controlPort}`);
+      if (requestUrl.searchParams.get("token") !== token) {
+        response.writeHead(404);
+        response.end("Not found");
+        return;
+      }
+
+      if (request.method === "GET" && requestUrl.pathname === "/") {
+        response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+        response.end(loginControlHtml(token));
+        return;
+      }
+
+      if (request.method === "GET" && requestUrl.pathname === "/api/screenshot") {
+        const screenshot = await page.screenshot({ type: "png" });
+        response.writeHead(200, { "Content-Type": "image/png", "Cache-Control": "no-store" });
+        response.end(screenshot);
+        return;
+      }
+
+      const body =
+        request.method === "POST" && requestUrl.pathname !== "/api/done"
+          ? JSON.parse(await readRequestBody(request))
+          : {};
+      if (request.method === "POST" && requestUrl.pathname === "/api/click") {
+        await page.mouse.click(Number(body.x), Number(body.y));
+        writeJson(response, 200, { ok: true });
+        return;
+      }
+      if (request.method === "POST" && requestUrl.pathname === "/api/type") {
+        await page.keyboard.insertText(String(body.text ?? ""));
+        writeJson(response, 200, { ok: true });
+        return;
+      }
+      if (request.method === "POST" && requestUrl.pathname === "/api/key") {
+        await page.keyboard.press(String(body.key));
+        writeJson(response, 200, { ok: true });
+        return;
+      }
+      if (request.method === "POST" && requestUrl.pathname === "/api/done") {
+        writeJson(response, 200, { ok: true });
+        finish();
+        return;
+      }
+
+      writeJson(response, 404, { error: "Not found" });
+    } catch (error) {
+      writeJson(response, 500, {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+  await new Promise<void>((resolvePromise, reject) => {
+    server.once("error", reject);
+    server.listen(controlPort, "0.0.0.0", () => resolvePromise());
+  });
+
+  const localUrl = `http://127.0.0.1:${controlPort}/?token=${token}`;
+  const codespaceName = process.env.CODESPACE_NAME;
+  const forwardedUrl = codespaceName
+    ? `https://${codespaceName}-${controlPort}.app.github.dev/?token=${token}`
+    : null;
+
+  console.log("");
+  console.log("=== Login B2B Devir interactivo ===");
+  console.log("Abre esta URL en tu navegador:");
+  console.log(localUrl);
+  if (forwardedUrl) console.log(`URL directa del Codespace: ${forwardedUrl}`);
+  console.log("");
+  console.log("Si la URL del Codespace no abre todavía, ve a Puertos → 8787 → Vista previa/Abrir en navegador.");
+  console.log("Después haz el login manualmente y pulsa «He terminado el login».");
+  console.log("No se registran usuario, contraseña ni texto escrito en el servidor.");
+  console.log("");
+
+  await finished;
+  await new Promise<void>((resolvePromise) => server.close(() => resolvePromise()));
+}
+
 async function main(): Promise<void> {
   await mkdir(dirname(statePath), { recursive: true });
   await mkdir(profilePath, { recursive: true });
 
+  const hasDisplay = Boolean(process.env.DISPLAY);
+  const forceHeadless = process.env.DEVIR_B2B_HEADLESS === "true";
+  const headless = forceHeadless || !hasDisplay;
+  const channel = process.env.DEVIR_B2B_BROWSER === "chrome" ? "chrome" : undefined;
+
   const context = await chromium.launchPersistentContext(profilePath, {
-    headless: false,
+    headless,
+    ...(channel ? { channel } : {}),
   });
   const existingPages = context.pages();
   const page = existingPages[0] ?? (await context.newPage());
@@ -143,10 +320,15 @@ async function main(): Promise<void> {
 
   console.log(`Abriendo ${loginUrl}`);
   await page.goto(loginUrl, { waitUntil: "domcontentloaded" });
-  console.log(
-    "Inicia sesión en Devir B2B en la ventana del navegador. Cuando hayas terminado y estés dentro de tu cuenta, vuelve aquí y pulsa Enter.",
-  );
-  await waitForEnter("");
+
+  if (headless) {
+    await startLoginControl(page);
+  } else {
+    console.log(
+      "Inicia sesión en Devir B2B en la ventana del navegador. Cuando hayas terminado y estés dentro de tu cuenta, vuelve aquí y pulsa Enter.",
+    );
+    await waitForEnter("");
+  }
 
   const authenticated = await waitForAuthenticatedSession(page);
   if (!authenticated) {
