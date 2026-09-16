@@ -10,7 +10,9 @@ Con acceso a tu cuenta profesional de Devir:
 pnpm devir:login
 ```
 
-Se abre un navegador Playwright. Inicia sesión manualmente y pulsa Enter en la terminal cuando hayas terminado. La sesión se guarda en `.secrets/devir-b2b-state.json`, que está excluido de Git.
+Se abre un navegador Playwright. Inicia sesión manualmente y pulsa Enter en la terminal cuando hayas terminado. El proceso conserva el perfil completo del navegador en `.secrets/devir-b2b-profile/` y también guarda `.secrets/devir-b2b-state.json`; ambos están excluidos de Git.
+
+El script comprueba que `/customer/account/` ya no redirija al formulario de login antes de considerar válida la sesión.
 
 No se guardan usuario ni contraseña en el proyecto.
 
@@ -26,7 +28,7 @@ Por defecto empieza en:
 https://b2bdevir.es/juegos-de-cartas-coleccionables
 ```
 
-Recorre las páginas `?p=2`, `?p=3`, etc., descubre los enlaces de producto y visita cada producto usando la sesión B2B guardada.
+Reutiliza el mismo perfil persistente de Playwright, comprueba primero que la sesión B2B siga autenticada y después recorre las páginas `?p=2`, `?p=3`, etc., descubre los enlaces de producto y visita cada producto usando la sesión B2B guardada.
 
 El resultado se escribe en:
 

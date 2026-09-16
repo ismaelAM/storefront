@@ -25,6 +25,9 @@ const categoryUrls = (process.env.DEVIR_B2B_CATEGORIES ??
   .split(",")
   .map((value) => value.trim())
   .filter(Boolean);
+const profilePath = resolve(
+  process.env.DEVIR_B2B_PROFILE_DIR ?? ".secrets/devir-b2b-profile",
+);
 const statePath = resolve(
   process.env.DEVIR_B2B_STATE_PATH ?? ".secrets/devir-b2b-state.json",
 );
@@ -179,10 +182,21 @@ async function readProduct(page: Page, url: string): Promise<DevirProduct | null
 async function main(): Promise<void> {
   if (!categoryUrls.length) throw new Error("No hay categorías configuradas.");
 
-  const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({ storageState: statePath });
-  const page = await context.newPage();
+  const browser = await chromium.launchPersistentContext(profilePath, {
+    headless: true,
+  });
+  const page = await browser.newPage();
   page.setDefaultTimeout(timeoutMs);
+
+  const accountResponse = await page.goto(`${baseUrl}/customer/account/`, {
+    waitUntil: "domcontentloaded",
+    timeout: timeoutMs,
+  });
+  if (page.url().includes("/customer/account/login")) {
+    throw new Error(
+      `La sesión B2B de Devir no está autenticada (HTTP ${accountResponse?.status() ?? "desconocido"}). Ejecuta primero pnpm devir:login con el mismo perfil.`,
+    );
+  }
 
   const productUrls = new Set<string>();
 
