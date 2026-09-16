@@ -67,6 +67,7 @@ async function waitForAuthenticatedSession(page: Page): Promise<boolean> {
 
   for (let attempt = 0; attempt < 30; attempt += 1) {
     if (await hasAuthenticatedCustomer(page)) return true;
+    console.log(`Comprobando sesión (${attempt + 1}/30)...`);
     await page.waitForTimeout(1000);
   }
 
@@ -85,6 +86,7 @@ async function main(): Promise<void> {
 
   const context = await chromium.launchPersistentContext(profilePath, {
     headless: false,
+    channel: process.env.DEVIR_B2B_BROWSER_CHANNEL ?? "chrome",
   });
   const existingPages = context.pages();
   const page = existingPages[0] ?? (await context.newPage());
