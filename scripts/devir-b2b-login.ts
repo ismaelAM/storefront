@@ -86,7 +86,6 @@ async function main(): Promise<void> {
 
   const context = await chromium.launchPersistentContext(profilePath, {
     headless: false,
-    channel: process.env.DEVIR_B2B_BROWSER_CHANNEL ?? "chrome",
   });
   const existingPages = context.pages();
   const page = existingPages[0] ?? (await context.newPage());
