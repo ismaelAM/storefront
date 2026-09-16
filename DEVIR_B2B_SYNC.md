@@ -28,7 +28,7 @@ Por defecto empieza en:
 https://b2bdevir.es/juegos-de-cartas-coleccionables
 ```
 
-Reutiliza el estado autenticado guardado en `.secrets/devir-b2b-state.json`, comprueba primero que la sesión B2B siga autenticada y después recorre las páginas `?p=2`, `?p=3`, etc., descubre los enlaces de producto y visita cada producto usando esa sesión.
+Reutiliza el mismo perfil persistente de Playwright que se usó durante el login, comprueba primero que la sesión B2B siga autenticada y después recorre las páginas `?p=2`, `?p=3`, etc., descubre los enlaces de producto y visita cada producto usando esa sesión.
 
 El resultado se escribe en:
 
