@@ -112,6 +112,8 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [x] Añadidas utilidades Puck compartidas y mejoras responsive en hero, grids, tarjetas y showcase de producto.
 - [ ] Verificar que el color global se refleja correctamente en los elementos que usan `primary`.
 - [x] Preparado lector inicial de catálogo B2B de Devir con sesión persistida fuera de Git y salida JSON local.
+- [x] Revisada la autenticación B2B de Devir: el chequeo de sesión ahora prioriza señales de sesión reales (logout/customer section) antes de considerar la mera presencia del formulario de login, evitando falsos negativos de Magento.
+- [ ] Ejecutar `pnpm devir:login` con la cuenta real y comprobar que la sesión queda guardada; si Devir sigue rechazando el login, usar el diagnóstico visible/cookies ya instrumentado para identificar el rechazo real antes de cambiar el mecanismo de navegador.
 
 ### Regiones e idiomas
 - [x] Confirmado que la web ya tenía infraestructura de locales y negociación de idioma.

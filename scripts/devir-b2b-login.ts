@@ -47,17 +47,16 @@ async function getLoginDiagnostics(page: Page): Promise<string[]> {
 }
 
 async function hasAuthenticatedCustomer(page: Page): Promise<boolean> {
-  const loginFormPresent =
-    (await page.locator('input[name="login[username]"]').count()) > 0;
-  if (loginFormPresent) return false;
-
+  // Do not use the presence of the login form as the first signal: Magento can
+  // keep login-form markup in the DOM (for example in a header/modal) even
+  // after the customer session is authenticated.
   const hasLogoutLink =
     (await page.locator(
       'a[href*="/customer/account/logout"], a[href*="/customer/account/logout/"]',
     ).count()) > 0;
   if (hasLogoutLink) return true;
 
-  return await page.evaluate(async () => {
+  const hasCustomerSection = await page.evaluate(async () => {
     try {
       const response = await fetch(
         "/customer/section/load/?sections=customer",
@@ -87,6 +86,13 @@ async function hasAuthenticatedCustomer(page: Page): Promise<boolean> {
       return false;
     }
   });
+  if (hasCustomerSection) return true;
+
+  const loginFormPresent =
+    (await page.locator('input[name="login[username]"]').count()) > 0;
+  if (loginFormPresent) return false;
+
+  return false;
 }
 
 async function waitForAuthenticatedSession(page: Page): Promise<boolean> {
