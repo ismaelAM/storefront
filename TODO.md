@@ -113,6 +113,8 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [ ] Verificar que el color global se refleja correctamente en los elementos que usan `primary`.
 - [x] Preparado lector inicial de catálogo B2B de Devir con sesión persistida fuera de Git y salida JSON local.
 - [x] Revisada la autenticación B2B de Devir: el chequeo de sesión ahora prioriza señales de sesión reales (logout/customer section) antes de considerar la mera presencia del formulario de login, evitando falsos negativos de Magento.
+- [x] Comprobado el fallo actual de `pnpm devir:login`: no llega a abrir Devir ni a intentar autenticar porque Codespaces no tiene servidor X/DISPLAY y el script solicita `headless: false`.
+- [ ] Resolver el flujo de login inicial desde Codespaces (usar un navegador con interfaz gráfica accesible o importar una sesión autenticada generada fuera de Codespaces) antes de diagnosticar un posible rechazo de credenciales de Devir.
 - [ ] Ejecutar `pnpm devir:login` con la cuenta real y comprobar que la sesión queda guardada; si Devir sigue rechazando el login, usar el diagnóstico visible/cookies ya instrumentado para identificar el rechazo real antes de cambiar el mecanismo de navegador.
 
 ### Regiones e idiomas
