@@ -8,15 +8,14 @@ const profilePath = resolve(
 const statePath = resolve(
   process.env.DEVIR_B2B_STATE_PATH ?? ".secrets/devir-b2b-state.json",
 );
-const loginUrl =
-  process.env.DEVIR_B2B_LOGIN_URL ??
-  "https://b2bdevir.es/customer/account/login/referer/aHR0cHM6Ly9iMmJkZXZpci5lcy9jdXN0b21lci9hY2NvdW50L2xvZ291dFN1Y2Nlc3Mv/";
 const accountUrl = "https://b2bdevir.es/customer/account/";
+const defaultLoginUrl = "https://b2bdevir.es/customer/account/login";
 
-async function waitForEnter(): Promise<void> {
+async function waitForEnter(message: string): Promise<string> {
   process.stdin.setEncoding("utf8");
-  await new Promise<void>((resolvePromise) => {
-    process.stdin.once("data", () => resolvePromise());
+  return await new Promise<string>((resolvePromise) => {
+    process.stdout.write(message);
+    process.stdin.once("data", (input) => resolvePromise(input.trim()));
   });
 }
 
@@ -29,12 +28,20 @@ async function main(): Promise<void> {
   });
   const page = await context.newPage();
 
+  const loginUrlInput = process.env.DEVIR_B2B_LOGIN_URL?.trim();
+  const loginUrl =
+    loginUrlInput ||
+    (await waitForEnter(
+      `Pega la URL actual de login de Devir B2B [Enter para usar ${defaultLoginUrl}]: `,
+    )) ||
+    defaultLoginUrl;
+
   console.log(`Abriendo ${loginUrl}`);
   await page.goto(loginUrl, { waitUntil: "domcontentloaded" });
   console.log(
     "Inicia sesión en Devir B2B en la ventana del navegador. Cuando hayas terminado y estés dentro de tu cuenta, vuelve aquí y pulsa Enter.",
   );
-  await waitForEnter();
+  await waitForEnter("");
 
   await page.goto(accountUrl, {
     waitUntil: "domcontentloaded",
