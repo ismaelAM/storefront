@@ -10,7 +10,7 @@ const statePath = resolve(
 );
 const loginUrl =
   process.env.DEVIR_B2B_LOGIN_URL ??
-  "https://b2bdevir.es/customer/account/login/";
+  "https://b2bdevir.es/customer/account/login/referer/aHR0cHM6Ly9iMmJkZXZpci5lcy9jdXN0b21lci9hY2NvdW50L2xvZ291dFN1Y2Nlc3Mv/";
 const accountUrl = "https://b2bdevir.es/customer/account/";
 
 async function waitForEnter(): Promise<void> {
