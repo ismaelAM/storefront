@@ -182,10 +182,9 @@ async function readProduct(page: Page, url: string): Promise<DevirProduct | null
 async function main(): Promise<void> {
   if (!categoryUrls.length) throw new Error("No hay categorías configuradas.");
 
-  const browser = await chromium.launchPersistentContext(profilePath, {
-    headless: true,
-  });
-  const page = await browser.newPage();
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({ storageState: statePath });
+  const page = await context.newPage();
   page.setDefaultTimeout(timeoutMs);
 
   const accountResponse = await page.goto(`${baseUrl}/customer/account/`, {
@@ -194,7 +193,7 @@ async function main(): Promise<void> {
   });
   if (page.url().includes("/customer/account/login")) {
     throw new Error(
-      `La sesión B2B de Devir no está autenticada (HTTP ${accountResponse?.status() ?? "desconocido"}). Ejecuta primero pnpm devir:login con el mismo perfil.`,
+      `La sesión B2B de Devir no está autenticada (HTTP ${accountResponse?.status() ?? "desconocido"}). Ejecuta primero pnpm devir:login.`,
     );
   }
 
@@ -276,6 +275,7 @@ async function main(): Promise<void> {
     ),
   );
 
+  await context.close();
   await browser.close();
   console.log(`Catálogo guardado en ${outputPath}`);
 }
