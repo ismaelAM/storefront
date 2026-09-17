@@ -88,8 +88,42 @@ SPREE_API_URL=https://...
 SPREE_ADMIN_API_KEY=...
 ```
 
-La secret key es solo de servidor y debe tener como mínimo permiso `read_products`. Nunca se guarda en Git ni en el JSON de Devir. El dry-run recorre el catálogo de Admin API, indexa las variantes por SKU y muestra `MATCH`/`MISS`, precio actual de Spree y coste leído de Devir. No ejecuta `POST`, `PATCH` ni `DELETE`.
+La secret key es solo de servidor y debe tener como mínimo permiso `read_products`. Nunca se guarda en Git ni en el JSON de Devir. El dry-run lista los productos de Admin API y consulta sus variantes por `/api/v3/admin/products/{product_id}/variants`, de modo que también puede resolver correctamente el SKU de la variante master de productos simples.
+
+El resultado distingue:
+
+- `MATCH`: el SKU ya existe en Spree y se compara el PVP actual con el PVP propuesto.
+- `CREATE-DRAFT`: el SKU no existe y el plan propone crear el producto como borrador. El dry-run no lo crea realmente.
+
+Además guarda un plan local en:
+
+```text
+.local/devir-b2b-import-plan.json
+```
+
+### Regla de auto-precio
+
+Por defecto el precio profesional de Devir se trata como coste **sin IVA** y se calcula:
+
+```text
+coste_con_IVA = purchasePrice × (1 + 0.21)
+PVP_mínimo    = coste_con_IVA / (1 - 0.25)
+PVP_propuesto = siguiente precio terminado en .99 que no quede por debajo del PVP_mínimo
+```
+
+Esto equivale a IVA del 21% y margen bruto objetivo del 25%. La regla es configurable sin cambiar código:
+
+```bash
+DEVIR_PRICE_VAT_RATE=0.21
+DEVIR_PRICE_TARGET_MARGIN=0.25
+DEVIR_PRICE_COST_INCLUDES_VAT=false
+DEVIR_PRICE_CURRENCY=EUR
+```
+
+Si la cuenta o factura de Devir confirma que el precio profesional ya incluye IVA, usar `DEVIR_PRICE_COST_INCLUDES_VAT=true` para no sumarlo dos veces.
+
+El dry-run no ejecuta `POST`, `PATCH` ni `DELETE`. Solo escribe el plan en `.local/`, que está fuera de Git.
 
 ## Fase siguiente
 
-Cuando el JSON esté validado con productos reales, la siguiente fase será convertirlo a un importador de Spree usando SKU como clave de enlace y aplicar las reglas de precio/estado de BisonTCG. Esa fase todavía no está activada en este commit para evitar modificar el catálogo real antes de validar la extracción.
+Validar el plan con productos reales y confirmar el tratamiento de IVA del coste Devir. Solo después se habilitará un modo de escritura con una secret key que tenga `write_products`; los productos nuevos seguirán entrando inicialmente como `draft` hasta que stock/preventa estén mapeados de forma segura.

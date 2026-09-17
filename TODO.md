@@ -53,7 +53,9 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [x] El lector B2B de Devir extrae SKU, precio final/máximo, disponibilidad y fecha de lanzamiento sin modificar Spree.
 - [x] Validar la prueba de concepto contra 5 productos reales de Devir, incluyendo Yu-Gi-Oh! y Magic: The Gathering.
 - [x] Preparado el importador Devir → Spree en modo dry-run, resolviendo variantes por SKU sin escribir cambios.
-- [ ] Añadir las reglas de auto-precio BisonTCG al importador antes de escribir precios en Spree (el dry-run todavía no modifica precios).
+- [x] Añadida regla de auto-precio al dry-run: coste Devir + IVA configurable, margen bruto objetivo configurable y redondeo seguro al siguiente `.99`.
+- [ ] Confirmar con una factura/panel de Devir si `purchasePrice` se muestra sin IVA; el dry-run asume por defecto coste sin IVA y permite cambiarlo con `DEVIR_PRICE_COST_INCLUDES_VAT=true`.
+- [ ] Validar `.local/devir-b2b-import-plan.json` con catálogo real antes de habilitar escrituras `write_products`.
 - [ ] Definir proveedores múltiples y prioridad de abastecimiento cuando un producto no esté disponible en un distribuidor.
 
 ## Envíos
@@ -103,6 +105,7 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [x] Corregido ese fallo en el commit posterior de `puck_editor`.
 - [x] Corregido el fallo posterior de TypeScript en `scripts/devir-b2b-login.ts`: `stdin` devuelve un Buffer y ahora se convierte explícitamente a texto antes de aplicar `trim()`.
 - [x] Corregido el typecheck del dry-run Devir → Spree fijando la Admin API key como `string` validado antes de construir los headers de `fetch`.
+- [x] Migrada la configuración `pnpm.overrides` / `pnpm.onlyBuiltDependencies` a `pnpm-workspace.yaml` para pnpm 10.33+, evitando que se ignore durante instalaciones.
 - [ ] Verificar un nuevo deployment después de la corrección de seguridad y los últimos cambios.
 - [ ] No fusionar la PR temporal `#1` de `puck_editor` a `main`; es solo para verificación y no debe eliminar la regla de trabajar únicamente en `puck_editor`.
 
@@ -115,12 +118,12 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [ ] Verificar que el color global se refleja correctamente en los elementos que usan `primary`.
 - [x] Preparado lector inicial de catálogo B2B de Devir con sesión persistida fuera de Git y salida JSON local.
 - [x] Normalizados precios Devir que llegan como euros enteros o céntimos codificados sin separador (p. ej. `12412` → `124.12`).
-- [x] Preparado dry-run de importación contra la Admin API de Spree; no realiza escrituras.
+- [x] Preparado dry-run de importación contra la Admin API de Spree; ahora consulta variantes por producto, propone `MATCH`/`CREATE-DRAFT`, calcula PVP y guarda un plan local sin realizar escrituras.
 - [x] Revisada la autenticación B2B de Devir: el chequeo de sesión ahora prioriza señales de sesión reales (logout/customer section) antes de considerar la mera presencia del formulario de login, evitando falsos negativos de Magento.
 - [x] Comprobado el fallo actual de `pnpm devir:login`: no llega a abrir Devir ni a intentar autenticar porque Codespaces no tiene servidor X/DISPLAY y el script solicita `headless: false`.
 - [x] Corregido `pnpm devir:login` para que, cuando Codespaces no tenga DISPLAY, abra el navegador Devir en modo headless y exponga una interfaz web temporal para que el login se haga manualmente desde el navegador del Codespace; la sesión se guarda únicamente tras validar la autenticación.
 - [x] Corregida la apertura del puerto 8787 desde Codespaces: si GitHub abre la raíz sin el token temporal, el servidor redirige automáticamente a la URL autenticada en lugar de responder `Not found`; las rutas de control siguen exigiendo token.
-- [ ] Ejecutar `pnpm devir:login`, completar el login real de Devir desde la interfaz web y comprobar que la sesión queda guardada.
+- [x] Ejecutado `pnpm devir:login`; login real completado y sesión persistente guardada fuera de Git.
 - [x] Ejecutado `DEVIR_B2B_MAX_PRODUCTS=5 pnpm devir:scan` y validados varios productos reales antes de preparar la importación.
 
 ### Regiones e idiomas
