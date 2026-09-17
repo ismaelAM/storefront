@@ -54,6 +54,20 @@ function parseNumber(value: string | undefined): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function normalizePriceAmount(value: string | undefined): number | null {
+  const parsed = parseNumber(value);
+  if (parsed === null) return null;
+
+  // Devir B2B currently exposes some prices as whole euros (e.g. 49)
+  // and others as euro cents without a decimal separator (e.g. 12412 = 124.12 €).
+  // Keep the reader's output consistently expressed in euros.
+  if (Number.isInteger(parsed) && Math.abs(parsed) >= 1000) {
+    return parsed / 100;
+  }
+
+  return parsed;
+}
+
 function normalizeReleaseDate(value: string | null): string | null {
   if (!value) return null;
   const match = value.match(/(\d{2})\/(\d{2})\/(\d{4})/);
@@ -148,9 +162,9 @@ async function readProduct(page: Page, url: string): Promise<DevirProduct | null
     return null;
   }
 
-  const finalPrice = parseNumber(data.finalPrice ?? undefined);
-  const minPrice = parseNumber(data.minPrice ?? undefined);
-  const maxPrice = parseNumber(data.maxPrice ?? undefined);
+  const finalPrice = normalizePriceAmount(data.finalPrice ?? undefined);
+  const minPrice = normalizePriceAmount(data.minPrice ?? undefined);
+  const maxPrice = normalizePriceAmount(data.maxPrice ?? undefined);
   const purchasePrice = maxPrice ?? finalPrice ?? minPrice;
   const rawAvailability = data.stockText ?? "";
   const availability: Availability =
