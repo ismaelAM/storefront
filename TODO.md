@@ -51,9 +51,9 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [ ] Definir países por Market y revisar moneda, locale, pagos, impuestos y envío por región.
 - [x] Añadida primera prueba de concepto para leer el catálogo B2B de Devir con una sesión de cliente, descubriendo productos desde categorías paginadas.
 - [x] El lector B2B de Devir extrae SKU, precio final/máximo, disponibilidad y fecha de lanzamiento sin modificar Spree.
-- [ ] Validar la prueba de concepto contra varios productos reales de Devir y juegos distintos.
-- [ ] Convertir el catálogo leído de Devir a un importador real de Spree usando SKU como clave.
-- [ ] Añadir las reglas de auto-precio BisonTCG al importador antes de escribir precios en Spree.
+- [x] Validar la prueba de concepto contra 5 productos reales de Devir, incluyendo Yu-Gi-Oh! y Magic: The Gathering.
+- [x] Preparado el importador Devir → Spree en modo dry-run, resolviendo variantes por SKU sin escribir cambios.
+- [ ] Añadir las reglas de auto-precio BisonTCG al importador antes de escribir precios en Spree (el dry-run todavía no modifica precios).
 - [ ] Definir proveedores múltiples y prioridad de abastecimiento cuando un producto no esté disponible en un distribuidor.
 
 ## Envíos
@@ -101,6 +101,8 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [x] Vercel tuvo deployments `READY` antes de la capa de seguridad.
 - [x] Identificado el fallo del último deployment de seguridad: TypeScript rechazaba `form action={login}` porque la Server Action devolvía un objeto en lugar de `void`/`Promise<void>`.
 - [x] Corregido ese fallo en el commit posterior de `puck_editor`.
+- [x] Corregido el fallo posterior de TypeScript en `scripts/devir-b2b-login.ts`: `stdin` devuelve un Buffer y ahora se convierte explícitamente a texto antes de aplicar `trim()`.
+- [x] Corregido el typecheck del dry-run Devir → Spree fijando la Admin API key como `string` validado antes de construir los headers de `fetch`.
 - [ ] Verificar un nuevo deployment después de la corrección de seguridad y los últimos cambios.
 - [ ] No fusionar la PR temporal `#1` de `puck_editor` a `main`; es solo para verificación y no debe eliminar la regla de trabajar únicamente en `puck_editor`.
 
@@ -112,12 +114,14 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [x] Añadidas utilidades Puck compartidas y mejoras responsive en hero, grids, tarjetas y showcase de producto.
 - [ ] Verificar que el color global se refleja correctamente en los elementos que usan `primary`.
 - [x] Preparado lector inicial de catálogo B2B de Devir con sesión persistida fuera de Git y salida JSON local.
+- [x] Normalizados precios Devir que llegan como euros enteros o céntimos codificados sin separador (p. ej. `12412` → `124.12`).
+- [x] Preparado dry-run de importación contra la Admin API de Spree; no realiza escrituras.
 - [x] Revisada la autenticación B2B de Devir: el chequeo de sesión ahora prioriza señales de sesión reales (logout/customer section) antes de considerar la mera presencia del formulario de login, evitando falsos negativos de Magento.
 - [x] Comprobado el fallo actual de `pnpm devir:login`: no llega a abrir Devir ni a intentar autenticar porque Codespaces no tiene servidor X/DISPLAY y el script solicita `headless: false`.
 - [x] Corregido `pnpm devir:login` para que, cuando Codespaces no tenga DISPLAY, abra el navegador Devir en modo headless y exponga una interfaz web temporal para que el login se haga manualmente desde el navegador del Codespace; la sesión se guarda únicamente tras validar la autenticación.
 - [x] Corregida la apertura del puerto 8787 desde Codespaces: si GitHub abre la raíz sin el token temporal, el servidor redirige automáticamente a la URL autenticada en lugar de responder `Not found`; las rutas de control siguen exigiendo token.
 - [ ] Ejecutar `pnpm devir:login`, completar el login real de Devir desde la interfaz web y comprobar que la sesión queda guardada.
-- [ ] Ejecutar `DEVIR_B2B_MAX_PRODUCTS=5 pnpm devir:scan` y validar varios productos reales antes de pasar a la importación de Spree.
+- [x] Ejecutado `DEVIR_B2B_MAX_PRODUCTS=5 pnpm devir:scan` y validados varios productos reales antes de preparar la importación.
 
 ### Regiones e idiomas
 - [x] Confirmado que la web ya tenía infraestructura de locales y negociación de idioma.

@@ -73,6 +73,23 @@ Cualquier otro  -> unknown
 
 El lector usa una sesión normal de Playwright, mantiene una cadencia deliberadamente baja y no intenta saltarse CAPTCHA, WAF, rate limits, fingerprinting ni otras medidas de protección. Si Devir exige una interacción adicional, el proceso debe detenerse y esa condición se debe resolver por una vía permitida.
 
+## Dry-run contra Spree
+
+Una vez generado `.local/devir-b2b-catalog.json`, se puede comprobar la correspondencia por SKU contra el catálogo real de Spree sin modificar ningún dato:
+
+```bash
+pnpm devir:import:dry-run
+```
+
+Requiere en el entorno local:
+
+```text
+SPREE_API_URL=https://...
+SPREE_ADMIN_API_KEY=...
+```
+
+La secret key es solo de servidor y debe tener como mínimo permiso `read_products`. Nunca se guarda en Git ni en el JSON de Devir. El dry-run recorre el catálogo de Admin API, indexa las variantes por SKU y muestra `MATCH`/`MISS`, precio actual de Spree y coste leído de Devir. No ejecuta `POST`, `PATCH` ni `DELETE`.
+
 ## Fase siguiente
 
 Cuando el JSON esté validado con productos reales, la siguiente fase será convertirlo a un importador de Spree usando SKU como clave de enlace y aplicar las reglas de precio/estado de BisonTCG. Esa fase todavía no está activada en este commit para evitar modificar el catálogo real antes de validar la extracción.

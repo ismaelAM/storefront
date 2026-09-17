@@ -18,7 +18,7 @@ async function waitForEnter(message: string): Promise<string> {
   process.stdin.setEncoding("utf8");
   return await new Promise<string>((resolvePromise) => {
     process.stdout.write(message);
-    process.stdin.once("data", (input) => resolvePromise(input.trim()));
+    process.stdin.once("data", (input) => resolvePromise(String(input).trim()));
   });
 }
 

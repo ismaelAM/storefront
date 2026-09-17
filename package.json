@@ -18,7 +18,8 @@
     "e2e:up": "docker compose -f e2e-backend/docker-compose.yml up -d --wait && ./scripts/e2e/bootstrap-spree.sh",
     "e2e:down": "docker compose -f e2e-backend/docker-compose.yml down -v",
     "devir:login": "tsx scripts/devir-b2b-login.ts",
-    "devir:scan": "tsx scripts/devir-b2b-sync.ts"
+    "devir:scan": "tsx scripts/devir-b2b-sync.ts",
+    "devir:import:dry-run": "tsx scripts/devir-b2b-import.ts"
   },
   "dependencies": {
     "@adyen/adyen-web": "^6.33.0",
