@@ -213,15 +213,24 @@ async function startLoginControl(page: Page): Promise<void> {
   const server = createServer(async (request, response) => {
     try {
       const requestUrl = new URL(request.url ?? "/", `http://127.0.0.1:${controlPort}`);
-      if (requestUrl.searchParams.get("token") !== token) {
-        response.writeHead(404);
-        response.end("Not found");
+      if (request.method === "GET" && requestUrl.pathname === "/") {
+        if (requestUrl.searchParams.get("token") !== token) {
+          response.writeHead(302, {
+            Location: `/?token=${encodeURIComponent(token)}`,
+            "Cache-Control": "no-store",
+          });
+          response.end();
+          return;
+        }
+
+        response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+        response.end(loginControlHtml(token));
         return;
       }
 
-      if (request.method === "GET" && requestUrl.pathname === "/") {
-        response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
-        response.end(loginControlHtml(token));
+      if (requestUrl.searchParams.get("token") !== token) {
+        response.writeHead(404);
+        response.end("Not found");
         return;
       }
 

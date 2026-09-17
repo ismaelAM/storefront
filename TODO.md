@@ -115,6 +115,7 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [x] Revisada la autenticación B2B de Devir: el chequeo de sesión ahora prioriza señales de sesión reales (logout/customer section) antes de considerar la mera presencia del formulario de login, evitando falsos negativos de Magento.
 - [x] Comprobado el fallo actual de `pnpm devir:login`: no llega a abrir Devir ni a intentar autenticar porque Codespaces no tiene servidor X/DISPLAY y el script solicita `headless: false`.
 - [x] Corregido `pnpm devir:login` para que, cuando Codespaces no tenga DISPLAY, abra el navegador Devir en modo headless y exponga una interfaz web temporal para que el login se haga manualmente desde el navegador del Codespace; la sesión se guarda únicamente tras validar la autenticación.
+- [x] Corregida la apertura del puerto 8787 desde Codespaces: si GitHub abre la raíz sin el token temporal, el servidor redirige automáticamente a la URL autenticada en lugar de responder `Not found`; las rutas de control siguen exigiendo token.
 - [ ] Ejecutar `pnpm devir:login`, completar el login real de Devir desde la interfaz web y comprobar que la sesión queda guardada.
 - [ ] Ejecutar `DEVIR_B2B_MAX_PRODUCTS=5 pnpm devir:scan` y validar varios productos reales antes de pasar a la importación de Spree.
 
