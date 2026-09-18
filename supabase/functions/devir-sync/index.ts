@@ -595,21 +595,28 @@ async function operatorAction(
       .limit(5);
     if (cyclesError) throw cyclesError;
 
-    let jobs = { pending: 0, done: 0, error: 0 };
+    let jobs = {
+      pending: 0,
+      done: 0,
+      error: 0,
+      categories: { pending: 0, done: 0, error: 0 },
+      products: { pending: 0, done: 0, error: 0 },
+    };
     if (config.active_cycle_id) {
-      const [pending, done, errors] = await Promise.all([
-        supabase.from("devir_sync_jobs").select("*", { count: "exact", head: true })
-          .eq("cycle_id", config.active_cycle_id).eq("status", "pending"),
-        supabase.from("devir_sync_jobs").select("*", { count: "exact", head: true })
-          .eq("cycle_id", config.active_cycle_id).eq("status", "done"),
-        supabase.from("devir_sync_jobs").select("*", { count: "exact", head: true })
-          .eq("cycle_id", config.active_cycle_id).eq("status", "error"),
-      ]);
-      jobs = {
-        pending: pending.count ?? 0,
-        done: done.count ?? 0,
-        error: errors.count ?? 0,
-      };
+      const { data: grouped, error: groupedError } = await supabase
+        .from("devir_sync_jobs")
+        .select("kind,status")
+        .eq("cycle_id", config.active_cycle_id);
+      if (groupedError) throw groupedError;
+
+      for (const row of grouped ?? []) {
+        const kind = row.kind === "category" ? "categories" : "products";
+        const status = row.status as "pending" | "done" | "error" | "processing";
+        if (status === "pending" || status === "done" || status === "error") {
+          jobs[kind][status] += 1;
+          jobs[status] += 1;
+        }
+      }
     }
 
     return json({
@@ -878,11 +885,38 @@ Deno.serve(async (req) => {
     }
 
     if (phase === "categories") {
-      const result = await processCategories(config, cycleId);
-      if (result.done) {
-        await supabase.from("devir_sync_config").update({ phase: "products", updated_at: new Date().toISOString() }).eq("id", "primary");
+      const categoryResult = await processCategories(config, cycleId);
+      const productResult = await processProducts(config, cycleId);
+
+      if (categoryResult.done && productResult.done) {
+        await finishCycle(config, cycleId);
+        return json({
+          ok: true,
+          cycle_id: cycleId,
+          phase: "complete",
+          categories_processed: categoryResult.processed,
+          products_processed: productResult.processed,
+          images: productResult.images,
+          reviews: productResult.reviews,
+        });
       }
-      return json({ ok: true, cycle_id: cycleId, phase: result.done ? "products" : "categories", processed: result.processed });
+
+      if (categoryResult.done) {
+        await supabase
+          .from("devir_sync_config")
+          .update({ phase: "products", updated_at: new Date().toISOString() })
+          .eq("id", "primary");
+      }
+
+      return json({
+        ok: true,
+        cycle_id: cycleId,
+        phase: categoryResult.done ? "products" : "categories",
+        categories_processed: categoryResult.processed,
+        products_processed: productResult.processed,
+        images: productResult.images,
+        reviews: productResult.reviews,
+      });
     }
 
     if (phase === "products") {
