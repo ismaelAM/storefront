@@ -189,6 +189,95 @@ PVP_propuesto = siguiente precio terminado en .99
 
 Se mantienen los overrides de entorno `DEVIR_PRICE_VAT_RATE`, `DEVIR_PRICE_TARGET_MARGIN`, `DEVIR_PRICE_COST_INCLUDES_VAT` y `DEVIR_PRICE_CURRENCY`.
 
+## Spree como centro de revisión comercial
+
+El flujo de escritura ya no publica productos directamente. Los nuevos artículos Devir se crean en Spree con `status: draft`, por lo que permanecen ocultos al Store API hasta que un operador los active.
+
+La Secret API Key usada por el importador necesita:
+
+- `write_products` para crear/actualizar borradores, variantes, coste y PVP.
+- `write_settings` para crear los campos internos de Devir/Pricing.
+- acceso de lectura a productos/categorías incluido en esos permisos.
+
+Primera preparación:
+
+```bash
+pnpm devir:spree:setup
+pnpm devir:spree:categories
+```
+
+Los campos creados son internos de Admin (`storefront_visible: false`). En producto se guarda SKU proveedor, estado/motivos de revisión, última sincronización, margen aplicado/efectivo, IVA y si el PVP se ha editado manualmente. En categorías se crea `Pricing · Margen objetivo`.
+
+Para configurar margen por categoría desde la terminal:
+
+```bash
+pnpm devir:spree:margin tcg/mtg 0.25
+pnpm devir:spree:margin tcg/yugioh 0.25
+```
+
+Los valores anteriores son solo ejemplos de formato: `0.25` significa 25%. Usa tus porcentajes comerciales reales.
+
+También puedes definir una excepción para un SKU concreto:
+
+```bash
+pnpm devir:spree:margin-product SKU 0.25
+```
+
+Prioridad de precio:
+
+```text
+PVP manual del operador
+→ margen manual de la decisión local
+→ margen override del producto en Spree
+→ margen de categoría en Spree
+→ margen local de respaldo
+→ fallback de referencia
+```
+
+El dry-run sigue siendo seguro y no escribe:
+
+```bash
+pnpm devir:import:dry-run
+```
+
+Para materializar el plan como borradores ocultos:
+
+```bash
+pnpm devir:spree:sync
+```
+
+Calidad de vida y protecciones:
+
+- Los productos nuevos siempre nacen como `draft`.
+- Un `REVIEW_REQUIRED` se guarda igualmente en Spree para revisarlo cerca del catálogo, pero sigue oculto.
+- `cost_price` guarda el coste del proveedor y `price` el PVP propuesto.
+- Si cambias el PVP manualmente en Spree, la siguiente sincronización lo detecta y lo preserva; solo actualiza coste/metadatos y recalcula el margen efectivo.
+- Los productos `active` no reciben cambios automáticos de PVP salvo que se configure explícitamente `DEVIR_B2B_UPDATE_ACTIVE=true`.
+- Un pack aprobado con `mode: "split"` se archiva cuando todos sus hijos ya existen/sincronizaron.
+- Ningún proceso de 6 horas activa productos automáticamente.
+
+Resumen del estado Devir en Spree:
+
+```bash
+pnpm devir:spree:status
+```
+
+Activación explícita, solo si no quedan motivos de revisión:
+
+```bash
+pnpm devir:spree:activate SKU
+```
+
+El sincronizador continuo ahora hace `scan → dry-run → sync a drafts` cada 6 horas:
+
+```bash
+pnpm devir:sync:watch
+```
+
+Sigue dependiendo de que el proceso/Codespace permanezca activo. Para operación 24/7 habrá que moverlo a un worker persistente.
+
+`.local` se conserva como caché/auditoría y decisiones de splits; Spree pasa a ser el centro de revisión comercial del producto, coste, PVP, margen y estado visible/oculto.
+
 ## Fase siguiente
 
-Validar tus márgenes reales por categoría y varios casos de split. Solo después se habilitará un modo de escritura con `write_products`; Spree seguirá siendo la fuente de verdad y ningún `REVIEW_REQUIRED` podrá escribirse automáticamente.
+Validar en la instancia real los scopes `write_products` + `write_settings`, ejecutar la primera sincronización a drafts y comprobar desde Admin que los productos permanecen ocultos hasta activarlos. Después, mover el ciclo de 6 horas a un worker persistente.

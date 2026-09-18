@@ -59,6 +59,14 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [x] Añadida cola `AUTO` / `REVIEW_REQUIRED` / `APPROVED` y decisiones persistidas localmente para que el operador controle excepciones.
 - [x] Añadido soporte de packs divididos manualmente en productos hijos, validando que el coste asignado cuadre con el total de Devir.
 - [x] Añadido `pnpm devir:sync:watch`: scan + dry-run cada 6 horas mientras el proceso/Codespace esté activo; si caduca la sesión se detiene y requiere `pnpm devir:login`.
+- [x] Añadida sincronización Devir → Spree que crea productos nuevos como `draft` ocultos y guarda coste/PVP en la variante.
+- [x] Spree gestiona márgenes objetivo mediante campos internos de categoría y overrides por producto; el JSON local queda como respaldo técnico.
+- [x] Añadidos campos internos de revisión, origen Devir, margen aplicado/efectivo, IVA y última sincronización.
+- [x] Protegidos los PVP editados manualmente en Spree frente a sobrescritura en sincronizaciones posteriores.
+- [x] Añadido comando de activación por SKU que rechaza productos con `REVIEW_REQUIRED`.
+- [x] El ciclo de 6 horas ahora ejecuta scan → dry-run → sync a drafts y nunca activa productos automáticamente.
+- [ ] Confirmar que la Secret API Key real tiene `write_products` y `write_settings`, ejecutar `pnpm devir:spree:setup` y verificar la primera carga real de drafts.
+- [ ] Verificar en Store API/Preview que los productos `draft` de Devir no son visibles hasta activarlos.
 - [x] Los scripts Devir cargan `.env.local` automáticamente y priorizan `DEVIR_B2B_SPREE_API_URL` / `DEVIR_B2B_SPREE_ADMIN_API_KEY` traídas desde Vercel, manteniendo compatibilidad con los nombres antiguos.
 - [ ] Mover el watcher de 6 horas a un worker persistente cuando el flujo esté validado; Codespaces puede dormir y no es scheduler de producción.
 - [ ] Definir proveedores múltiples y prioridad de abastecimiento cuando un producto no esté disponible en un distribuidor.

@@ -22,7 +22,14 @@
     "devir:import:dry-run": "tsx scripts/devir-b2b-import.ts",
     "devir:review": "tsx scripts/devir-b2b-review.ts",
     "devir:sync:once": "tsx scripts/devir-b2b-loop.ts --once",
-    "devir:sync:watch": "tsx scripts/devir-b2b-loop.ts"
+    "devir:sync:watch": "tsx scripts/devir-b2b-loop.ts",
+    "devir:spree:setup": "tsx scripts/devir-b2b-spree.ts setup",
+    "devir:spree:sync": "tsx scripts/devir-b2b-spree.ts sync",
+    "devir:spree:status": "tsx scripts/devir-b2b-spree.ts status",
+    "devir:spree:categories": "tsx scripts/devir-b2b-spree.ts categories",
+    "devir:spree:margin": "tsx scripts/devir-b2b-spree.ts margin",
+    "devir:spree:margin-product": "tsx scripts/devir-b2b-spree.ts margin-product",
+    "devir:spree:activate": "tsx scripts/devir-b2b-spree.ts activate"
   },
   "dependencies": {
     "@adyen/adyen-web": "^6.33.0",

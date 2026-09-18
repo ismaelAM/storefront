@@ -48,7 +48,17 @@ async function syncOnce(): Promise<boolean> {
     return false;
   }
 
-  console.log("Sync de lectura completado. Revisa la cola con `pnpm devir:review` cuando haya REVIEW_REQUIRED.");
+  const spreeCode = await run("pnpm", ["devir:spree:sync"]);
+  if (spreeCode !== 0) {
+    console.error(
+      "El plan se ha generado, pero no se ha podido sincronizar a drafts de Spree. Comprueba write_products/write_settings y la configuración.",
+    );
+    return false;
+  }
+
+  console.log(
+    "Sync completado: Devir → plan → drafts de Spree. Los REVIEW_REQUIRED siguen ocultos y nunca se activan automáticamente.",
+  );
   return true;
 }
 

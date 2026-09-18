@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { loadLocalEnv } from "./load-local-env";
+import { attachCategoryMargins, customFields, numberField } from "./spree-admin";
 
 loadLocalEnv();
 
@@ -56,6 +57,9 @@ interface PricingCategoryRule {
   label: string;
   match?: string[];
   targetMargin: number | null;
+  marginSource?: string;
+  spreeCategoryId?: string;
+  spreeCategoryName?: string;
 }
 
 interface PricingConfig {
@@ -109,7 +113,9 @@ interface ImportPlanItem {
   supplierSku: string;
   sku: string;
   name: string;
+  sourceUrl: string | null;
   category: string | null;
+  spreeCategoryId: string | null;
   availability: string;
   releaseDate: string | null;
   pricing: PriceProposal | null;
@@ -432,11 +438,13 @@ function resolvePricing({
   category,
   decision,
   config,
+  explicitMarginSource,
 }: {
   purchasePrice: number | null;
   category: PricingCategoryRule | null;
   decision?: OperatorDecision;
   config: PricingConfig;
+  explicitMarginSource?: string;
 }): { pricing: PriceProposal | null; reasons: string[] } {
   const reasons: string[] = [];
   const explicitMargin = decision?.targetMargin;
@@ -448,9 +456,9 @@ function resolvePricing({
   const targetMargin = explicitMargin ?? categoryMargin ?? config.defaultTargetMargin;
   const ruleSource =
     explicitMargin !== null && explicitMargin !== undefined
-      ? "operator_margin"
+      ? explicitMarginSource ?? "operator_margin"
       : categoryMargin !== null
-        ? `category:${category?.key}`
+        ? category?.marginSource ?? `category:${category?.key}`
         : "default_reference";
 
   if (!category) reasons.push("category_unclassified");
@@ -512,7 +520,9 @@ function makePlanItem({
     supplierSku: supplier.sku,
     sku,
     name,
+    sourceUrl: supplier.url ?? null,
     category: category?.key ?? decision?.category ?? null,
+    spreeCategoryId: category?.spreeCategoryId ?? null,
     availability: supplier.availability,
     releaseDate: supplier.releaseDate,
     pricing: pricing
@@ -529,6 +539,31 @@ function makePlanItem({
       : null,
     ...(decision?.note ? { operatorNote: decision.note } : {}),
   };
+}
+
+async function productMarginOverride(
+  sku: string,
+  spreeBySku: Map<string, { product: SpreeProduct; variant: SpreeVariant }>,
+  cache: Map<string, number | null>,
+): Promise<{ margin: number | null; source?: string }> {
+  const match = spreeBySku.get(sku);
+  if (!match) return { margin: null };
+  if (cache.has(match.product.id)) {
+    const margin = cache.get(match.product.id) ?? null;
+    return { margin, ...(margin === null ? {} : { source: "spree_product:" + match.product.id }) };
+  }
+  try {
+    const margin = numberField(
+      await customFields("products", match.product.id),
+      "pricing.target_margin",
+    );
+    const valid = margin !== null && margin >= 0 && margin < 0.95 ? margin : null;
+    cache.set(match.product.id, valid);
+    return { margin: valid, ...(valid === null ? {} : { source: "spree_product:" + match.product.id }) };
+  } catch {
+    cache.set(match.product.id, null);
+    return { margin: null };
+  }
 }
 
 function validateSplitDecision(product: DevirProduct, decision: OperatorDecision): string[] {
@@ -558,6 +593,7 @@ function validateSplitDecision(product: DevirProduct, decision: OperatorDecision
 
 async function main(): Promise<void> {
   const config = await loadPricingConfig();
+  await attachCategoryMargins(config.categories);
   const catalog = JSON.parse(await readFile(catalogPath, "utf8")) as { products: DevirProduct[] };
   const products = catalog.products ?? [];
   if (!products.length) throw new Error(`El catálogo Devir está vacío: ${catalogPath}`);
@@ -577,6 +613,7 @@ async function main(): Promise<void> {
   }
 
   const spreeBySku = await loadSpreeVariants();
+  const productMarginCache = new Map<string, number | null>();
   const plan: ImportPlanItem[] = [];
   const reviewQueue: ReviewQueueItem[] = [];
 
@@ -584,7 +621,7 @@ async function main(): Promise<void> {
   console.log(
     `Precio base: coste Devir ${config.costIncludesVat ? "con IVA" : "sin IVA"}; IVA ${formatPercent(config.vatRate)}; margen fallback ${formatPercent(config.defaultTargetMargin)}; redondeo al siguiente .99; moneda ${config.currency}.`,
   );
-  console.log("Los márgenes por categoría mandan sobre el fallback; los que falten requieren revisión.\n");
+  console.log("Prioridad: operador → override de producto en Spree → categoría Spree/local → fallback de referencia.\n");
 
   for (const supplier of products) {
     const inferredCategory = inferCategory(supplier, config);
@@ -598,11 +635,13 @@ async function main(): Promise<void> {
       for (const child of children) {
         const category =
           findCategory(config, child.category ?? decision.category) ?? inferredCategory;
+        const productOverride = await productMarginOverride(child.sku, spreeBySku, productMarginCache);
+        const inheritedMargin = child.targetMargin ?? decision.targetMargin;
         const childDecision: OperatorDecision = {
           approved: decision.approved,
           mode: "approve",
           category: child.category ?? decision.category,
-          targetMargin: child.targetMargin ?? decision.targetMargin,
+          targetMargin: inheritedMargin ?? productOverride.margin,
           retailPrice: child.retailPrice,
           note: decision.note,
         };
@@ -611,6 +650,8 @@ async function main(): Promise<void> {
           category,
           decision: childDecision,
           config,
+          explicitMarginSource:
+            inheritedMargin != null ? "operator_margin" : productOverride.source,
         });
         const allReasons = Array.from(new Set([...splitReasons, ...reasons]));
         const item = makePlanItem({
@@ -655,11 +696,18 @@ async function main(): Promise<void> {
     }
 
     const category = findCategory(config, decision?.category) ?? inferredCategory;
+    const productOverride = await productMarginOverride(supplier.sku, spreeBySku, productMarginCache);
+    const effectiveDecision: OperatorDecision | undefined =
+      decision?.targetMargin != null || productOverride.margin == null
+        ? decision
+        : { ...(decision ?? {}), targetMargin: productOverride.margin };
     const { pricing, reasons } = resolvePricing({
       purchasePrice: supplier.purchasePrice,
       category,
-      decision,
+      decision: effectiveDecision,
       config,
+      explicitMarginSource:
+        decision?.targetMargin != null ? "operator_margin" : productOverride.source,
     });
     if (packCandidate && !decision?.approved) reasons.unshift("pack_requires_operator_split");
     if (decision?.mode === "skip" && decision.approved) reasons.length = 0;
@@ -670,7 +718,7 @@ async function main(): Promise<void> {
       name: supplier.name,
       purchasePrice: supplier.purchasePrice,
       category,
-      decision,
+      decision: effectiveDecision,
       reasons: Array.from(new Set(reasons)),
       pricing,
       spreeBySku,
