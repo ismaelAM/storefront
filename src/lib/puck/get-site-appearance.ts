@@ -10,6 +10,14 @@ export type SiteAppearance = {
   footerHeading: string;
   pageBackground: string;
   accentColor: string;
+  accentText: string;
+  secondaryColor: string;
+  secondaryText: string;
+  surfaceColor: string;
+  surfaceAltColor: string;
+  textColor: string;
+  mutedTextColor: string;
+  borderColor: string;
 };
 
 const fallbackAppearance: SiteAppearance = {
@@ -21,6 +29,14 @@ const fallbackAppearance: SiteAppearance = {
   footerHeading: "#f3f4f6",
   pageBackground: "#ffffff",
   accentColor: "#111827",
+  accentText: "#ffffff",
+  secondaryColor: "#f3f4f6",
+  secondaryText: "#111827",
+  surfaceColor: "#ffffff",
+  surfaceAltColor: "#f3f4f6",
+  textColor: "#111827",
+  mutedTextColor: "#6b7280",
+  borderColor: "#e5e7eb",
 };
 
 export const getSiteAppearance = cache(async (): Promise<SiteAppearance> => {
@@ -41,5 +57,13 @@ export const getSiteAppearance = cache(async (): Promise<SiteAppearance> => {
     footerHeading: props?.footerHeading ?? fallbackAppearance.footerHeading,
     pageBackground: props?.pageBackground ?? fallbackAppearance.pageBackground,
     accentColor: props?.accentColor ?? fallbackAppearance.accentColor,
+    accentText: props?.accentText ?? fallbackAppearance.accentText,
+    secondaryColor: props?.secondaryColor ?? fallbackAppearance.secondaryColor,
+    secondaryText: props?.secondaryText ?? fallbackAppearance.secondaryText,
+    surfaceColor: props?.surfaceColor ?? fallbackAppearance.surfaceColor,
+    surfaceAltColor: props?.surfaceAltColor ?? fallbackAppearance.surfaceAltColor,
+    textColor: props?.textColor ?? fallbackAppearance.textColor,
+    mutedTextColor: props?.mutedTextColor ?? fallbackAppearance.mutedTextColor,
+    borderColor: props?.borderColor ?? fallbackAppearance.borderColor,
   };
 });

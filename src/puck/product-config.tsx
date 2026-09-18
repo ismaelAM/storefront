@@ -6,6 +6,8 @@ import {
   ProductColumnsBlock,
   ProductLayoutBlock,
 } from "@/puck/ProductLayoutBlocks";
+import { colorField } from "@/puck/fields";
+import { DEFAULT_PALETTE_VALUES } from "@/puck/palette";
 
 type ProductEditorialProps = {
   title: string;
@@ -59,10 +61,7 @@ export const productConfig: Config<ProductComponents> = {
     ProductSection: {
       label: "Sección de contenido",
       fields: {
-        backgroundColor: {
-          type: "text",
-          label: "Color de fondo",
-        },
+        backgroundColor: colorField("Color de fondo"),
         width: {
           type: "select",
           label: "Ancho",
@@ -90,12 +89,10 @@ export const productConfig: Config<ProductComponents> = {
             { label: "Grande", value: "large" },
           ],
         },
-        content: {
-          type: "slot",
-        },
+        content: { type: "slot" },
       },
       defaultProps: {
-        backgroundColor: "#ffffff",
+        backgroundColor: DEFAULT_PALETTE_VALUES.background,
         width: "large",
         alignment: "center",
         padding: "medium",
@@ -114,10 +111,7 @@ export const productConfig: Config<ProductComponents> = {
     ProductColumns: {
       label: "Dos columnas",
       fields: {
-        backgroundColor: {
-          type: "text",
-          label: "Color de fondo",
-        },
+        backgroundColor: colorField("Color de fondo"),
         gap: {
           type: "select",
           label: "Separación",
@@ -136,15 +130,11 @@ export const productConfig: Config<ProductComponents> = {
             { label: "Grande", value: "large" },
           ],
         },
-        left: {
-          type: "slot",
-        },
-        right: {
-          type: "slot",
-        },
+        left: { type: "slot" },
+        right: { type: "slot" },
       },
       defaultProps: {
-        backgroundColor: "#ffffff",
+        backgroundColor: DEFAULT_PALETTE_VALUES.background,
         gap: "medium",
         padding: "medium",
         left: [],
@@ -168,11 +158,11 @@ export const productConfig: Config<ProductComponents> = {
         image: { type: "text", label: "Imagen (URL)" },
         buttonText: { type: "text", label: "Texto del botón" },
         buttonUrl: { type: "text", label: "URL del botón" },
-        backgroundColor: { type: "text", label: "Color de fondo" },
-        titleColor: { type: "text", label: "Color del título" },
-        textColor: { type: "text", label: "Color del texto" },
-        buttonColor: { type: "text", label: "Color del botón" },
-        buttonTextColor: { type: "text", label: "Color del texto del botón" },
+        backgroundColor: colorField("Color de fondo"),
+        titleColor: colorField("Color del título"),
+        textColor: colorField("Color del texto"),
+        buttonColor: colorField("Color del botón"),
+        buttonTextColor: colorField("Color del texto del botón"),
         alignment: {
           type: "select",
           label: "Alineación",
@@ -237,11 +227,11 @@ export const productConfig: Config<ProductComponents> = {
         image: "",
         buttonText: "",
         buttonUrl: "",
-        backgroundColor: "#ffffff",
-        titleColor: "#111827",
-        textColor: "#4b5563",
-        buttonColor: "#111827",
-        buttonTextColor: "#ffffff",
+        backgroundColor: DEFAULT_PALETTE_VALUES.surface,
+        titleColor: DEFAULT_PALETTE_VALUES.text,
+        textColor: DEFAULT_PALETTE_VALUES.textMuted,
+        buttonColor: DEFAULT_PALETTE_VALUES.primary,
+        buttonTextColor: DEFAULT_PALETTE_VALUES.primaryText,
         alignment: "left",
         width: "large",
         position: "center",

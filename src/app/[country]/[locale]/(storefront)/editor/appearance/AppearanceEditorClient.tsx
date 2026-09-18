@@ -1,24 +1,74 @@
 "use client";
 
 import type { Data } from "@puckeditor/core";
+import { useState } from "react";
 import { EditorSectionNav } from "@/components/puck/EditorSectionNav";
 import { saveSitePageData } from "@/lib/puck/save-site-page-data";
 
-function getAppearance(data: Data) {
+const defaults = {
+  accentColor: "#111827",
+  accentText: "#ffffff",
+  secondaryColor: "#f3f4f6",
+  secondaryText: "#111827",
+  pageBackground: "#ffffff",
+  surfaceColor: "#ffffff",
+  surfaceAltColor: "#f3f4f6",
+  textColor: "#111827",
+  mutedTextColor: "#6b7280",
+  borderColor: "#e5e7eb",
+  headerBackground: "#ffffff",
+  headerText: "#111827",
+  headerBorder: "#e5e7eb",
+  footerBackground: "#111827",
+  footerText: "#d1d5db",
+  footerHeading: "#f3f4f6",
+} as const;
+
+type AppearanceValues = { [K in keyof typeof defaults]: string };
+
+function getAppearance(data: Data): AppearanceValues {
   const props = data.content.find((item) => item.type === "Appearance")?.props as
     | Record<string, string>
     | undefined;
 
-  return {
-    headerBackground: props?.headerBackground ?? "#ffffff",
-    headerText: props?.headerText ?? "#111827",
-    headerBorder: props?.headerBorder ?? "#e5e7eb",
-    footerBackground: props?.footerBackground ?? "#111827",
-    footerText: props?.footerText ?? "#d1d5db",
-    footerHeading: props?.footerHeading ?? "#f3f4f6",
-    pageBackground: props?.pageBackground ?? "#ffffff",
-    accentColor: props?.accentColor ?? "#111827",
-  };
+  return Object.fromEntries(
+    Object.entries(defaults).map(([key, fallback]) => [key, props?.[key] ?? fallback]),
+  ) as AppearanceValues;
+}
+
+function relativeLuminance(hex: string): number {
+  const normalized = hex.replace("#", "");
+  const rgb = [0, 2, 4].map((offset) => {
+    const value = Number.parseInt(normalized.slice(offset, offset + 2), 16) / 255;
+    return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
+}
+
+function contrastRatio(first: string, second: string): number {
+  const a = relativeLuminance(first);
+  const b = relativeLuminance(second);
+  const light = Math.max(a, b);
+  const dark = Math.min(a, b);
+  return (light + 0.05) / (dark + 0.05);
+}
+
+function ContrastCheck({
+  label,
+  foreground,
+  background,
+}: {
+  label: string;
+  foreground: string;
+  background: string;
+}) {
+  const ratio = contrastRatio(foreground, background);
+  const ok = ratio >= 4.5;
+  return (
+    <div className={`rounded-lg border px-3 py-2 text-xs ${ok ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-900"}`}>
+      {label}: {ratio.toFixed(2)}:1 · {ok ? "contraste correcto" : "revisar contraste (objetivo 4.5:1)"}
+    </div>
+  );
 }
 
 export function AppearanceEditorClient({
@@ -29,18 +79,15 @@ export function AppearanceEditorClient({
   basePath: string;
 }) {
   const initial = getAppearance(initialData);
+  const [colors, setColors] = useState<AppearanceValues>(initial);
 
   async function save(formData: FormData) {
-    const next = {
-      headerBackground: String(formData.get("headerBackground") ?? initial.headerBackground),
-      headerText: String(formData.get("headerText") ?? initial.headerText),
-      headerBorder: String(formData.get("headerBorder") ?? initial.headerBorder),
-      footerBackground: String(formData.get("footerBackground") ?? initial.footerBackground),
-      footerText: String(formData.get("footerText") ?? initial.footerText),
-      footerHeading: String(formData.get("footerHeading") ?? initial.footerHeading),
-      pageBackground: String(formData.get("pageBackground") ?? initial.pageBackground),
-      accentColor: String(formData.get("accentColor") ?? initial.accentColor),
-    };
+    const next = Object.fromEntries(
+      Object.keys(defaults).map((key) => [
+        key,
+        String(formData.get(key) ?? colors[key as keyof AppearanceValues]),
+      ]),
+    ) as AppearanceValues;
 
     await saveSitePageData("appearance", {
       content: [{ type: "Appearance", props: { id: "appearance", ...next } }],
@@ -48,16 +95,46 @@ export function AppearanceEditorClient({
     });
   }
 
-  const colorFields = [
-    ["accentColor", "Color principal", initial.accentColor],
-    ["headerBackground", "Fondo del header", initial.headerBackground],
-    ["headerText", "Texto e iconos del header", initial.headerText],
-    ["headerBorder", "Borde del header", initial.headerBorder],
-    ["footerBackground", "Fondo del footer", initial.footerBackground],
-    ["footerText", "Texto del footer", initial.footerText],
-    ["footerHeading", "Títulos del footer", initial.footerHeading],
-    ["pageBackground", "Fondo general", initial.pageBackground],
+  const paletteFields = [
+    ["accentColor", "Principal"],
+    ["accentText", "Texto sobre principal"],
+    ["secondaryColor", "Secundario"],
+    ["secondaryText", "Texto sobre secundario"],
+    ["pageBackground", "Fondo general"],
+    ["surfaceColor", "Superficie"],
+    ["surfaceAltColor", "Superficie alternativa"],
+    ["textColor", "Texto principal"],
+    ["mutedTextColor", "Texto secundario"],
+    ["borderColor", "Bordes"],
   ] as const;
+
+  const chromeFields = [
+    ["headerBackground", "Fondo del header"],
+    ["headerText", "Texto e iconos del header"],
+    ["headerBorder", "Borde del header"],
+    ["footerBackground", "Fondo del footer"],
+    ["footerText", "Texto del footer"],
+    ["footerHeading", "Títulos del footer"],
+  ] as const;
+
+  const renderFields = (fields: ReadonlyArray<readonly [keyof AppearanceValues, string]>) =>
+    fields.map(([name, label]) => (
+      <label key={name} className="flex items-center justify-between gap-4">
+        <span className="text-sm font-medium text-gray-800">{label}</span>
+        <span className="flex items-center gap-3">
+          <input
+            type="color"
+            name={name}
+            value={colors[name]}
+            onChange={(event) =>
+              setColors((current) => ({ ...current, [name]: event.currentTarget.value }))
+            }
+            className="h-10 w-14 cursor-pointer rounded border border-gray-300 bg-white p-1"
+          />
+          <span className="w-20 text-xs font-mono text-gray-500">{colors[name]}</span>
+        </span>
+      </label>
+    ));
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -65,30 +142,41 @@ export function AppearanceEditorClient({
       <main className="mx-auto max-w-3xl px-6 py-10">
         <h1 className="text-3xl font-bold text-gray-900">Apariencia</h1>
         <p className="mt-2 text-gray-600">
-          Cambia los colores globales del header, footer, fondo y elementos principales de la tienda.
+          Define una paleta global. Los bloques Puck pueden reutilizar estos colores como tokens y seguir admitiendo colores personalizados cuando haga falta.
         </p>
 
-        <form action={save} className="mt-8 space-y-6 rounded-xl border bg-white p-6">
-          {colorFields.map(([name, label, value]) => (
-            <label key={name} className="flex items-center justify-between gap-4">
-              <span className="text-sm font-medium text-gray-800">{label}</span>
-              <span className="flex items-center gap-3">
-                <input
-                  type="color"
-                  name={name}
-                  defaultValue={value}
-                  className="h-10 w-14 cursor-pointer rounded border border-gray-300 bg-white p-1"
-                />
-                <span className="w-20 text-xs font-mono text-gray-500">{value}</span>
-              </span>
-            </label>
-          ))}
+        <form action={save} className="mt-8 space-y-8 rounded-xl border bg-white p-6">
+          <section className="space-y-5">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Paleta global</h2>
+              <p className="mt-1 text-sm text-gray-500">
+                Principal, superficies y tipografía forman la paleta reutilizable del editor.
+              </p>
+            </div>
+            {renderFields(paletteFields)}
+            <div className="grid gap-2 sm:grid-cols-2">
+              <ContrastCheck label="Principal" foreground={colors.accentText} background={colors.accentColor} />
+              <ContrastCheck label="Secundario" foreground={colors.secondaryText} background={colors.secondaryColor} />
+              <ContrastCheck label="Texto / fondo" foreground={colors.textColor} background={colors.pageBackground} />
+              <ContrastCheck label="Texto secundario / superficie" foreground={colors.mutedTextColor} background={colors.surfaceColor} />
+            </div>
+          </section>
+
+          <section className="space-y-5 border-t pt-7">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Header y footer</h2>
+              <p className="mt-1 text-sm text-gray-500">
+                Se mantienen como controles específicos porque forman parte de la carcasa de Spree.
+              </p>
+            </div>
+            {renderFields(chromeFields)}
+          </section>
 
           <button
             type="submit"
             className="rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-gray-800"
           >
-            Guardar colores
+            Guardar paleta
           </button>
         </form>
       </main>

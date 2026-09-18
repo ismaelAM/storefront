@@ -100,7 +100,27 @@ export default async function StorefrontLayout({ children, params }: StorefrontL
   const appearance = await getSiteAppearance();
   const themeStyle = {
     backgroundColor: appearance.pageBackground,
+    "--background": appearance.pageBackground,
+    "--foreground": appearance.textColor,
+    "--card": appearance.surfaceColor,
+    "--card-foreground": appearance.textColor,
+    "--popover": appearance.surfaceColor,
+    "--popover-foreground": appearance.textColor,
     "--primary": appearance.accentColor,
+    "--primary-foreground": appearance.accentText,
+    "--secondary": appearance.secondaryColor,
+    "--secondary-foreground": appearance.secondaryText,
+    "--muted": appearance.surfaceAltColor,
+    "--muted-foreground": appearance.mutedTextColor,
+    "--accent": appearance.secondaryColor,
+    "--accent-foreground": appearance.secondaryText,
+    "--border": appearance.borderColor,
+    "--input": appearance.borderColor,
+    "--surface": appearance.surfaceColor,
+    "--surface-alt": appearance.surfaceAltColor,
+    "--text": appearance.textColor,
+    "--text-muted": appearance.mutedTextColor,
+    "--border-color": appearance.borderColor,
   } as CSSProperties;
 
   return (

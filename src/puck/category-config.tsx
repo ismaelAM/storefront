@@ -3,6 +3,8 @@
 import type { Config } from "@puckeditor/core";
 import { CategoryHeroBlock } from "@/puck/CategoryHeroBlock";
 import { enhancedConfig } from "@/puck/enhanced-config";
+import { colorField } from "@/puck/fields";
+import { DEFAULT_PALETTE_VALUES } from "@/puck/palette";
 
 type CategoryHeroProps = {
   title: string;
@@ -31,9 +33,9 @@ export const categoryConfig: Config = {
         title: { type: "text", label: "Título" },
         description: { type: "textarea", label: "Descripción" },
         backgroundImage: { type: "text", label: "Imagen de fondo" },
-        backgroundColor: { type: "text", label: "Color de fondo" },
-        titleColor: { type: "text", label: "Color del título" },
-        textColor: { type: "text", label: "Color de la descripción" },
+        backgroundColor: colorField("Color de fondo"),
+        titleColor: colorField("Color del título"),
+        textColor: colorField("Color de la descripción"),
         minHeight: {
           type: "select",
           label: "Altura",
@@ -48,15 +50,13 @@ export const categoryConfig: Config = {
         title: "",
         description: "",
         backgroundImage: "",
-        backgroundColor: "#f9fafb",
-        titleColor: "#111827",
-        textColor: "#4b5563",
+        backgroundColor: DEFAULT_PALETTE_VALUES.surfaceAlt,
+        titleColor: DEFAULT_PALETTE_VALUES.text,
+        textColor: DEFAULT_PALETTE_VALUES.textMuted,
         minHeight: "medium",
       } satisfies CategoryHeroProps,
       render: (props) => (
-        <CategoryHeroBlock
-          {...(props as unknown as CategoryHeroProps)}
-        />
+        <CategoryHeroBlock {...(props as unknown as CategoryHeroProps)} />
       ),
     },
   },

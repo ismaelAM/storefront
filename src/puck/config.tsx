@@ -6,6 +6,8 @@ import { PuckProductGrid } from "@/components/puck/PuckProductGrid";
 import { HomeFeaturedProductsBlock } from "@/puck/HomeFeaturedProductsBlock";
 import { HomeHeroBlock } from "@/puck/HomeHeroBlock";
 import { HomeWholesaleBlock } from "@/puck/HomeWholesaleBlock";
+import { colorField } from "@/puck/fields";
+import { DEFAULT_PALETTE_VALUES } from "@/puck/palette";
 
 /* =========================================================
    TYPES
@@ -404,20 +406,11 @@ export const config: Config<Components> = {
           label: "URL botón terciario",
         },
 
-        titleColor: {
-          type: "text",
-          label: "Color del título",
-        },
+        titleColor: colorField("Color del título"),
 
-        textColor: {
-          type: "text",
-          label: "Color del texto",
-        },
+        textColor: colorField("Color del texto"),
 
-        backgroundColor: {
-          type: "text",
-          label: "Color de fondo",
-        },
+        backgroundColor: colorField("Color de fondo"),
       },
 
       defaultProps: {
@@ -429,9 +422,9 @@ export const config: Config<Components> = {
         secondaryButtonUrl: "",
         tertiaryButtonText: "",
         tertiaryButtonUrl: "",
-        titleColor: "#111827",
-        textColor: "#4b5563",
-        backgroundColor: "#ffffff",
+        titleColor: DEFAULT_PALETTE_VALUES.text,
+        textColor: DEFAULT_PALETTE_VALUES.textMuted,
+        backgroundColor: DEFAULT_PALETTE_VALUES.background,
       },
 
       render: (props) => {
@@ -594,10 +587,7 @@ export const config: Config<Components> = {
           label: "Texto",
         },
 
-        color: {
-          type: "text",
-          label: "Color",
-        },
+        color: colorField("Color"),
 
         alignment: {
           type: "select",
@@ -640,7 +630,7 @@ export const config: Config<Components> = {
 
       defaultProps: {
         text: "Escribe aquí tu texto.",
-        color: "#111827",
+        color: DEFAULT_PALETTE_VALUES.text,
         alignment: "center",
         size: "medium",
       },
@@ -1142,25 +1132,13 @@ export const config: Config<Components> = {
           label: "Enlace del botón",
         },
 
-        backgroundColor: {
-          type: "text",
-          label: "Color de fondo",
-        },
+        backgroundColor: colorField("Color de fondo"),
 
-        textColor: {
-          type: "text",
-          label: "Color del texto",
-        },
+        textColor: colorField("Color del texto"),
 
-        buttonColor: {
-          type: "text",
-          label: "Color del botón",
-        },
+        buttonColor: colorField("Color del botón"),
 
-        buttonTextColor: {
-          type: "text",
-          label: "Color del texto del botón",
-        },
+        buttonTextColor: colorField("Color del texto del botón"),
 
         alignment: {
           type: "select",
@@ -1187,10 +1165,10 @@ export const config: Config<Components> = {
         text: "Descubre nuestras novedades.",
         buttonText: "Comprar ahora",
         buttonUrl: "/products",
-        backgroundColor: "#111827",
-        textColor: "#ffffff",
-        buttonColor: "#ffffff",
-        buttonTextColor: "#111827",
+        backgroundColor: DEFAULT_PALETTE_VALUES.primary,
+        textColor: DEFAULT_PALETTE_VALUES.primaryText,
+        buttonColor: DEFAULT_PALETTE_VALUES.surface,
+        buttonTextColor: DEFAULT_PALETTE_VALUES.text,
         alignment: "center",
       },
 
@@ -1604,10 +1582,7 @@ export const config: Config<Components> = {
       label: "Sección",
 
       fields: {
-        backgroundColor: {
-          type: "text",
-          label: "Color de fondo",
-        },
+        backgroundColor: colorField("Color de fondo"),
 
         backgroundImage: {
           type: "text",
@@ -1708,7 +1683,7 @@ export const config: Config<Components> = {
       },
 
       defaultProps: {
-        backgroundColor: "#ffffff",
+        backgroundColor: DEFAULT_PALETTE_VALUES.background,
         backgroundImage: "",
         maxWidth: "large",
         paddingTop: "medium",
@@ -1807,10 +1782,7 @@ export const config: Config<Components> = {
           ],
         },
 
-        backgroundColor: {
-          type: "text",
-          label: "Color de fondo",
-        },
+        backgroundColor: colorField("Color de fondo"),
       },
 
       defaultProps: {

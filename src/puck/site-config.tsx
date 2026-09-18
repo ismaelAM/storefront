@@ -1,6 +1,8 @@
 "use client";
 
 import type { Config } from "@puckeditor/core";
+import { colorField } from "@/puck/fields";
+import { DEFAULT_PALETTE_VALUES } from "@/puck/palette";
 
 type CartChromeProps = {
   title: string;
@@ -46,11 +48,11 @@ export const siteConfig: Config<SiteComponents> = {
         title: { type: "text", label: "Título" },
         emptyTitle: { type: "text", label: "Título carrito vacío" },
         emptyDescription: { type: "textarea", label: "Texto carrito vacío" },
-        backgroundColor: { type: "text", label: "Fondo de página" },
-        cardBackgroundColor: { type: "text", label: "Fondo de tarjetas" },
-        textColor: { type: "text", label: "Color de texto" },
-        mutedTextColor: { type: "text", label: "Color de texto secundario" },
-        accentColor: { type: "text", label: "Color principal" },
+        backgroundColor: colorField("Fondo de página"),
+        cardBackgroundColor: colorField("Fondo de tarjetas"),
+        textColor: colorField("Color de texto"),
+        mutedTextColor: colorField("Color de texto secundario"),
+        accentColor: colorField("Color principal"),
         maxWidth: {
           type: "select",
           label: "Ancho",
@@ -82,11 +84,11 @@ export const siteConfig: Config<SiteComponents> = {
         title: "Carrito",
         emptyTitle: "Tu carrito está vacío",
         emptyDescription: "Añade productos para verlos aquí.",
-        backgroundColor: "#ffffff",
-        cardBackgroundColor: "#ffffff",
-        textColor: "#111827",
-        mutedTextColor: "#6b7280",
-        accentColor: "#111827",
+        backgroundColor: DEFAULT_PALETTE_VALUES.background,
+        cardBackgroundColor: DEFAULT_PALETTE_VALUES.surface,
+        textColor: DEFAULT_PALETTE_VALUES.text,
+        mutedTextColor: DEFAULT_PALETTE_VALUES.textMuted,
+        accentColor: DEFAULT_PALETTE_VALUES.primary,
         maxWidth: "large",
         radius: "large",
         alignment: "left",
@@ -120,9 +122,9 @@ export const siteConfig: Config<SiteComponents> = {
       fields: {
         title: { type: "text", label: "Título" },
         intro: { type: "textarea", label: "Introducción" },
-        backgroundColor: { type: "text", label: "Color de fondo" },
-        titleColor: { type: "text", label: "Color del título" },
-        textColor: { type: "text", label: "Color del texto" },
+        backgroundColor: colorField("Color de fondo"),
+        titleColor: colorField("Color del título"),
+        textColor: colorField("Color del texto"),
         contentWidth: {
           type: "select",
           label: "Ancho del contenido",
@@ -153,9 +155,9 @@ export const siteConfig: Config<SiteComponents> = {
       defaultProps: {
         title: "",
         intro: "",
-        backgroundColor: "#ffffff",
-        titleColor: "#111827",
-        textColor: "#374151",
+        backgroundColor: DEFAULT_PALETTE_VALUES.background,
+        titleColor: DEFAULT_PALETTE_VALUES.text,
+        textColor: DEFAULT_PALETTE_VALUES.textMuted,
         contentWidth: "large",
         alignment: "left",
         spacing: "large",

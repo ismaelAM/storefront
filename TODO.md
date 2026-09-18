@@ -53,9 +53,13 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [x] El lector B2B de Devir extrae SKU, precio final/máximo, disponibilidad y fecha de lanzamiento sin modificar Spree.
 - [x] Validar la prueba de concepto contra 5 productos reales de Devir, incluyendo Yu-Gi-Oh! y Magic: The Gathering.
 - [x] Preparado el importador Devir → Spree en modo dry-run, resolviendo variantes por SKU sin escribir cambios.
-- [x] Añadida regla de auto-precio al dry-run: coste Devir + IVA configurable, margen bruto objetivo configurable y redondeo seguro al siguiente `.99`.
+- [x] Añadido motor de precio por categoría con fallback del 25% solo como referencia; los márgenes de MTG/Yu-Gi-Oh!/juegos de mesa/accesorios quedan pendientes de decisión comercial real.
 - [ ] Confirmar con una factura/panel de Devir si `purchasePrice` se muestra sin IVA; el dry-run asume por defecto coste sin IVA y permite cambiarlo con `DEVIR_PRICE_COST_INCLUDES_VAT=true`.
-- [ ] Validar `.local/devir-b2b-import-plan.json` con catálogo real antes de habilitar escrituras `write_products`.
+- [ ] Definir los márgenes reales por categoría en `.local/devir-pricing-rules.json` y validar el plan antes de habilitar escrituras `write_products`.
+- [x] Añadida cola `AUTO` / `REVIEW_REQUIRED` / `APPROVED` y decisiones persistidas localmente para que el operador controle excepciones.
+- [x] Añadido soporte de packs divididos manualmente en productos hijos, validando que el coste asignado cuadre con el total de Devir.
+- [x] Añadido `pnpm devir:sync:watch`: scan + dry-run cada 6 horas mientras el proceso/Codespace esté activo; si caduca la sesión se detiene y requiere `pnpm devir:login`.
+- [ ] Mover el watcher de 6 horas a un worker persistente cuando el flujo esté validado; Codespaces puede dormir y no es scheduler de producción.
 - [ ] Definir proveedores múltiples y prioridad de abastecimiento cuando un producto no esté disponible en un distribuidor.
 
 ## Envíos
@@ -114,6 +118,7 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [x] Mantener Products como bloques reales dentro de la composición de Puck, sin editor dedicado de productos.
 - [x] Eliminado el flujo de edición de productos por separado.
 - [x] Añadido color global desde Apariencia.
+- [x] Añadida paleta semántica global (principal/secundario/superficies/textos/bordes), contraste visible en Apariencia y selector de tokens reutilizables en los campos de color de Puck sin romper hexadecimales existentes.
 - [x] Añadidas utilidades Puck compartidas y mejoras responsive en hero, grids, tarjetas y showcase de producto.
 - [ ] Verificar que el color global se refleja correctamente en los elementos que usan `primary`.
 - [x] Preparado lector inicial de catálogo B2B de Devir con sesión persistida fuera de Git y salida JSON local.

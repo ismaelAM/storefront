@@ -19,7 +19,10 @@
     "e2e:down": "docker compose -f e2e-backend/docker-compose.yml down -v",
     "devir:login": "tsx scripts/devir-b2b-login.ts",
     "devir:scan": "tsx scripts/devir-b2b-sync.ts",
-    "devir:import:dry-run": "tsx scripts/devir-b2b-import.ts"
+    "devir:import:dry-run": "tsx scripts/devir-b2b-import.ts",
+    "devir:review": "tsx scripts/devir-b2b-review.ts",
+    "devir:sync:once": "tsx scripts/devir-b2b-loop.ts --once",
+    "devir:sync:watch": "tsx scripts/devir-b2b-loop.ts"
   },
   "dependencies": {
     "@adyen/adyen-web": "^6.33.0",
