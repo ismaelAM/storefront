@@ -12,22 +12,18 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [ ] Verificar la conexión real del storefront con Spree en Vercel: `SPREE_API_URL` + `SPREE_PUBLISHABLE_KEY`, sin exponer claves.
 - [ ] Hospedar Spree en producción fuera del Sandbox y dejar configurados sus mercados, catálogo, stock, pagos, impuestos y envíos.
 - [ ] Configurar correctamente los métodos de pago por región/Market desde Spree, evitando mapas de países hardcodeados en Next.js.
-- [ ] Terminar la integración de Stripe de forma real con el checkout de Spree. La ruta `/api/create-checkout-session` actual es un endpoint mínimo separado, con placeholders de Price ID, y no debe considerarse una integración terminada.
-- [ ] Decidir y documentar la estrategia definitiva de Stripe: mantener Payment Sessions/provider de Spree o conectar Checkout Sessions a los artículos/variantes reales del carrito de Spree.
+- [x] Stripe usa el flujo real de Spree Payment Sessions + Payment Element; eliminado el endpoint paralelo de Checkout Sessions con `price_...` de prueba.
+- [x] Estrategia Stripe definitiva: Spree Payment Sessions es la única fuente de verdad; Stripe secreto se configura en Spree y el storefront solo necesita la publishable key.
 - [ ] Validar en Vercel el SEO técnico añadido: canonical, hreflang, JSON-LD y rutas por idioma/Market.
 - [ ] Corregir y probar la configuración del método de envío propio para Madrid en Spree.
 
-## UPS
+## Transporte externo
 
-- [x] Creada cuenta UPS para la futura integración de BisonTCG.
-- [x] Creada/avanzada la aplicación de UPS orientada a integrar la tecnología de UPS en el propio negocio, no a representar múltiples usuarios.
-- [x] Seleccionadas las APIs iniciales `Shipping` y `Tracking`.
-- [x] Enviado formulario de soporte a UPS para verificar la información de la cuenta y habilitar el acceso necesario a las credenciales de API.
-- [ ] Esperar respuesta de soporte de UPS (indican hasta 1 día laborable).
-- [ ] Obtener/confirmar Client ID y Client Secret OAuth de la aplicación sin compartir el secreto por chat.
-- [ ] Configurar las credenciales como secretos del entorno cuando corresponda.
-- [ ] Integrar UPS con el flujo real de envíos de Spree: crear envío/etiqueta y guardar tracking en Spree.
-- [ ] Mostrar al cliente el tracking UPS mediante los datos nativos del Shipment de Spree.
+- [x] UPS descartado tras respuesta negativa del proveedor.
+- [x] Investigada alternativa oficial de Correos: APIs de prerregistro, etiquetas, recogidas y tracking con OAuth 2.0.
+- [ ] Solicitar/firmar contrato de transporte con Correos y acceso al Portal de Desarrolladores.
+- [ ] Si Correos aprueba el acceso, obtener credenciales API sin compartir secretos por chat e integrar prerregistro/etiqueta/tracking sobre Shipments de Spree.
+- [ ] Si Correos no aprueba el acceso o el volumen no compensa, usar Mi Oficina de Correos como operativa manual y guardar tracking/estado en Spree; no crear una base logística paralela.
 
 ## Idiomas y traducciones
 
@@ -99,7 +95,7 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [ ] Probar que Madrid ofrece el método local y que fuera de Madrid no aparece.
 - [ ] Confirmar que el pedido genera correctamente su Shipment en Spree.
 - [ ] Mostrar al cliente el estado del Shipment mediante los datos nativos de Spree.
-- [ ] Añadir UPS como segundo método en una fase posterior, con API y tracking automático.
+- [ ] Añadir Correos como segundo método cuando exista contrato/API; mientras tanto, usar gestión manual de Correos + tracking en Spree.
 
 ## Storefront / UI
 
@@ -185,7 +181,7 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [ ] Corregir en Spree la Zone/método para que Madrid no aparezca en Lugo.
 - [ ] Probar checkout, Shipment y estado de entrega con una dirección de Madrid.
 - [ ] Probar que una dirección fuera de Madrid no recibe la opción local.
-- [ ] Integrar UPS después de estabilizar el método local.
+- [ ] Integrar Correos API después de estabilizar el método local y obtener contrato/credenciales.
 
 ## Regla de mantenimiento
 

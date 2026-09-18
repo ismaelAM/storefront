@@ -47,7 +47,9 @@ Cuando el proceso operativo esté probado, podremos estudiar estados adicionales
 
 Para el reparto local no hace falta una API externa. Podemos trabajar sin número de tracking y simplemente actualizar el Shipment desde Spree.
 
-Más adelante, UPS será otro método de envío independiente. Ese método podrá incorporar el tracking de UPS y su URL de seguimiento sin modificar el método local.
+Para envíos fuera del reparto local, la opción preferida pasa a ser **Correos**. Correos ofrece APIs oficiales para prerregistro, generación de etiquetas, solicitudes de recogida y tracking. La integración requiere contrato de transporte y acceso al Portal de Desarrolladores con OAuth 2.0.
+
+Hasta disponer de ese contrato, se puede operar manualmente desde Mi Oficina de Correos y guardar el código de seguimiento en el Shipment de Spree. El storefront no necesita saber si la etiqueta se creó por API o manualmente: sigue leyendo estado y tracking desde Spree.
 
 ## Configuración en Spree Sandbox / producción
 
@@ -68,24 +70,27 @@ Spree indica que los métodos de envío se filtran por Zone y que el cliente sol
 
 No añadir lógica en Next.js del tipo `if city === Madrid` para decidir el precio o la disponibilidad. Esa regla debe pertenecer a Spree para que checkout, admin y futuras integraciones compartan la misma verdad.
 
-No conectar UPS hasta que el método local esté funcionando correctamente.
+No integrar Correos por API hasta que exista contrato y credenciales oficiales. Si no se obtienen, mantener la operativa manual con Mi Oficina y tracking en Spree.
 
-No mezclar la futura integración UPS con Stripe. El pago y el fulfillment son procesos distintos: Spree coordina ambos y cada proveedor se integra en su capa correspondiente.
+No mezclar la futura integración de Correos con Stripe. El pago y el fulfillment son procesos distintos: Spree coordina ambos y cada proveedor se integra en su capa correspondiente.
 
-## Futuro UPS
+## Futuro Correos
 
-Cuando llegue la fase UPS:
+Arquitectura objetivo:
 
 ```text
 Spree
 ├── BISON_LOCAL_MADRID
-│   └── gestión manual
+│   └── gestión manual/local
 │
-└── UPS
-    └── API + tracking
+└── CORREOS
+    ├── prerregistro
+    ├── etiqueta
+    ├── recogida
+    └── tracking
 ```
 
-La meta será que el cliente vea una experiencia coherente en ambos casos, aunque internamente Madrid se gestione manualmente y UPS de forma automática.
+Si no hay acceso a API, el mismo método `CORREOS` puede operarse manualmente: se crea el envío en Mi Oficina, se pega la etiqueta y se guarda el tracking en el Shipment de Spree. Cuando llegue la API, automatizamos sin cambiar la experiencia del cliente.
 
 ## Requisitos para darlo por terminado
 
