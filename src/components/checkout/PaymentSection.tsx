@@ -224,10 +224,6 @@ export function PaymentSection({
           return_url: returnUrl,
         };
 
-        if (currentGatewayId === "stripe" && cardId) {
-          externalData.stripe_payment_method_id = cardId;
-        }
-
         const result = await createCheckoutPaymentSession(
           cart.id,
           method.id,
@@ -341,7 +337,10 @@ export function PaymentSection({
     const sync = async () => {
       try {
         if (resolveGatewayId(method.type) === "stripe") {
-          const result = await createStripeLiveIntent(cart.id, paymentSessionId);
+          const result = await createStripeLiveIntent(
+            cart.id,
+            paymentSessionId,
+          );
           if (!result.success) throw new Error(result.error);
           setSessionExternalData({
             client_secret: result.clientSecret,

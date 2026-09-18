@@ -25,3 +25,10 @@ onlyBuiltDependencies:
   - '@swc/core'
   - 'esbuild'
   - 'lefthook'
+
+allowBuilds:
+  '@parcel/watcher': true
+  '@sentry/cli': true
+  '@swc/core': true
+  esbuild: true
+  lefthook: true

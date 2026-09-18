@@ -135,6 +135,9 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [x] Corregido el fallo posterior de TypeScript en `scripts/devir-b2b-login.ts`: `stdin` devuelve un Buffer y ahora se convierte explícitamente a texto antes de aplicar `trim()`.
 - [x] Corregido el typecheck del dry-run Devir → Spree fijando la Admin API key como `string` validado antes de construir los headers de `fetch`.
 - [x] Migrada la configuración `pnpm.overrides` / `pnpm.onlyBuiltDependencies` a `pnpm-workspace.yaml` para pnpm 10.33+, evitando que se ignore durante instalaciones.
+- [x] Corregida la rama Stripe Live inalcanzable que bloqueaba el typecheck del checkout (`TS2367`).
+- [x] Corregidos los valores booleanos de `allowBuilds` para que pnpm ejecute las dependencias nativas aprobadas sin terminar con `ERR_PNPM_IGNORED_BUILDS`.
+- [x] Actualizadas las pruebas del layout temático y de confirmación Stripe Live; la suite completa vuelve a pasar.
 - [ ] Verificar un nuevo deployment después de la corrección de seguridad y los últimos cambios.
 - [ ] No fusionar la PR temporal `#1` de `puck_editor` a `main`; es solo para verificación y no debe eliminar la regla de trabajar únicamente en `puck_editor`.
 
