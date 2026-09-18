@@ -70,12 +70,17 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [x] Añadidos checkpoint/resume, deduplicado por URL/SKU y hasta 200 páginas por categoría en modo hyper.
 - [x] Añadido `devir:hyper:watch` para repetir el catálogo completo cada 6 horas mientras el proceso/Codespace siga activo.
 - [ ] Validar la primera pasada `pnpm devir:hyper:once` y revisar cuántas categorías/SKUs descubre realmente la cuenta B2B.
+- [x] Cloud Sync en Supabase: tablas privadas con RLS, cola/checkpoints, locks, Edge Function y Cron autenticado mediante Vault.
+- [x] Añadida importación automática de imágenes Devir a Spree cuando el producto todavía no tiene galería.
+- [x] Corregido el typecheck del modo hyper en el narrowing de URLs de categoría.
+- [ ] Ejecutar una vez `pnpm devir:cloud:bootstrap` para subir sesión B2B + clave Spree de forma privada y activar el primer ciclo cloud.
+- [ ] Validar el primer ciclo cloud completo y una muestra de imágenes copiadas a Spree.
 - [x] El cliente Spree ignora placeholders de Vercel como `[SENSITIVE]` y usa `https://bisontcg.spree.sh` como fallback seguro para la URL pública.
 - [x] El dry-run Devir usa el mismo cliente Admin API seguro que la sincronización, evitando URLs `[SENSITIVE]` y lógica de credenciales duplicada.
 - [ ] Confirmar que la Secret API Key real tiene `write_products` y `write_settings`, ejecutar `pnpm devir:spree:setup` y verificar la primera carga real de drafts.
 - [ ] Verificar en Store API/Preview que los productos `draft` de Devir no son visibles hasta activarlos.
 - [x] Los scripts Devir cargan `.env.local` automáticamente y priorizan `DEVIR_B2B_SPREE_API_URL` / `DEVIR_B2B_SPREE_ADMIN_API_KEY` traídas desde Vercel, manteniendo compatibilidad con los nombres antiguos.
-- [ ] Mover el watcher de 6 horas a un worker persistente cuando el flujo esté validado; Codespaces puede dormir y no es scheduler de producción.
+- [x] Movido el ciclo de 6 horas a Supabase Cron + Edge Function incremental; ya no depende de Codespaces para operar 24/7.
 - [ ] Definir proveedores múltiples y prioridad de abastecimiento cuando un producto no esté disponible en un distribuidor.
 
 ## Envíos

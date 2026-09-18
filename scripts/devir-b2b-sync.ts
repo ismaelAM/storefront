@@ -174,7 +174,7 @@ async function discoverCategoryUrls(page: Page): Promise<string[]> {
     new Set(
       found
         .map((href) => canonicalizeUrl(href, page.url()))
-        .filter((href): href is string => Boolean(href) && isLikelyCategoryUrl(href)),
+        .filter((href): href is string => href !== null && isLikelyCategoryUrl(href)),
     ),
   );
   console.log(`Hyper: ${categories.length} categorías descubiertas desde la navegación autenticada.`);

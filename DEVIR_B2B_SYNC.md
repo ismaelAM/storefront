@@ -119,6 +119,69 @@ pnpm devir:hyper:watch
 
 Esto **no es un scheduler 24/7**: si Codespaces duerme, se apaga o el proceso termina, deja de ejecutarse. El worker persistente sigue siendo necesario para garantizar la cadencia permanentemente.
 
+
+## Cloud sync 24/7 con Supabase
+
+La sincronización definitiva ya no depende de que Codespaces permanezca abierto. El proyecto Supabase `Bisontcg store data` mantiene:
+
+- configuración privada y sesión B2B;
+- cola de páginas/categorías/productos;
+- catálogo Devir observado;
+- ciclos, errores y checkpoints;
+- lock distribuido para impedir ejecuciones solapadas;
+- Supabase Cron, que despierta el worker cada minuto.
+
+El worker es una Supabase Edge Function incremental. El tick de cada minuto **no significa escanear Devir cada minuto**: inicia un nuevo ciclo solo cuando han pasado 6 horas desde el ciclo anterior. Mientras un catálogo completo está en curso, cada tick procesa un lote pequeño y continúa desde Postgres.
+
+La infraestructura cloud se crea desactivada hasta que se hace un bootstrap desde una sesión B2B autenticada. Una sola vez:
+
+```bash
+pnpm devir:cloud:bootstrap
+```
+
+Este comando lee `.secrets/devir-b2b-state.json` y las variables privadas ya cargadas en `.env.local`, las envía directamente a Supabase y **no imprime las credenciales**. Después el Codespace puede cerrarse.
+
+Estado:
+
+```bash
+pnpm devir:cloud:status
+```
+
+Forzar un nuevo ciclo cuando no haya otro activo:
+
+```bash
+pnpm devir:cloud:run-now
+```
+
+Pausar/reanudar:
+
+```bash
+pnpm devir:cloud:disable
+pnpm devir:cloud:enable
+```
+
+### Imágenes automáticas
+
+La Edge Function extrae la imagen Open Graph y la galería Magento cuando están disponibles. Para un producto de Spree sin medios existentes, envía las URLs al Admin API de Spree, que las copia a su propio almacenamiento mediante su flujo nativo `SaveFromUrl`.
+
+Protecciones:
+
+- no hotlinkea imágenes en el storefront;
+- no sustituye ni borra medios si el producto ya tiene imágenes en Spree;
+- máximo 12 imágenes por ficha;
+- omite placeholders/logos;
+- conserva el orden descubierto;
+- usa el nombre del producto como `alt`;
+- un fallo de imagen no invalida el resto del producto.
+
+### Seguridad cloud
+
+- Las tablas `devir_sync_*` tienen RLS y no conceden acceso a `anon` ni `authenticated`.
+- El worker no acepta llamadas públicas sin el token privado guardado en Supabase Vault.
+- La Secret API Key de Spree y la sesión B2B no se incluyen en Git ni se muestran en logs.
+- El worker nunca activa productos: crea nuevos productos como `draft` y mantiene `REVIEW_REQUIRED` para categorías/márgenes ambiguos y packs.
+- Los PVP manuales y los productos activos quedan protegidos frente a sobrescritura automática.
+
 ## Cadencia recomendada: cada 6 horas
 
 Para mantener el catálogo actualizado mientras el proceso siga activo:
@@ -320,10 +383,10 @@ El sincronizador continuo ahora hace `scan → dry-run → sync a drafts` cada 6
 pnpm devir:sync:watch
 ```
 
-Sigue dependiendo de que el proceso/Codespace permanezca activo. Para operación 24/7 habrá que moverlo a un worker persistente.
+Este watcher local se conserva como herramienta de diagnóstico. Para operación normal 24/7 usa la Cloud Sync de Supabase.
 
 `.local` se conserva como caché/auditoría y decisiones de splits; Spree pasa a ser el centro de revisión comercial del producto, coste, PVP, margen y estado visible/oculto.
 
 ## Fase siguiente
 
-Validar en la instancia real los scopes `write_products` + `write_settings`, ejecutar la primera sincronización a drafts y comprobar desde Admin que los productos permanecen ocultos hasta activarlos. Después, mover el ciclo de 6 horas a un worker persistente.
+Ejecutar `pnpm devir:cloud:bootstrap`, observar el primer ciclo con `pnpm devir:cloud:status` y validar una muestra de drafts/imágenes en Spree.

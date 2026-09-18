@@ -33,7 +33,12 @@
     "devir:hyper:scan": "tsx scripts/devir-b2b-sync.ts --hyper",
     "devir:hyper:resume": "tsx scripts/devir-b2b-sync.ts --hyper --resume",
     "devir:hyper:once": "tsx scripts/devir-b2b-loop.ts --once --hyper",
-    "devir:hyper:watch": "tsx scripts/devir-b2b-loop.ts --hyper"
+    "devir:hyper:watch": "tsx scripts/devir-b2b-loop.ts --hyper",
+    "devir:cloud:bootstrap": "tsx scripts/devir-cloud.ts bootstrap",
+    "devir:cloud:status": "tsx scripts/devir-cloud.ts status",
+    "devir:cloud:enable": "tsx scripts/devir-cloud.ts enable",
+    "devir:cloud:disable": "tsx scripts/devir-cloud.ts disable",
+    "devir:cloud:run-now": "tsx scripts/devir-cloud.ts run-now"
   },
   "dependencies": {
     "@adyen/adyen-web": "^6.33.0",
