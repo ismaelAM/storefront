@@ -30,6 +30,10 @@ vi.mock("@/lib/data/payment", () => ({
   confirmPaymentAndCompleteCart: vi.fn(),
 }));
 
+vi.mock("@/lib/data/stripe-live", () => ({
+  finalizeStripeLivePayment: vi.fn(),
+}));
+
 vi.mock("@/lib/utils/path", () => ({
   extractBasePath: (path: string) => {
     const match = path.match(/^\/[^/]+\/[^/]+/);
@@ -38,9 +42,11 @@ vi.mock("@/lib/utils/path", () => ({
 }));
 
 import { confirmPaymentAndCompleteCart } from "@/lib/data/payment";
+import { finalizeStripeLivePayment } from "@/lib/data/stripe-live";
 import ConfirmPaymentPage from "../[id]/page";
 
 const mockConfirm = vi.mocked(confirmPaymentAndCompleteCart);
+const mockFinalizeStripeLive = vi.mocked(finalizeStripeLivePayment);
 
 function renderPage(params = { id: "cart-1", country: "us", locale: "en" }) {
   const resolvedParams = Promise.resolve(params);
@@ -110,6 +116,28 @@ describe("ConfirmPaymentPage", () => {
         undefined,
         undefined,
       );
+    });
+  });
+
+  it("finalizes Stripe Live payments before redirecting", async () => {
+    mockSearchParams.set("stripe_live", "1");
+    mockSearchParams.set("payment_intent", "pi_live_1");
+    mockFinalizeStripeLive.mockResolvedValue({
+      success: true as const,
+      order: { id: "cart-1" },
+    });
+
+    await act(async () => {
+      renderPage();
+    });
+
+    await waitFor(() => {
+      expect(mockFinalizeStripeLive).toHaveBeenCalledWith(
+        "cart-1",
+        "pi_live_1",
+      );
+      expect(mockConfirm).not.toHaveBeenCalled();
+      expect(mockReplace).toHaveBeenCalledWith("/us/en/order-placed/cart-1");
     });
   });
 

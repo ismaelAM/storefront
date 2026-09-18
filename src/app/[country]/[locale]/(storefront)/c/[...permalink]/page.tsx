@@ -1,12 +1,19 @@
-import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { ProductListing } from "@/components/products/ProductListing";
+import type { Metadata } from "next";
+import { CategoryPuckRenderer } from "@/components/puck/CategoryPuckRenderer";
+import { Breadcrumbs } from "@/components/navigation/Breadcrumbs";
 import { JsonLd } from "@/components/seo/JsonLd";
+import { ProductListing } from "@/components/products/ProductListing";
 import { getCategory, getCategoryProducts } from "@/lib/data/categories";
 import { resolveCurrency } from "@/lib/data/markets";
+import { getCategoryPageData } from "@/lib/puck/get-category-data";
 import { getProductFilters } from "@/lib/data/products";
 import { generateCategoryMetadata } from "@/lib/metadata/category";
-import { buildBreadcrumbJsonLd } from "@/lib/seo";
+import {
+  buildBreadcrumbJsonLd,
+  buildCategoryJsonLd,
+  buildCanonicalUrl,
+} from "@/lib/seo";
 import { getStoreUrl } from "@/lib/store";
 import { parseListingSearchParams } from "@/lib/utils/listing-search-params";
 import { CategoryBanner } from "./CategoryBanner";
@@ -51,24 +58,58 @@ export default async function CategoryPage({
   }
 
   const storeUrl = getStoreUrl();
+  const canonicalUrl = storeUrl
+    ? buildCanonicalUrl(
+        storeUrl,
+        `${basePath}/c/${category.permalink}`,
+      )
+    : undefined;
   const currency = await resolveCurrency(country);
   const listingState = parseListingSearchParams(rawSearchParams);
-
-  // Pre-bind categoryId onto the server action so the client-side
-  // InfiniteProductList island gets a single-arg (params) fetcher it can
-  // call directly. Inline arrow closures don't serialize across the
-  // server→client boundary; `.bind()` on a server action reference does.
   const fetchCategoryProducts = getCategoryProducts.bind(null, category.id);
+  const categoryProducts = await getCategoryProducts(category.id, { limit: 8 });
+  const fallbackData = {
+    content: [
+      {
+        type: "CategoryHero" as const,
+        props: {
+          id: "category-hero",
+          title: category.name,
+          description: category.description ?? "",
+          backgroundImage: category.image_url ?? "",
+          backgroundColor: "#f9fafb",
+          titleColor: "#111827",
+          textColor: "#4b5563",
+          minHeight: "medium" as const,
+        },
+      },
+    ],
+    root: {},
+  };
+  const data = await getCategoryPageData(fullPermalink, fallbackData);
 
   return (
     <div>
+      {canonicalUrl && (
+        <JsonLd data={buildCategoryJsonLd(category, canonicalUrl)} />
+      )}
       {storeUrl && (
         <JsonLd data={buildBreadcrumbJsonLd(category, basePath, storeUrl)} />
       )}
 
-      <CategoryBanner category={category} basePath={basePath} locale={locale} />
+      <CategoryPuckRenderer
+        data={data}
+        products={categoryProducts.data ?? []}
+        basePath={basePath}
+      />
+      <CategoryBanner
+        category={category}
+        basePath={basePath}
+        locale={locale}
+        showHero={false}
+      />
 
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 pt-4">
+      <div className="container mx-auto px-4 pt-4 sm:px-6 lg:px-8">
         <ProductListing
           state={listingState}
           basePath={basePath}

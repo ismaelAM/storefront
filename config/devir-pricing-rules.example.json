@@ -1,0 +1,33 @@
+{
+  "currency": "EUR",
+  "vatRate": 0.21,
+  "costIncludesVat": false,
+  "defaultTargetMargin": 0.25,
+  "requireCategoryMargin": true,
+  "categories": [
+    {
+      "key": "tcg/mtg",
+      "label": "Magic: The Gathering",
+      "match": ["mtg", "magic", "/magic"],
+      "targetMargin": null
+    },
+    {
+      "key": "tcg/yugioh",
+      "label": "Yu-Gi-Oh!",
+      "match": ["yugioh", "yu-gi-oh", "yu gi oh"],
+      "targetMargin": null
+    },
+    {
+      "key": "juegos-de-mesa",
+      "label": "Juegos de mesa",
+      "match": ["juego de mesa", "juegos-de-mesa"],
+      "targetMargin": null
+    },
+    {
+      "key": "accesorios",
+      "label": "Accesorios",
+      "match": ["accesorio", "sleeves", "fundas", "deck box", "tapete"],
+      "targetMargin": null
+    }
+  ]
+}

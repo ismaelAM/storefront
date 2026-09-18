@@ -1,10 +1,4 @@
-import {
-  Children,
-  Fragment,
-  type ReactElement,
-  type ReactNode,
-  Suspense,
-} from "react";
+import { Children, type ReactElement, type ReactNode, Suspense } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("next/server", () => ({ connection: vi.fn() }));
@@ -37,7 +31,7 @@ describe("StorefrontLayout", () => {
       params: Promise.resolve({ country: "us", locale: "en" }),
     })) as ReactElement<LayoutElementProps>;
 
-    expect(layout.type).toBe(Fragment);
+    expect(layout.type).toBe("div");
 
     const [header, hiddenNavigation, main, footer] = Children.toArray(
       layout.props.children,

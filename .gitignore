@@ -44,6 +44,10 @@ yarn-error.log*
 /blob-report/
 /playwright/.cache/
 
+# local importer state/output
+/.secrets/
+/.local/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
@@ -51,3 +55,4 @@ next-env.d.ts
 # claude code
 .claude/
 
+.env*

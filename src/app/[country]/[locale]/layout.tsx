@@ -72,8 +72,8 @@ export function generateStaticParams() {
 export async function generateMetadata({
   params,
 }: CountryLocaleLayoutProps): Promise<Metadata> {
-  const { locale } = await params;
-  return generateStoreMetadata({ locale });
+  const { country, locale } = await params;
+  return generateStoreMetadata({ country, locale });
 }
 
 /**
