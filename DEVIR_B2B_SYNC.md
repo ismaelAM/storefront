@@ -211,16 +211,16 @@ Los campos creados son internos de Admin (`storefront_visible: false`). En produ
 Para configurar margen por categoría desde la terminal:
 
 ```bash
-pnpm devir:spree:margin tcg/mtg 0.25
-pnpm devir:spree:margin tcg/yugioh 0.25
+pnpm devir:spree:margin tcg/mtg 25%
+pnpm devir:spree:margin tcg/yugioh 25%
 ```
 
-Los valores anteriores son solo ejemplos de formato: `0.25` significa 25%. Usa tus porcentajes comerciales reales.
+Los valores anteriores son solo ejemplos de formato: `25%`, `25` y `0.25` significan lo mismo: margen objetivo del 25%. Usa tus porcentajes comerciales reales.
 
 También puedes definir una excepción para un SKU concreto:
 
 ```bash
-pnpm devir:spree:margin-product SKU 0.25
+pnpm devir:spree:margin-product SKU 25%
 ```
 
 Prioridad de precio:

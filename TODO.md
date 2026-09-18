@@ -61,6 +61,7 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [x] Añadido `pnpm devir:sync:watch`: scan + dry-run cada 6 horas mientras el proceso/Codespace esté activo; si caduca la sesión se detiene y requiere `pnpm devir:login`.
 - [x] Añadida sincronización Devir → Spree que crea productos nuevos como `draft` ocultos y guarda coste/PVP en la variante.
 - [x] Spree gestiona márgenes objetivo mediante campos internos de categoría y overrides por producto; el JSON local queda como respaldo técnico.
+- [x] Los comandos de margen aceptan formato decimal o porcentaje (`0.25`, `25`, `25%`) para evitar errores de entrada.
 - [x] Añadidos campos internos de revisión, origen Devir, margen aplicado/efectivo, IVA y última sincronización.
 - [x] Protegidos los PVP editados manualmente en Spree frente a sobrescritura en sincronizaciones posteriores.
 - [x] Añadido comando de activación por SKU que rechaza productos con `REVIEW_REQUIRED`.

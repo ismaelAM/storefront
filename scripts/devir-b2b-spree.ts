@@ -100,6 +100,16 @@ function pct(value: number | null): string {
   return value === null ? "—" : (value * 100).toFixed(1) + "%";
 }
 
+function parseMarginInput(raw: string | undefined): number | null {
+  if (!raw) return null;
+  const normalized = raw.trim().replace(",", ".");
+  const hasPercent = normalized.endsWith("%");
+  const numeric = Number(hasPercent ? normalized.slice(0, -1) : normalized);
+  if (!Number.isFinite(numeric)) return null;
+  const value = hasPercent || numeric >= 1 ? numeric / 100 : numeric;
+  return value >= 0 && value < 0.95 ? value : null;
+}
+
 function money(value: number | null, currency = "EUR"): string {
   return value === null ? "—" : value.toFixed(2) + " " + currency;
 }
@@ -407,9 +417,11 @@ async function status(): Promise<void> {
 
 async function margin(args: string[]): Promise<void> {
   const [ruleKey, raw] = args;
-  const value = Number(raw);
-  if (!ruleKey || !Number.isFinite(value) || value < 0 || value >= 0.95) {
-    throw new Error("Uso: pnpm devir:spree:margin <tcg/mtg|tcg/yugioh|...> <0.25>");
+  const value = parseMarginInput(raw);
+  if (!ruleKey || value === null) {
+    throw new Error(
+      "Uso: pnpm devir:spree:margin <tcg/mtg|tcg/yugioh|...> <25%|25|0.25>",
+    );
   }
   const defs = await setup();
   const cfg = await pricingConfig();
@@ -427,9 +439,11 @@ async function margin(args: string[]): Promise<void> {
 
 async function marginProduct(args: string[]): Promise<void> {
   const [sku, raw] = args;
-  const value = Number(raw);
-  if (!sku || !Number.isFinite(value) || value < 0 || value >= 0.95) {
-    throw new Error("Uso: pnpm devir:spree:margin-product <SKU> <0.25>");
+  const value = parseMarginInput(raw);
+  if (!sku || value === null) {
+    throw new Error(
+      "Uso: pnpm devir:spree:margin-product <SKU> <25%|25|0.25>",
+    );
   }
   const defs = await setup();
   const match = (await productIndex()).get(sku);
