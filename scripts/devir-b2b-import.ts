@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { loadLocalEnv } from "./load-local-env";
-import { attachCategoryMargins, customFields, numberField } from "./spree-admin";
+import { attachCategoryMargins, customFields, numberField, request as spreeAdminRequest } from "./spree-admin";
 
 loadLocalEnv();
 
@@ -157,25 +157,8 @@ const pricingConfigPath = resolve(
 const pricingTemplatePath = resolve(
   process.env.DEVIR_B2B_PRICING_TEMPLATE ?? "config/devir-pricing-rules.example.json",
 );
-const spreeApiUrl = (
-  process.env.SPREE_API_URL ?? process.env.DEVIR_B2B_SPREE_API_URL
-)?.replace(/\/$/, "");
-const adminApiKey =
-  process.env.DEVIR_B2B_SPREE_ADMIN_API_KEY ?? process.env.SPREE_ADMIN_API_KEY;
 const pageSize = readIntegerEnv("DEVIR_SPREE_PAGE_SIZE", 100, 1, 100);
 const maxPages = readIntegerEnv("DEVIR_SPREE_MAX_PAGES", 100, 1, 10_000);
-
-if (!spreeApiUrl) {
-  throw new Error(
-    "Falta SPREE_API_URL (también se acepta DEVIR_B2B_SPREE_API_URL). Ejecuta `vercel env pull .env.local` si la variable está en Vercel.",
-  );
-}
-if (!adminApiKey) {
-  throw new Error(
-    "Falta DEVIR_B2B_SPREE_ADMIN_API_KEY (también se acepta SPREE_ADMIN_API_KEY). Ejecuta `vercel env pull .env.local`; debe ser una secret key de Admin API con al menos read_products.",
-  );
-}
-const spreeAdminApiKey = adminApiKey;
 
 function readIntegerEnv(name: string, fallback: number, min: number, max: number): number {
   const raw = process.env[name];
@@ -371,19 +354,7 @@ async function loadPricingConfig(): Promise<PricingConfig> {
 }
 
 async function spreeGet<T>(path: string): Promise<T> {
-  const response = await fetch(`${spreeApiUrl}/api/v3/admin${path}`, {
-    headers: {
-      Accept: "application/json",
-      "X-Spree-Api-Key": spreeAdminApiKey,
-    },
-  });
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(
-      `Spree Admin API ${response.status} en ${path}: ${body.slice(0, 500)}`,
-    );
-  }
-  return (await response.json()) as T;
+  return await spreeAdminRequest<T>("GET", path);
 }
 
 function addVariant(
