@@ -73,7 +73,7 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [x] Cloud Sync en Supabase: tablas privadas con RLS, cola/checkpoints, locks, Edge Function y Cron autenticado mediante Vault.
 - [x] Añadida importación automática de imágenes Devir a Spree cuando el producto todavía no tiene galería.
 - [x] Corregido el typecheck del modo hyper en el narrowing de URLs de categoría.
-- [ ] Ejecutar una vez `pnpm devir:cloud:bootstrap` para subir sesión B2B + clave Spree de forma privada y activar el primer ciclo cloud.
+- [ ] Ejecutar una vez `pnpm devir:cloud:bootstrap` para subir sesión B2B + clave Spree de forma privada y activar el primer ciclo cloud. El bootstrap ya no requiere credenciales Supabase locales y valida la `sk_...` directamente contra Spree.
 - [ ] Validar el primer ciclo cloud completo y una muestra de imágenes copiadas a Spree.
 - [x] El cliente Spree ignora placeholders de Vercel como `[SENSITIVE]` y usa `https://bisontcg.spree.sh` como fallback seguro para la URL pública.
 - [x] El dry-run Devir usa el mismo cliente Admin API seguro que la sincronización, evitando URLs `[SENSITIVE]` y lógica de credenciales duplicada.

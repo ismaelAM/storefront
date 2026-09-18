@@ -1,6 +1,5 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { createClient } from "@supabase/supabase-js";
 import { loadLocalEnv } from "./load-local-env";
 
 loadLocalEnv();
@@ -9,6 +8,9 @@ const MASKED = new Set(["[SENSITIVE]", "[REDACTED]", "********", "*****"]);
 const statePath = resolve(
   process.env.DEVIR_B2B_STATE_PATH ?? ".secrets/devir-b2b-state.json",
 );
+const cloudUrl =
+  process.env.DEVIR_CLOUD_WORKER_URL ??
+  "https://ikglqbjlbkbaronbiryl.supabase.co/functions/v1/devir-sync";
 
 function env(name: string, fallbacks: string[] = []): string | null {
   for (const key of [name, ...fallbacks]) {
@@ -26,159 +28,105 @@ function required(name: string, fallbacks: string[] = []): string {
   );
 }
 
-function client() {
-  const url = required("SUPABASE_URL");
-  const key = required("SUPABASE_SERVICE_ROLE_KEY");
-  return createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false },
+function spreeKey(): string {
+  const key = required("DEVIR_B2B_SPREE_ADMIN_API_KEY", ["SPREE_ADMIN_API_KEY"]);
+  if (!key.startsWith("sk_")) {
+    throw new Error("La clave de Spree debe ser una Secret API Key sk_....");
+  }
+  return key;
+}
+
+async function callCloud(
+  action: "bootstrap" | "status" | "enable" | "disable" | "run-now",
+  body: Record<string, unknown> = {},
+): Promise<Record<string, unknown>> {
+  const response = await fetch(cloudUrl, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-spree-admin-key": spreeKey(),
+    },
+    body: JSON.stringify({ action, ...body }),
   });
+  const text = await response.text();
+  let payload: Record<string, unknown> = {};
+  try {
+    payload = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+  } catch {
+    payload = { error: text.slice(0, 500) };
+  }
+  if (!response.ok) {
+    throw new Error(
+      typeof payload.error === "string"
+        ? payload.error
+        : `Cloud worker HTTP ${response.status}`,
+    );
+  }
+  return payload;
 }
 
 async function bootstrap(): Promise<void> {
-  const supabase = client();
   const sessionState = JSON.parse(await readFile(statePath, "utf8")) as unknown;
-  const spreeKey = required("DEVIR_B2B_SPREE_ADMIN_API_KEY", ["SPREE_ADMIN_API_KEY"]);
   const spreeUrl =
     env("SPREE_API_URL", ["DEVIR_B2B_SPREE_API_URL"]) ??
     "https://bisontcg.spree.sh";
 
-  if (!spreeKey.startsWith("sk_")) {
-    throw new Error("La clave de Spree debe ser una Secret API Key sk_....");
-  }
-
-  const { error } = await supabase
-    .from("devir_sync_config")
-    .update({
-      enabled: true,
-      base_url: process.env.DEVIR_B2B_BASE_URL ?? "https://b2bdevir.es",
-      spree_api_url: spreeUrl,
-      spree_admin_api_key: spreeKey,
-      session_state: sessionState,
-      phase: "idle",
-      active_cycle_id: null,
-      next_due_at: new Date().toISOString(),
-      lock_until: null,
-      last_error: null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", "primary");
-
-  if (error) throw error;
+  const result = await callCloud("bootstrap", {
+    sessionState,
+    spreeApiUrl: spreeUrl,
+    baseUrl: process.env.DEVIR_B2B_BASE_URL ?? "https://b2bdevir.es",
+  });
 
   console.log("Cloud sync activada.");
-  console.log("  Sesión Devir: subida de forma privada a Supabase.");
-  console.log("  Clave Spree: guardada en configuración privada; no se ha mostrado.");
-  console.log("  Próximo ciclo: en el siguiente tick de Supabase Cron.");
+  console.log("  Sesión Devir: validada y guardada de forma privada en Supabase.");
+  console.log("  Clave Spree: validada contra Spree y guardada; no se ha mostrado.");
+  console.log("  Próximo ciclo: solicitado inmediatamente.");
   console.log("  Frecuencia: cada 6 h entre ciclos completos.");
+  if (typeof result.message === "string") console.log("  " + result.message);
   console.log("Ejecuta `pnpm devir:cloud:status` para ver el progreso.");
 }
 
 async function status(): Promise<void> {
-  const supabase = client();
-  const [{ data: config, error: configError }, { data: cycles, error: cyclesError }] =
-    await Promise.all([
-      supabase
-        .from("devir_sync_config")
-        .select(
-          "enabled,phase,active_cycle_id,next_due_at,last_attempt_at,last_success_at,last_error,interval_hours,batch_size,max_pages",
-        )
-        .eq("id", "primary")
-        .single(),
-      supabase
-        .from("devir_sync_cycles")
-        .select(
-          "id,status,started_at,finished_at,category_count,product_count,processed_count,error_count,error",
-        )
-        .order("started_at", { ascending: false })
-        .limit(5),
-    ]);
-
-  if (configError) throw configError;
-  if (cyclesError) throw cyclesError;
-
-  let pending = 0;
-  let done = 0;
-  let errors = 0;
-  if (config.active_cycle_id) {
-    const [p, d, e] = await Promise.all([
-      supabase
-        .from("devir_sync_jobs")
-        .select("*", { count: "exact", head: true })
-        .eq("cycle_id", config.active_cycle_id)
-        .eq("status", "pending"),
-      supabase
-        .from("devir_sync_jobs")
-        .select("*", { count: "exact", head: true })
-        .eq("cycle_id", config.active_cycle_id)
-        .eq("status", "done"),
-      supabase
-        .from("devir_sync_jobs")
-        .select("*", { count: "exact", head: true })
-        .eq("cycle_id", config.active_cycle_id)
-        .eq("status", "error"),
-    ]);
-    pending = p.count ?? 0;
-    done = d.count ?? 0;
-    errors = e.count ?? 0;
-  }
+  const payload = await callCloud("status");
+  const config = (payload.config ?? {}) as Record<string, unknown>;
+  const jobs = (payload.jobs ?? {}) as Record<string, unknown>;
+  const cycles = Array.isArray(payload.cycles)
+    ? (payload.cycles as Array<Record<string, unknown>>)
+    : [];
 
   console.log("Devir Cloud Sync");
-  console.log(`  enabled: ${config.enabled}`);
-  console.log(`  fase: ${config.phase}`);
-  console.log(`  ciclo activo: ${config.active_cycle_id ?? "ninguno"}`);
-  console.log(`  jobs: ${done} done · ${pending} pending · ${errors} error`);
-  console.log(`  próximo ciclo: ${config.next_due_at}`);
-  console.log(`  último intento: ${config.last_attempt_at ?? "—"}`);
-  console.log(`  último éxito: ${config.last_success_at ?? "—"}`);
-  if (config.last_error) console.log(`  último error: ${config.last_error}`);
+  console.log(`  enabled: ${String(config.enabled ?? "—")}`);
+  console.log(`  fase: ${String(config.phase ?? "—")}`);
+  console.log(`  ciclo activo: ${String(config.active_cycle_id ?? "ninguno")}`);
+  console.log(
+    `  jobs: ${String(jobs.done ?? 0)} done · ${String(jobs.pending ?? 0)} pending · ${String(jobs.error ?? 0)} error`,
+  );
+  console.log(`  próximo ciclo: ${String(config.next_due_at ?? "—")}`);
+  console.log(`  último intento: ${String(config.last_attempt_at ?? "—")}`);
+  console.log(`  último éxito: ${String(config.last_success_at ?? "—")}`);
+  if (config.last_error) console.log(`  último error: ${String(config.last_error)}`);
 
-  if (cycles?.length) {
+  if (cycles.length) {
     console.log("\nÚltimos ciclos:");
     for (const cycle of cycles) {
       console.log(
-        `  ${cycle.status.toUpperCase().padEnd(7)} ${cycle.started_at} · productos ${cycle.product_count} · errores ${cycle.error_count}`,
+        `  ${String(cycle.status ?? "?").toUpperCase().padEnd(7)} ${String(cycle.started_at ?? "—")} · productos ${String(cycle.product_count ?? 0)} · errores ${String(cycle.error_count ?? 0)}`,
       );
     }
   }
 }
 
 async function setEnabled(enabled: boolean): Promise<void> {
-  const supabase = client();
-  const { error } = await supabase
-    .from("devir_sync_config")
-    .update({
-      enabled,
-      ...(enabled ? { next_due_at: new Date().toISOString() } : {}),
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", "primary");
-  if (error) throw error;
+  await callCloud(enabled ? "enable" : "disable");
   console.log(enabled ? "Cloud sync activada." : "Cloud sync pausada.");
 }
 
 async function runNow(): Promise<void> {
-  const supabase = client();
-  const { data: config, error: readError } = await supabase
-    .from("devir_sync_config")
-    .select("active_cycle_id")
-    .eq("id", "primary")
-    .single();
-  if (readError) throw readError;
-  if (config.active_cycle_id) {
-    console.log(`Ya hay un ciclo activo: ${config.active_cycle_id}`);
+  const result = await callCloud("run-now");
+  if (typeof result.already_running === "string") {
+    console.log(`Ya hay un ciclo activo: ${result.already_running}`);
     return;
   }
-  const { error } = await supabase
-    .from("devir_sync_config")
-    .update({
-      enabled: true,
-      phase: "idle",
-      next_due_at: new Date().toISOString(),
-      last_error: null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", "primary");
-  if (error) throw error;
   console.log("Ciclo solicitado; Supabase Cron lo iniciará en el siguiente tick.");
 }
 

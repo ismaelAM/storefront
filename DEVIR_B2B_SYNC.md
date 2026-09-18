@@ -139,7 +139,7 @@ La infraestructura cloud se crea desactivada hasta que se hace un bootstrap desd
 pnpm devir:cloud:bootstrap
 ```
 
-Este comando lee `.secrets/devir-b2b-state.json` y las variables privadas ya cargadas en `.env.local`, las envía directamente a Supabase y **no imprime las credenciales**. Después el Codespace puede cerrarse.
+Este comando lee `.secrets/devir-b2b-state.json` y la Secret API Key de Spree ya cargada en `.env.local`. **No necesita `SUPABASE_URL` ni `SUPABASE_SERVICE_ROLE_KEY` en Codespaces**: envía la sesión al worker cloud, que primero valida la `sk_...` contra Spree y solo entonces guarda la configuración privada en Supabase. No imprime las credenciales. Después el Codespace puede cerrarse.
 
 Estado:
 
@@ -177,7 +177,8 @@ Protecciones:
 ### Seguridad cloud
 
 - Las tablas `devir_sync_*` tienen RLS y no conceden acceso a `anon` ni `authenticated`.
-- El worker no acepta llamadas públicas sin el token privado guardado en Supabase Vault.
+- Los ticks automáticos del worker solo aceptan el token privado guardado en Supabase Vault.
+- Los comandos de operador (`bootstrap/status/enable/disable/run-now`) requieren una Secret API Key de Spree válida; el bootstrap la valida contra la propia Admin API antes de guardar la sesión.
 - La Secret API Key de Spree y la sesión B2B no se incluyen en Git ni se muestran en logs.
 - El worker nunca activa productos: crea nuevos productos como `draft` y mantiene `REVIEW_REQUIRED` para categorías/márgenes ambiguos y packs.
 - Los PVP manuales y los productos activos quedan protegidos frente a sobrescritura automática.

@@ -502,6 +502,170 @@ async function syncProductToSpree(
   return { productId, variantId, images, review };
 }
 
+
+async function validateSpreeAdminKey(spreeApiUrl: string, key: string): Promise<void> {
+  if (!key.startsWith("sk_")) throw new Error("La clave de Spree no es una Secret API Key válida.");
+  const response = await fetch(
+    spreeApiUrl.replace(/\/$/, "") + "/api/v3/admin/products?limit=1",
+    { headers: { accept: "application/json", "x-spree-api-key": key } },
+  );
+  if (!response.ok) {
+    throw new Error("Spree rechazó la Secret API Key (" + response.status + ").");
+  }
+}
+
+async function operatorAuthorized(config: ConfigRow, provided: string): Promise<boolean> {
+  if (!provided || !config.spree_admin_api_key) return false;
+  return (await sha256(provided)) === (await sha256(config.spree_admin_api_key));
+}
+
+async function operatorAction(
+  action: string,
+  req: Request,
+  config: ConfigRow,
+  body: Record<string, unknown>,
+): Promise<Response> {
+  const providedKey = req.headers.get("x-spree-admin-key") ?? "";
+
+  if (action === "bootstrap") {
+    const spreeApiUrl =
+      typeof body.spreeApiUrl === "string" && body.spreeApiUrl
+        ? body.spreeApiUrl
+        : "https://bisontcg.spree.sh";
+    const baseUrl =
+      typeof body.baseUrl === "string" && body.baseUrl
+        ? body.baseUrl
+        : "https://b2bdevir.es";
+    const sessionState =
+      body.sessionState && typeof body.sessionState === "object"
+        ? body.sessionState as ConfigRow["session_state"]
+        : null;
+
+    if (!providedKey || !sessionState) {
+      return json({ error: "bootstrap_missing_credentials" }, 400);
+    }
+
+    await validateSpreeAdminKey(spreeApiUrl, providedKey);
+
+    const probeConfig: ConfigRow = {
+      ...config,
+      base_url: baseUrl,
+      spree_api_url: spreeApiUrl,
+      spree_admin_api_key: providedKey,
+      session_state: sessionState,
+    };
+    await devirFetch(probeConfig, baseUrl.replace(/\/$/, "") + "/customer/account/");
+
+    const { error } = await supabase
+      .from("devir_sync_config")
+      .update({
+        enabled: true,
+        base_url: baseUrl,
+        spree_api_url: spreeApiUrl,
+        spree_admin_api_key: providedKey,
+        session_state: sessionState,
+        phase: "idle",
+        active_cycle_id: null,
+        next_due_at: new Date().toISOString(),
+        lock_until: null,
+        last_error: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", "primary");
+    if (error) throw error;
+
+    return json({
+      ok: true,
+      enabled: true,
+      message: "Bootstrap validado contra Devir y Spree. Primer ciclo solicitado.",
+    });
+  }
+
+  if (!(await operatorAuthorized(config, providedKey))) {
+    return json({ error: "unauthorized" }, 401);
+  }
+
+  if (action === "status") {
+    const { data: cycles, error: cyclesError } = await supabase
+      .from("devir_sync_cycles")
+      .select(
+        "id,status,started_at,finished_at,category_count,product_count,processed_count,error_count,error",
+      )
+      .order("started_at", { ascending: false })
+      .limit(5);
+    if (cyclesError) throw cyclesError;
+
+    let jobs = { pending: 0, done: 0, error: 0 };
+    if (config.active_cycle_id) {
+      const [pending, done, errors] = await Promise.all([
+        supabase.from("devir_sync_jobs").select("*", { count: "exact", head: true })
+          .eq("cycle_id", config.active_cycle_id).eq("status", "pending"),
+        supabase.from("devir_sync_jobs").select("*", { count: "exact", head: true })
+          .eq("cycle_id", config.active_cycle_id).eq("status", "done"),
+        supabase.from("devir_sync_jobs").select("*", { count: "exact", head: true })
+          .eq("cycle_id", config.active_cycle_id).eq("status", "error"),
+      ]);
+      jobs = {
+        pending: pending.count ?? 0,
+        done: done.count ?? 0,
+        error: errors.count ?? 0,
+      };
+    }
+
+    return json({
+      ok: true,
+      config: {
+        enabled: config.enabled,
+        phase: config.phase,
+        active_cycle_id: config.active_cycle_id,
+        next_due_at: config.next_due_at,
+        interval_hours: config.interval_hours,
+        batch_size: config.batch_size,
+        max_pages: config.max_pages,
+        last_attempt_at: (config as ConfigRow & { last_attempt_at?: string | null }).last_attempt_at ?? null,
+        last_success_at: (config as ConfigRow & { last_success_at?: string | null }).last_success_at ?? null,
+        last_error: (config as ConfigRow & { last_error?: string | null }).last_error ?? null,
+      },
+      jobs,
+      cycles: cycles ?? [],
+    });
+  }
+
+  if (action === "enable" || action === "disable") {
+    const enabled = action === "enable";
+    const { error } = await supabase
+      .from("devir_sync_config")
+      .update({
+        enabled,
+        ...(enabled ? { next_due_at: new Date().toISOString() } : {}),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", "primary");
+    if (error) throw error;
+    return json({ ok: true, enabled });
+  }
+
+  if (action === "run-now") {
+    if (config.active_cycle_id) {
+      return json({ ok: true, already_running: config.active_cycle_id });
+    }
+    const { error } = await supabase
+      .from("devir_sync_config")
+      .update({
+        enabled: true,
+        phase: "idle",
+        next_due_at: new Date().toISOString(),
+        last_error: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", "primary");
+    if (error) throw error;
+    return json({ ok: true, requested: true });
+  }
+
+  return json({ error: "unknown_action" }, 400);
+}
+
 async function startCycle(config: ConfigRow): Promise<string> {
   const home = await devirFetch(config, config.base_url + "/");
   const categories = discoverCategories(home, config.base_url);
@@ -661,6 +825,13 @@ async function finishCycle(config: ConfigRow, cycleId: string): Promise<void> {
 Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
 
+  let body: Record<string, unknown> = {};
+  try {
+    body = await req.json() as Record<string, unknown>;
+  } catch {
+    body = {};
+  }
+
   const { data: configData, error: configError } = await supabase
     .from("devir_sync_config")
     .select("*")
@@ -668,6 +839,18 @@ Deno.serve(async (req) => {
     .single();
   if (configError) return json({ error: "config", detail: configError.message }, 500);
   const config = configData as ConfigRow;
+
+  const action = typeof body.action === "string" ? body.action : null;
+  if (action) {
+    try {
+      return await operatorAction(action, req, config, body);
+    } catch (error) {
+      return json(
+        { ok: false, error: error instanceof Error ? error.message : String(error) },
+        400,
+      );
+    }
+  }
 
   const token = req.headers.get("x-devir-worker-token") ?? "";
   if (!token || !config.worker_token_hash || (await sha256(token)) !== config.worker_token_hash) {
