@@ -160,6 +160,47 @@ pnpm devir:cloud:disable
 pnpm devir:cloud:enable
 ```
 
+### Login automático real
+
+Las credenciales B2B no se guardan en Git ni en Vercel. Como el worker vive en Supabase, se almacenan en **Supabase Vault** y solo la Edge Function con service role puede leerlas.
+
+Una sola vez:
+
+```bash
+pnpm devir:cloud:credentials
+```
+
+El comando pide usuario/email y contraseña; la contraseña no se muestra en pantalla. También acepta `DEVIR_B2B_USERNAME` y `DEVIR_B2B_PASSWORD` si prefieres inyectarlos temporalmente desde un entorno seguro.
+
+Cuando Devir invalida las cookies, el worker:
+
+```text
+detecta pantalla de login
+→ recupera usuario/contraseña desde Vault
+→ obtiene form_key de Magento
+→ POST /customer/account/loginPost/
+→ valida /customer/account/
+→ guarda las cookies nuevas
+→ reintenta la petición original una sola vez
+```
+
+Si Devir rechazase las credenciales, CAPTCHA o una autenticación adicional, el worker marca `LOGIN_FAILED`/error y no intenta saltarse esa protección.
+
+### Venta sin stock cuando Devir dispone del producto
+
+Spree sigue siendo la fuente de verdad del **stock físico propio**. La Cloud Sync no inventa unidades ni cambia `count_on_hand`.
+
+En cambio sincroniza el flag nativo `backorderable` del StockItem:
+
+```text
+Devir available   → backorderable = true
+Devir unavailable → backorderable = false
+Devir preorder    → no cambia el flag
+Devir unknown     → no cambia el flag
+```
+
+Así, si tu stock local está a 0 pero Devir marca el SKU como disponible, Spree puede seguir aceptando venta bajo pedido. Si Devir pasa a no disponible, se desactiva esa posibilidad sin tocar las unidades físicas.
+
 ### Imágenes automáticas
 
 La Edge Function extrae la imagen Open Graph y la galería Magento cuando están disponibles. Para un producto de Spree sin medios existentes, envía las URLs al Admin API de Spree, que las copia a su propio almacenamiento mediante su flujo nativo `SaveFromUrl`.

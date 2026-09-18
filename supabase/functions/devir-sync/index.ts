@@ -133,7 +133,137 @@ function cookiesFor(config: ConfigRow, url: string): string {
     .join("; ");
 }
 
-async function devirFetch(config: ConfigRow, url: string): Promise<string> {
+function parseSetCookies(headers: Headers): string[] {
+  const extended = headers as Headers & { getSetCookie?: () => string[] };
+  const values = extended.getSetCookie?.();
+  if (values?.length) return values;
+  const single = headers.get("set-cookie");
+  return single ? [single] : [];
+}
+
+function mergeSessionCookies(
+  current: ConfigRow["session_state"],
+  setCookies: string[],
+  baseUrl: string,
+): ConfigRow["session_state"] {
+  const map = new Map(
+    (current?.cookies ?? []).map((cookie) => [cookie.name + "|" + cookie.domain + "|" + (cookie.path || "/"), cookie]),
+  );
+  const host = new URL(baseUrl).hostname;
+
+  for (const raw of setCookies) {
+    const parts = raw.split(";").map((part) => part.trim());
+    const [pair, ...attrs] = parts;
+    const equals = pair.indexOf("=");
+    if (equals <= 0) continue;
+    const name = pair.slice(0, equals);
+    const value = pair.slice(equals + 1);
+    let domain = host;
+    let path = "/";
+    let expires = -1;
+
+    for (const attr of attrs) {
+      const [attrName, ...rest] = attr.split("=");
+      const attrValue = rest.join("=");
+      if (/^domain$/i.test(attrName) && attrValue) domain = attrValue;
+      else if (/^path$/i.test(attrName) && attrValue) path = attrValue;
+      else if (/^max-age$/i.test(attrName) && attrValue) {
+        const seconds = Number(attrValue);
+        if (Number.isFinite(seconds)) expires = Date.now() / 1000 + seconds;
+      } else if (/^expires$/i.test(attrName) && attrValue) {
+        const timestamp = Date.parse(attrValue);
+        if (Number.isFinite(timestamp)) expires = timestamp / 1000;
+      }
+    }
+
+    const key = name + "|" + domain + "|" + path;
+    if (!value || expires === 0 || (expires > 0 && expires < Date.now() / 1000)) map.delete(key);
+    else map.set(key, { name, value, domain, path, expires });
+  }
+
+  return { ...(current ?? {}), cookies: Array.from(map.values()) };
+}
+
+async function automaticDevirLogin(config: ConfigRow): Promise<ConfigRow["session_state"]> {
+  const { data: credentials, error: credentialsError } = await supabase.rpc("devir_sync_get_credentials");
+  if (credentialsError) throw credentialsError;
+  const username = typeof credentials?.username === "string" ? credentials.username : "";
+  const password = typeof credentials?.password === "string" ? credentials.password : "";
+  if (!username || !password) {
+    throw new Error("SESSION_EXPIRED: faltan credenciales Devir en Supabase Vault. Ejecuta pnpm devir:cloud:credentials.");
+  }
+
+  const loginUrl = config.base_url.replace(/\/$/, "") + "/customer/account/login/";
+  const loginPage = await fetch(loginUrl, {
+    redirect: "follow",
+    headers: {
+      accept: "text/html,application/xhtml+xml",
+      "accept-language": "es-ES,es;q=0.9",
+      "user-agent": "BisonTCG catalog sync/1.0",
+    },
+  });
+  const loginHtml = await loginPage.text();
+  if (!loginPage.ok) throw new Error("LOGIN_FAILED: Devir devolvió HTTP " + loginPage.status);
+
+  let state = mergeSessionCookies(config.session_state, parseSetCookies(loginPage.headers), config.base_url);
+  const formKey =
+    loginHtml.match(/name=["']form_key["'][^>]*value=["']([^"']+)["']/i)?.[1] ??
+    loginHtml.match(/value=["']([^"']+)["'][^>]*name=["']form_key["']/i)?.[1] ??
+    "";
+  const actionRaw =
+    loginHtml.match(/<form\b[^>]*id=["']login-form["'][^>]*action=["']([^"']+)["']/i)?.[1] ??
+    loginHtml.match(/<form\b[^>]*action=["']([^"']*customer\/account\/loginPost[^"']*)["']/i)?.[1] ??
+    "/customer/account/loginPost/";
+  const action = new URL(decodeHtml(actionRaw), config.base_url).toString();
+
+  const body = new URLSearchParams();
+  if (formKey) body.set("form_key", formKey);
+  body.set("login[username]", username);
+  body.set("login[password]", password);
+
+  const loginResponse = await fetch(action, {
+    method: "POST",
+    redirect: "manual",
+    headers: {
+      accept: "text/html,application/xhtml+xml",
+      "content-type": "application/x-www-form-urlencoded",
+      "user-agent": "BisonTCG catalog sync/1.0",
+      cookie: cookiesFor({ ...config, session_state: state }, action),
+      referer: loginUrl,
+    },
+    body,
+  });
+  state = mergeSessionCookies(state, parseSetCookies(loginResponse.headers), config.base_url);
+
+  const accountUrl = config.base_url.replace(/\/$/, "") + "/customer/account/";
+  const probe = await fetch(accountUrl, {
+    redirect: "follow",
+    headers: {
+      accept: "text/html,application/xhtml+xml",
+      "user-agent": "BisonTCG catalog sync/1.0",
+      cookie: cookiesFor({ ...config, session_state: state }, accountUrl),
+    },
+  });
+  const probeHtml = await probe.text();
+  if (!probe.ok || /customer\/account\/login|form-login|customer-login/i.test(probe.url + " " + probeHtml.slice(0, 12000))) {
+    throw new Error("LOGIN_FAILED: Devir no aceptó las credenciales guardadas.");
+  }
+  state = mergeSessionCookies(state, parseSetCookies(probe.headers), config.base_url);
+
+  const { error: updateError } = await supabase
+    .from("devir_sync_config")
+    .update({
+      session_state: state,
+      last_error: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", "primary");
+  if (updateError) throw updateError;
+
+  return state;
+}
+
+async function devirFetch(config: ConfigRow, url: string, retryLogin = true): Promise<string> {
   const response = await fetch(url, {
     redirect: "follow",
     headers: {
@@ -146,7 +276,9 @@ async function devirFetch(config: ConfigRow, url: string): Promise<string> {
   const html = await response.text();
   if (!response.ok) throw new Error("Devir HTTP " + response.status + " en " + url);
   if (/customer\/account\/login|form-login|customer-login/i.test(response.url + " " + html.slice(0, 12000))) {
-    throw new Error("La sesión B2B de Devir ha caducado; vuelve a ejecutar el bootstrap desde una sesión válida.");
+    if (!retryLogin) throw new Error("SESSION_EXPIRED: la sesión B2B no pudo renovarse automáticamente.");
+    const sessionState = await automaticDevirLogin(config);
+    return await devirFetch({ ...config, session_state: sessionState }, url, false);
   }
   return html;
 }
@@ -392,6 +524,49 @@ async function upsertProductFields(
   }
 }
 
+interface SpreeStockItem {
+  id: string;
+  variant_id?: string | null;
+  count_on_hand?: number;
+  backorderable?: boolean;
+}
+
+async function syncBackorderability(
+  config: ConfigRow,
+  variantId: string | null,
+  availability: DevirProduct["availability"],
+): Promise<number> {
+  if (!variantId || (availability !== "available" && availability !== "unavailable")) return 0;
+  const desired = availability === "available";
+  const attempts = [
+    "/stock_items?q[variant_id_eq]=" + encodeURIComponent(variantId),
+    "/stock_items?q[variant_prefixed_id_eq]=" + encodeURIComponent(variantId),
+  ];
+  let items: SpreeStockItem[] = [];
+  for (const path of attempts) {
+    try {
+      items = await spreeList<SpreeStockItem>(config, path);
+      if (items.length) break;
+    } catch {
+      // Compatibility fallback between Spree versions.
+    }
+  }
+  if (!items.length) {
+    const all = await spreeList<SpreeStockItem>(config, "/stock_items");
+    items = all.filter((item) => item.variant_id === variantId);
+  }
+
+  let changed = 0;
+  for (const item of items) {
+    if (item.backorderable === desired) continue;
+    await spreeRequest(config, "PATCH", "/stock_items/" + item.id, {
+      backorderable: desired,
+    });
+    changed += 1;
+  }
+  return changed;
+}
+
 async function syncImages(config: ConfigRow, productId: string, product: DevirProduct): Promise<number> {
   if (!product.imageUrls.length) return 0;
   const current = await spreeList<Json>(config, "/products/" + productId + "/media");
@@ -417,7 +592,7 @@ async function syncProductToSpree(
   product: DevirProduct,
   categories: SpreeCategory[],
   defs: Map<string, SpreeFieldDefinition>,
-): Promise<{ productId: string; variantId: string | null; images: number; review: boolean }> {
+): Promise<{ productId: string; variantId: string | null; images: number; review: boolean; backorderItems: number }> {
   if (!product.purchasePrice || product.purchasePrice <= 0) throw new Error("Producto sin coste Devir: " + product.sku);
   const key = categoryKey(product);
   const category = key ? categories.find((c) => c.permalink === key) ?? null : null;
@@ -498,8 +673,9 @@ async function syncProductToSpree(
     "pricing.manual_price_override": manualPrice,
   });
 
+  const backorderItems = await syncBackorderability(config, variantId, product.availability);
   const images = await syncImages(config, productId, product);
-  return { productId, variantId, images, review };
+  return { productId, variantId, images, review, backorderItems };
 }
 
 
@@ -583,6 +759,21 @@ async function operatorAction(
 
   if (!(await operatorAuthorized(config, providedKey))) {
     return json({ error: "unauthorized" }, 401);
+  }
+
+  if (action === "credentials") {
+    if (!(await operatorAuthorized(config, providedKey))) {
+      return json({ error: "unauthorized" }, 401);
+    }
+    const username = typeof body.username === "string" ? body.username.trim() : "";
+    const password = typeof body.password === "string" ? body.password : "";
+    if (!username || !password) return json({ error: "credentials_required" }, 400);
+    const { error } = await supabase.rpc("devir_sync_set_credentials", {
+      p_username: username,
+      p_password: password,
+    });
+    if (error) throw error;
+    return json({ ok: true, stored: true });
   }
 
   if (action === "status") {
@@ -787,7 +978,7 @@ async function processProducts(config: ConfigRow, cycleId: string): Promise<{ do
       if (catalogError) throw catalogError;
       await supabase.from("devir_sync_jobs").update({
         status: "done",
-        payload: { sku: product.sku, images: synced.images, review: synced.review },
+        payload: { sku: product.sku, images: synced.images, review: synced.review, backorder_items: synced.backorderItems },
         updated_at: new Date().toISOString(),
       }).eq("id", job.id);
       processed += 1;

@@ -83,6 +83,9 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [ ] Verificar en Store API/Preview que los productos `draft` de Devir no son visibles hasta activarlos.
 - [x] Los scripts Devir cargan `.env.local` automáticamente y priorizan `DEVIR_B2B_SPREE_API_URL` / `DEVIR_B2B_SPREE_ADMIN_API_KEY` traídas desde Vercel, manteniendo compatibilidad con los nombres antiguos.
 - [x] Movido el ciclo de 6 horas a Supabase Cron + Edge Function incremental; ya no depende de Codespaces para operar 24/7.
+- [x] Añadido almacenamiento de usuario/contraseña Devir en Supabase Vault para reautenticación automática cuando caduquen las cookies.
+- [x] Añadido login Magento automático con `form_key`, validación posterior de cuenta y renovación de cookies; no intenta saltarse CAPTCHA/MFA.
+- [x] Disponibilidad Devir sincronizada con `StockItem.backorderable`: disponible permite venta sin stock, no disponible la bloquea, sin alterar `count_on_hand`.
 - [ ] Definir proveedores múltiples y prioridad de abastecimiento cuando un producto no esté disponible en un distribuidor.
 
 ## Envíos

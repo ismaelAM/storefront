@@ -37,7 +37,7 @@ function spreeKey(): string {
 }
 
 async function callCloud(
-  action: "bootstrap" | "status" | "enable" | "disable" | "run-now",
+  action: "bootstrap" | "status" | "enable" | "disable" | "run-now" | "credentials",
   body: Record<string, unknown> = {},
 ): Promise<Record<string, unknown>> {
   const response = await fetch(cloudUrl, {
@@ -65,6 +65,52 @@ async function callCloud(
   return payload;
 }
 
+
+async function promptLine(message: string): Promise<string> {
+  process.stdin.setEncoding("utf8");
+  return await new Promise<string>((resolvePromise) => {
+    process.stdout.write(message);
+    process.stdin.once("data", (value) => resolvePromise(String(value).trim()));
+  });
+}
+
+async function promptSecret(message: string): Promise<string> {
+  if (!process.stdin.isTTY) return await promptLine(message);
+  process.stdout.write(message);
+  process.stdin.setRawMode?.(true);
+  process.stdin.resume();
+  process.stdin.setEncoding("utf8");
+
+  return await new Promise<string>((resolvePromise, reject) => {
+    let value = "";
+    const cleanup = () => {
+      process.stdin.off("data", onData);
+      process.stdin.setRawMode?.(false);
+      process.stdout.write("\n");
+    };
+    const onData = (chunk: string) => {
+      for (const char of String(chunk)) {
+        if (char === "\u0003") {
+          cleanup();
+          reject(new Error("Cancelado."));
+          return;
+        }
+        if (char === "\r" || char === "\n") {
+          cleanup();
+          resolvePromise(value);
+          return;
+        }
+        if (char === "\u007f") {
+          value = value.slice(0, -1);
+          continue;
+        }
+        value += char;
+      }
+    };
+    process.stdin.on("data", onData);
+  });
+}
+
 async function bootstrap(): Promise<void> {
   const sessionState = JSON.parse(await readFile(statePath, "utf8")) as unknown;
   const spreeUrl =
@@ -84,6 +130,22 @@ async function bootstrap(): Promise<void> {
   console.log("  Frecuencia: cada 6 h entre ciclos completos.");
   if (typeof result.message === "string") console.log("  " + result.message);
   console.log("Ejecuta `pnpm devir:cloud:status` para ver el progreso.");
+}
+
+
+async function credentials(): Promise<void> {
+  const username =
+    env("DEVIR_B2B_USERNAME") ??
+    (await promptLine("Usuario/email Devir B2B: "));
+  const password =
+    env("DEVIR_B2B_PASSWORD") ??
+    (await promptSecret("Contraseña Devir B2B (no se mostrará): "));
+
+  if (!username || !password) throw new Error("Usuario y contraseña son obligatorios.");
+
+  await callCloud("credentials", { username, password });
+  console.log("Credenciales Devir guardadas en Supabase Vault.");
+  console.log("El worker podrá renovar automáticamente la sesión cuando caduque.");
 }
 
 async function status(): Promise<void> {
@@ -133,11 +195,12 @@ async function runNow(): Promise<void> {
 async function main(): Promise<void> {
   const command = process.argv[2] ?? "status";
   if (command === "bootstrap") await bootstrap();
+  else if (command === "credentials") await credentials();
   else if (command === "status") await status();
   else if (command === "enable") await setEnabled(true);
   else if (command === "disable") await setEnabled(false);
   else if (command === "run-now") await runNow();
-  else throw new Error("Uso: devir-cloud <bootstrap|status|enable|disable|run-now>");
+  else throw new Error("Uso: devir-cloud <bootstrap|credentials|status|enable|disable|run-now>");
 }
 
 main().catch((error) => {

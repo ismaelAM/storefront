@@ -216,3 +216,68 @@ select cron.schedule(
   );
   $cron$
 );
+
+
+create or replace function public.devir_sync_set_credentials(
+  p_username text,
+  p_password text
+)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_username_id uuid;
+  v_password_id uuid;
+begin
+  if nullif(trim(p_username), '') is null or nullif(p_password, '') is null then
+    raise exception 'Devir username/password cannot be empty';
+  end if;
+
+  select id into v_username_id
+  from vault.decrypted_secrets
+  where name = 'devir_b2b_username'
+  limit 1;
+
+  if v_username_id is null then
+    perform vault.create_secret(trim(p_username), 'devir_b2b_username',
+      'Devir B2B username for automatic cloud reauthentication', null);
+  else
+    perform vault.update_secret(v_username_id, trim(p_username), 'devir_b2b_username',
+      'Devir B2B username for automatic cloud reauthentication', null);
+  end if;
+
+  select id into v_password_id
+  from vault.decrypted_secrets
+  where name = 'devir_b2b_password'
+  limit 1;
+
+  if v_password_id is null then
+    perform vault.create_secret(p_password, 'devir_b2b_password',
+      'Devir B2B password for automatic cloud reauthentication', null);
+  else
+    perform vault.update_secret(v_password_id, p_password, 'devir_b2b_password',
+      'Devir B2B password for automatic cloud reauthentication', null);
+  end if;
+end;
+$$;
+
+create or replace function public.devir_sync_get_credentials()
+returns jsonb
+language sql
+security definer
+set search_path = ''
+as $$
+  select jsonb_build_object(
+    'username',
+    (select decrypted_secret from vault.decrypted_secrets where name = 'devir_b2b_username' limit 1),
+    'password',
+    (select decrypted_secret from vault.decrypted_secrets where name = 'devir_b2b_password' limit 1)
+  );
+$$;
+
+revoke all on function public.devir_sync_set_credentials(text, text) from public, anon, authenticated;
+revoke all on function public.devir_sync_get_credentials() from public, anon, authenticated;
+grant execute on function public.devir_sync_set_credentials(text, text) to service_role;
+grant execute on function public.devir_sync_get_credentials() to service_role;
