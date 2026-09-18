@@ -3,6 +3,9 @@ import { randomBytes } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { chromium, type Page } from "@playwright/test";
+import { loadLocalEnv } from "./load-local-env";
+
+loadLocalEnv();
 
 const profilePath = resolve(
   process.env.DEVIR_B2B_PROFILE_DIR ?? ".secrets/devir-b2b-profile",

@@ -1,5 +1,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import { loadLocalEnv } from "./load-local-env";
+
+loadLocalEnv();
 
 type Availability = "available" | "preorder" | "unavailable" | "unknown";
 type ReviewStatus = "auto" | "review_required" | "approved";
@@ -148,15 +151,22 @@ const pricingConfigPath = resolve(
 const pricingTemplatePath = resolve(
   process.env.DEVIR_B2B_PRICING_TEMPLATE ?? "config/devir-pricing-rules.example.json",
 );
-const spreeApiUrl = process.env.SPREE_API_URL?.replace(/\/$/, "");
-const adminApiKey = process.env.SPREE_ADMIN_API_KEY;
+const spreeApiUrl = (
+  process.env.SPREE_API_URL ?? process.env.DEVIR_B2B_SPREE_API_URL
+)?.replace(/\/$/, "");
+const adminApiKey =
+  process.env.DEVIR_B2B_SPREE_ADMIN_API_KEY ?? process.env.SPREE_ADMIN_API_KEY;
 const pageSize = readIntegerEnv("DEVIR_SPREE_PAGE_SIZE", 100, 1, 100);
 const maxPages = readIntegerEnv("DEVIR_SPREE_MAX_PAGES", 100, 1, 10_000);
 
-if (!spreeApiUrl) throw new Error("Falta SPREE_API_URL.");
+if (!spreeApiUrl) {
+  throw new Error(
+    "Falta SPREE_API_URL (también se acepta DEVIR_B2B_SPREE_API_URL). Ejecuta `vercel env pull .env.local` si la variable está en Vercel.",
+  );
+}
 if (!adminApiKey) {
   throw new Error(
-    "Falta SPREE_ADMIN_API_KEY. Debe ser una secret key de Admin API con al menos read_products.",
+    "Falta DEVIR_B2B_SPREE_ADMIN_API_KEY (también se acepta SPREE_ADMIN_API_KEY). Ejecuta `vercel env pull .env.local`; debe ser una secret key de Admin API con al menos read_products.",
   );
 }
 const spreeAdminApiKey = adminApiKey;

@@ -1,5 +1,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import { loadLocalEnv } from "./load-local-env";
+
+loadLocalEnv();
 
 interface OperatorDecision {
   approved?: boolean;

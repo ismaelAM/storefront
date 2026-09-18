@@ -1,4 +1,7 @@
 import { spawn } from "node:child_process";
+import { loadLocalEnv } from "./load-local-env";
+
+loadLocalEnv();
 
 const intervalHours = Number(process.env.DEVIR_SYNC_INTERVAL_HOURS ?? "6");
 const once = process.argv.includes("--once");

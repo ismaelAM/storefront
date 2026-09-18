@@ -89,7 +89,7 @@ Para una sola ejecución completa:
 pnpm devir:sync:once
 ```
 
-Este watcher no convierte Codespaces en un scheduler de producción: si el Codespace duerme o se apaga, no hay ejecuciones. Cuando el flujo esté estabilizado se moverá a un worker con almacenamiento persistente para la sesión, manteniendo la misma cadencia de 6 horas.
+El watcher también carga automáticamente `.env.local`. Este watcher no convierte Codespaces en un scheduler de producción: si el Codespace duerme o se apaga, no hay ejecuciones. Cuando el flujo esté estabilizado se moverá a un worker con almacenamiento persistente para la sesión, manteniendo la misma cadencia de 6 horas.
 
 ## Dry-run contra Spree
 
@@ -99,12 +99,25 @@ Una vez generado `.local/devir-b2b-catalog.json`, se puede preparar el plan cont
 pnpm devir:import:dry-run
 ```
 
-Requiere:
+La URL de Spree puede seguir usando la variable que ya existía:
 
 ```text
-SPREE_API_URL=https://...
-SPREE_ADMIN_API_KEY=...
+SPREE_API_URL=https://bisontcg.spree.sh
 ```
+
+Para la clave Admin del importador se usa preferentemente:
+
+```text
+DEVIR_B2B_SPREE_ADMIN_API_KEY=sk_...
+```
+
+Como el proyecto ya está vinculado a Vercel, descárgalas al Codespace con:
+
+```bash
+vercel env pull .env.local
+```
+
+`.env.local` está ignorado por Git y los scripts Devir lo cargan automáticamente al arrancar. Se mantiene compatibilidad con `SPREE_ADMIN_API_KEY` y también con `DEVIR_B2B_SPREE_API_URL`, pero no necesitas duplicar `SPREE_API_URL` si ya la tienes configurada.
 
 La secret key debe tener como mínimo `read_products`. El dry-run solo usa `GET` contra Spree y produce estados:
 

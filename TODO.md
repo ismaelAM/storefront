@@ -59,6 +59,7 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [x] Añadida cola `AUTO` / `REVIEW_REQUIRED` / `APPROVED` y decisiones persistidas localmente para que el operador controle excepciones.
 - [x] Añadido soporte de packs divididos manualmente en productos hijos, validando que el coste asignado cuadre con el total de Devir.
 - [x] Añadido `pnpm devir:sync:watch`: scan + dry-run cada 6 horas mientras el proceso/Codespace esté activo; si caduca la sesión se detiene y requiere `pnpm devir:login`.
+- [x] Los scripts Devir cargan `.env.local` automáticamente y priorizan `DEVIR_B2B_SPREE_API_URL` / `DEVIR_B2B_SPREE_ADMIN_API_KEY` traídas desde Vercel, manteniendo compatibilidad con los nombres antiguos.
 - [ ] Mover el watcher de 6 horas a un worker persistente cuando el flujo esté validado; Codespaces puede dormir y no es scheduler de producción.
 - [ ] Definir proveedores múltiples y prioridad de abastecimiento cuando un producto no esté disponible en un distribuidor.
 

@@ -1,6 +1,9 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { chromium, type Page } from "@playwright/test";
+import { loadLocalEnv } from "./load-local-env";
+
+loadLocalEnv();
 
 type Availability = "available" | "preorder" | "unavailable" | "unknown";
 
