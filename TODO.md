@@ -85,6 +85,7 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [x] Movido el ciclo de 6 horas a Supabase Cron + Edge Function incremental; ya no depende de Codespaces para operar 24/7.
 - [x] Añadido almacenamiento de usuario/contraseña Devir en Supabase Vault para reautenticación automática cuando caduquen las cookies.
 - [x] Añadido login Magento automático con `form_key`, validación posterior de cuenta y renovación de cookies; no intenta saltarse CAPTCHA/MFA.
+- [x] El comando `devir:cloud:credentials` valida credenciales inmediatamente contra Devir antes de confirmarlas y el worker maneja correctamente múltiples `Set-Cookie` de Magento.
 - [x] Disponibilidad Devir sincronizada con `StockItem.backorderable`: disponible permite venta sin stock, no disponible la bloquea, sin alterar `count_on_hand`.
 - [ ] Definir proveedores múltiples y prioridad de abastecimiento cuando un producto no esté disponible en un distribuidor.
 

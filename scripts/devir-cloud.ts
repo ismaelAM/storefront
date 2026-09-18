@@ -143,8 +143,11 @@ async function credentials(): Promise<void> {
 
   if (!username || !password) throw new Error("Usuario y contraseña son obligatorios.");
 
-  await callCloud("credentials", { username, password });
-  console.log("Credenciales Devir guardadas en Supabase Vault.");
+  const result = await callCloud("credentials", { username, password });
+  console.log("Credenciales Devir validadas y guardadas en Supabase Vault.");
+  if (result.session_refreshed) {
+    console.log("Sesión Devir renovada correctamente.");
+  }
   console.log("El worker podrá renovar automáticamente la sesión cuando caduque.");
 }
 

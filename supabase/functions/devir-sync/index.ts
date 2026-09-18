@@ -133,12 +133,19 @@ function cookiesFor(config: ConfigRow, url: string): string {
     .join("; ");
 }
 
+function splitCombinedSetCookie(value: string): string[] {
+  return value
+    .split(/,(?=\s*[^;,\s]+=)/g)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
 function parseSetCookies(headers: Headers): string[] {
   const extended = headers as Headers & { getSetCookie?: () => string[] };
   const values = extended.getSetCookie?.();
   if (values?.length) return values;
   const single = headers.get("set-cookie");
-  return single ? [single] : [];
+  return single ? splitCombinedSetCookie(single) : [];
 }
 
 function mergeSessionCookies(
@@ -246,7 +253,17 @@ async function automaticDevirLogin(config: ConfigRow): Promise<ConfigRow["sessio
   });
   const probeHtml = await probe.text();
   if (!probe.ok || /customer\/account\/login|form-login|customer-login/i.test(probe.url + " " + probeHtml.slice(0, 12000))) {
-    throw new Error("LOGIN_FAILED: Devir no aceptó las credenciales guardadas.");
+    const visibleError = stripHtml(
+      probeHtml.match(/<[^>]*class=["'][^"']*(?:message-error|messages|mage-error)[^"']*["'][^>]*>[\s\S]*?<\/[^>]+>/i)?.[0] ?? "",
+    ).slice(0, 180);
+    const captcha =
+      /captcha|recaptcha|hcaptcha|cloudflare|turnstile/i.test(probeHtml + " " + loginHtml);
+    const reason = captcha
+      ? "Devir exige CAPTCHA/anti-bot o interacción adicional."
+      : visibleError
+        ? visibleError
+        : "Devir mantuvo la pantalla de login tras enviar el formulario.";
+    throw new Error("LOGIN_FAILED: " + reason);
   }
   state = mergeSessionCookies(state, parseSetCookies(probe.headers), config.base_url);
 
@@ -768,12 +785,45 @@ async function operatorAction(
     const username = typeof body.username === "string" ? body.username.trim() : "";
     const password = typeof body.password === "string" ? body.password : "";
     if (!username || !password) return json({ error: "credentials_required" }, 400);
+
+    const { data: previousCredentials, error: previousError } =
+      await supabase.rpc("devir_sync_get_credentials");
+    if (previousError) throw previousError;
+
     const { error } = await supabase.rpc("devir_sync_set_credentials", {
       p_username: username,
       p_password: password,
     });
     if (error) throw error;
-    return json({ ok: true, stored: true });
+
+    try {
+      const sessionState = await automaticDevirLogin({
+        ...config,
+        session_state: null,
+      });
+      return json({
+        ok: true,
+        stored: true,
+        validated: true,
+        session_refreshed: Boolean(sessionState?.cookies?.length),
+      });
+    } catch (loginError) {
+      const oldUsername =
+        typeof previousCredentials?.username === "string"
+          ? previousCredentials.username
+          : "";
+      const oldPassword =
+        typeof previousCredentials?.password === "string"
+          ? previousCredentials.password
+          : "";
+      if (oldUsername && oldPassword) {
+        await supabase.rpc("devir_sync_set_credentials", {
+          p_username: oldUsername,
+          p_password: oldPassword,
+        });
+      }
+      throw loginError;
+    }
   }
 
   if (action === "status") {
