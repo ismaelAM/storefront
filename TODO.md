@@ -65,6 +65,7 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [x] Protegidos los PVP editados manualmente en Spree frente a sobrescritura en sincronizaciones posteriores.
 - [x] Añadido comando de activación por SKU que rechaza productos con `REVIEW_REQUIRED`.
 - [x] El ciclo de 6 horas ahora ejecuta scan → dry-run → sync a drafts y nunca activa productos automáticamente.
+- [x] El cliente Spree ignora placeholders de Vercel como `[SENSITIVE]` y usa `https://bisontcg.spree.sh` como fallback seguro para la URL pública.
 - [ ] Confirmar que la Secret API Key real tiene `write_products` y `write_settings`, ejecutar `pnpm devir:spree:setup` y verificar la primera carga real de drafts.
 - [ ] Verificar en Store API/Preview que los productos `draft` de Devir no son visibles hasta activarlos.
 - [x] Los scripts Devir cargan `.env.local` automáticamente y priorizan `DEVIR_B2B_SPREE_API_URL` / `DEVIR_B2B_SPREE_ADMIN_API_KEY` traídas desde Vercel, manteniendo compatibilidad con los nombres antiguos.

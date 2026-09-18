@@ -68,22 +68,42 @@ export class SpreeAdminError extends Error {
   }
 }
 
-function requiredEnv(name: string, fallbacks: string[] = []): string {
+const MASKED_ENV_VALUES = new Set(["[SENSITIVE]", "[REDACTED]", "********", "*****"]);
+
+function usableEnv(name: string, fallbacks: string[] = []): string | null {
   for (const candidate of [name, ...fallbacks]) {
     const value = process.env[candidate]?.trim();
-    if (value) return value;
+    if (value && !MASKED_ENV_VALUES.has(value.toUpperCase())) return value;
   }
-  throw new Error(
-    "Falta " + name + (fallbacks.length ? " (también se acepta " + fallbacks.join(", ") + ")" : "") +
-      ". Ejecuta pnpm dlx vercel@latest env pull .env.local.",
-  );
+  return null;
 }
 
 function config(): { baseUrl: string; key: string } {
-  const baseUrl = requiredEnv("SPREE_API_URL", ["DEVIR_B2B_SPREE_API_URL"]).replace(/\/$/, "");
-  const key = requiredEnv("DEVIR_B2B_SPREE_ADMIN_API_KEY", ["SPREE_ADMIN_API_KEY"]);
-  if (!key.startsWith("sk_")) throw new Error("La clave Admin de Spree debe ser una Secret API Key (sk_...).");
-  return { baseUrl, key };
+  const rawBaseUrl =
+    usableEnv("SPREE_API_URL", ["DEVIR_B2B_SPREE_API_URL"]) ??
+    "https://bisontcg.spree.sh";
+  let parsed: URL;
+  try {
+    parsed = new URL(rawBaseUrl);
+  } catch {
+    throw new Error(
+      "SPREE_API_URL no es una URL válida. Si Vercel la descargó como [SENSITIVE], el importador usará automáticamente https://bisontcg.spree.sh; elimina cualquier valor local inválido.",
+    );
+  }
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    throw new Error("SPREE_API_URL debe usar http:// o https://.");
+  }
+
+  const key = usableEnv("DEVIR_B2B_SPREE_ADMIN_API_KEY", ["SPREE_ADMIN_API_KEY"]);
+  if (!key) {
+    throw new Error(
+      "No hay una Secret API Key de Spree utilizable. Vercel puede haber descargado [SENSITIVE] en .env.local; una variable Sensitive no se puede recuperar con env pull. Configura DEVIR_B2B_SPREE_ADMIN_API_KEY para Development como valor recuperable o inyéctala como Codespaces secret.",
+    );
+  }
+  if (!key.startsWith("sk_")) {
+    throw new Error("La clave Admin de Spree debe ser una Secret API Key (sk_...), no una publishable key.");
+  }
+  return { baseUrl: parsed.toString().replace(/\/$/, ""), key };
 }
 
 export async function request<T>(
