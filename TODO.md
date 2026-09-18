@@ -66,6 +66,10 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [x] Protegidos los PVP editados manualmente en Spree frente a sobrescritura en sincronizaciones posteriores.
 - [x] Añadido comando de activación por SKU que rechaza productos con `REVIEW_REQUIRED`.
 - [x] El ciclo de 6 horas ahora ejecuta scan → dry-run → sync a drafts y nunca activa productos automáticamente.
+- [x] Añadido modo `devir:hyper:once` para descubrir categorías desde la navegación autenticada y sincronizar el catálogo completo visible de Devir a drafts.
+- [x] Añadidos checkpoint/resume, deduplicado por URL/SKU y hasta 200 páginas por categoría en modo hyper.
+- [x] Añadido `devir:hyper:watch` para repetir el catálogo completo cada 6 horas mientras el proceso/Codespace siga activo.
+- [ ] Validar la primera pasada `pnpm devir:hyper:once` y revisar cuántas categorías/SKUs descubre realmente la cuenta B2B.
 - [x] El cliente Spree ignora placeholders de Vercel como `[SENSITIVE]` y usa `https://bisontcg.spree.sh` como fallback seguro para la URL pública.
 - [x] El dry-run Devir usa el mismo cliente Admin API seguro que la sincronización, evitando URLs `[SENSITIVE]` y lógica de credenciales duplicada.
 - [ ] Confirmar que la Secret API Key real tiene `write_products` y `write_settings`, ejecutar `pnpm devir:spree:setup` y verificar la primera carga real de drafts.

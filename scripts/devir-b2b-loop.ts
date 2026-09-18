@@ -5,6 +5,7 @@ loadLocalEnv();
 
 const intervalHours = Number(process.env.DEVIR_SYNC_INTERVAL_HOURS ?? "6");
 const once = process.argv.includes("--once");
+const hyper = process.argv.includes("--hyper");
 
 if (!Number.isFinite(intervalHours) || intervalHours <= 0 || intervalHours > 168) {
   throw new Error("DEVIR_SYNC_INTERVAL_HOURS debe ser un número entre 0 y 168.");
@@ -34,7 +35,7 @@ function sleep(ms: number): Promise<void> {
 
 async function syncOnce(): Promise<boolean> {
   console.log(`\n=== Devir sync ${new Date().toISOString()} ===`);
-  const scanCode = await run("pnpm", ["devir:scan"]);
+  const scanCode = await run("pnpm", hyper ? ["devir:scan", "--", "--hyper"] : ["devir:scan"]);
   if (scanCode !== 0) {
     console.error(
       "El scan no ha terminado correctamente. Si Devir ha caducado la sesión, ejecuta `pnpm devir:login`; no se intentará iniciar sesión automáticamente.",
@@ -69,7 +70,7 @@ async function main(): Promise<void> {
   }
 
   console.log(
-    `Sincronizador Devir en modo continuo: ejecución inmediata y después cada ${intervalHours} h mientras este proceso y el Codespace sigan activos.`,
+    `Sincronizador Devir ${hyper ? "HYPER " : ""}en modo continuo: ejecución inmediata y después cada ${intervalHours} h mientras este proceso y el Codespace sigan activos.`,
   );
 
   while (true) {

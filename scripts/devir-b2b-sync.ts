@@ -23,7 +23,11 @@ interface DevirProduct {
 }
 
 const baseUrl = process.env.DEVIR_B2B_BASE_URL ?? "https://b2bdevir.es";
-const categoryUrls = (process.env.DEVIR_B2B_CATEGORIES ??
+const hyperMode =
+  process.argv.includes("--hyper") ||
+  ["1", "true", "yes"].includes((process.env.DEVIR_B2B_DISCOVER_CATEGORIES ?? "").toLowerCase());
+const resumeMode = process.argv.includes("--resume");
+const configuredCategoryUrls = (process.env.DEVIR_B2B_CATEGORIES ??
   `${baseUrl}/juegos-de-cartas-coleccionables`)
   .split(",")
   .map((value) => value.trim())
@@ -37,13 +41,43 @@ const statePath = resolve(
 const outputPath = resolve(
   process.env.DEVIR_B2B_OUTPUT ?? ".local/devir-b2b-catalog.json",
 );
-const maxPages = Number(process.env.DEVIR_B2B_MAX_PAGES ?? "50");
+const checkpointPath = resolve(
+  process.env.DEVIR_B2B_CHECKPOINT ?? ".local/devir-b2b-catalog.checkpoint.json",
+);
+const maxPages = Number(process.env.DEVIR_B2B_MAX_PAGES ?? (hyperMode ? "200" : "50"));
 const maxProducts = Number(process.env.DEVIR_B2B_MAX_PRODUCTS ?? "0");
 const delayMs = Number(process.env.DEVIR_B2B_DELAY_MS ?? "1200");
 const timeoutMs = Number(process.env.DEVIR_B2B_TIMEOUT_MS ?? "30000");
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolvePromise) => setTimeout(resolvePromise, ms));
+}
+
+interface ScanCheckpoint {
+  source: "devir-b2b";
+  generatedAt: string;
+  complete: boolean;
+  mode: "standard" | "hyper";
+  categories: string[];
+  productUrls: string[];
+  products: DevirProduct[];
+  errors: Array<{ url: string; message: string }>;
+}
+
+async function writeCheckpoint(checkpoint: ScanCheckpoint): Promise<void> {
+  await mkdir(dirname(checkpointPath), { recursive: true });
+  await writeFile(checkpointPath, JSON.stringify(checkpoint, null, 2));
+}
+
+async function readCheckpoint(): Promise<ScanCheckpoint | null> {
+  if (!resumeMode) return null;
+  try {
+    const { readFile } = await import("node:fs/promises");
+    return JSON.parse(await readFile(checkpointPath, "utf8")) as ScanCheckpoint;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
 }
 
 function parseNumber(value: string | undefined): number | null {
@@ -88,6 +122,64 @@ function canonicalizeUrl(value: string, sourceUrl: string): string | null {
   } catch {
     return null;
   }
+}
+
+function isLikelyCategoryUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    if (url.origin !== new URL(baseUrl).origin) return false;
+    const path = url.pathname.replace(/\/+$/, "");
+    if (!path) return false;
+    return ![
+      "/customer",
+      "/checkout",
+      "/catalogsearch",
+      "/search",
+      "/wishlist",
+      "/sales",
+      "/contact",
+      "/privacy",
+      "/cookie",
+      "/cart",
+      "/actualidad",
+    ].some((prefix) => path === prefix || path.startsWith(prefix + "/"));
+  } catch {
+    return false;
+  }
+}
+
+async function discoverCategoryUrls(page: Page): Promise<string[]> {
+  await page.goto(baseUrl + "/", { waitUntil: "domcontentloaded", timeout: timeoutMs });
+  const selectors = [
+    '[data-action="navigation"] li.category-item a[href]',
+    'nav.navigation li.category-item a[href]',
+    '.navigation li.category-item a[href]',
+  ];
+  const found: string[] = [];
+  for (const selector of selectors) {
+    const hrefs = await page.locator(selector).evaluateAll((anchors) =>
+      anchors.map((anchor) => (anchor as HTMLAnchorElement).href).filter(Boolean),
+    );
+    found.push(...hrefs);
+  }
+  if (!found.length) {
+    for (const selector of ['[data-action="navigation"] a[href]', 'nav.navigation a[href]']) {
+      const hrefs = await page.locator(selector).evaluateAll((anchors) =>
+        anchors.map((anchor) => (anchor as HTMLAnchorElement).href).filter(Boolean),
+      );
+      found.push(...hrefs);
+    }
+  }
+  const categories = Array.from(
+    new Set(
+      found
+        .map((href) => canonicalizeUrl(href, page.url()))
+        .filter((href): href is string => Boolean(href) && isLikelyCategoryUrl(href)),
+    ),
+  );
+  console.log(`Hyper: ${categories.length} categorías descubiertas desde la navegación autenticada.`);
+  for (const category of categories) console.log(`  + ${category}`);
+  return categories;
 }
 
 async function collectProductLinks(page: Page): Promise<string[]> {
@@ -197,27 +289,54 @@ async function readProduct(page: Page, url: string): Promise<DevirProduct | null
 }
 
 async function main(): Promise<void> {
-  if (!categoryUrls.length) throw new Error("No hay categorías configuradas.");
+  if (!Number.isFinite(maxPages) || maxPages <= 0) throw new Error("DEVIR_B2B_MAX_PAGES debe ser > 0.");
+  if (!Number.isFinite(maxProducts) || maxProducts < 0) throw new Error("DEVIR_B2B_MAX_PRODUCTS debe ser >= 0.");
+  if (!Number.isFinite(delayMs) || delayMs < 250) throw new Error("DEVIR_B2B_DELAY_MS debe ser >= 250 ms.");
 
   const browser = await chromium.launchPersistentContext(profilePath, {
     headless: true,
   });
-  const page = await browser.newPage();
-  page.setDefaultTimeout(timeoutMs);
 
-  const accountResponse = await page.goto(`${baseUrl}/customer/account/`, {
-    waitUntil: "domcontentloaded",
-    timeout: timeoutMs,
-  });
-  if (page.url().includes("/customer/account/login")) {
-    throw new Error(
-      `La sesión B2B de Devir no está autenticada (HTTP ${accountResponse?.status() ?? "desconocido"}). Ejecuta primero pnpm devir:login.`,
+  try {
+    const page = await browser.newPage();
+    page.setDefaultTimeout(timeoutMs);
+
+    const accountResponse = await page.goto(`${baseUrl}/customer/account/`, {
+      waitUntil: "domcontentloaded",
+      timeout: timeoutMs,
+    });
+    if (page.url().includes("/customer/account/login")) {
+      throw new Error(
+        `La sesión B2B de Devir no está autenticada (HTTP ${accountResponse?.status() ?? "desconocido"}). Ejecuta primero pnpm devir:login.`,
+      );
+    }
+
+    const discovered = hyperMode ? await discoverCategoryUrls(page) : [];
+    const categoryUrls = Array.from(new Set([...configuredCategoryUrls, ...discovered]));
+    if (!categoryUrls.length) throw new Error("No hay categorías configuradas o descubiertas.");
+
+    console.log(
+      `Modo ${hyperMode ? "HYPER" : "normal"}: ${categoryUrls.length} categorías, hasta ${maxPages} páginas por categoría, delay ${delayMs} ms.`,
     );
-  }
 
-  const productUrls = new Set<string>();
+    const checkpoint = await readCheckpoint();
+    const productUrls = new Set<string>(
+      checkpoint && !checkpoint.complete && checkpoint.mode === (hyperMode ? "hyper" : "standard")
+        ? checkpoint.productUrls
+        : [],
+    );
+    const productsBySku = new Map<string, DevirProduct>(
+      checkpoint && !checkpoint.complete && checkpoint.mode === (hyperMode ? "hyper" : "standard")
+        ? checkpoint.products.map((product) => [product.sku, product])
+        : [],
+    );
+    const errors: Array<{ url: string; message: string }> =
+      checkpoint && !checkpoint.complete ? [...checkpoint.errors] : [];
+    const readUrls = new Set(
+      Array.from(productsBySku.values(), (product) => product.url),
+    );
 
-  for (const categoryUrl of categoryUrls) {
+    for (const categoryUrl of categoryUrls) {
     let lastPageProductCount = -1;
 
     for (let pageNumber = 1; pageNumber <= maxPages; pageNumber += 1) {
@@ -253,48 +372,93 @@ async function main(): Promise<void> {
     if (maxProducts > 0 && productUrls.size >= maxProducts) break;
   }
 
-  const urls = Array.from(productUrls).slice(
-    0,
-    maxProducts > 0 ? maxProducts : undefined,
-  );
-  const products: DevirProduct[] = [];
+    const urls = Array.from(productUrls).slice(
+      0,
+      maxProducts > 0 ? maxProducts : undefined,
+    );
+    const alreadyRead = productsBySku.size;
+    console.log(`Leyendo ${urls.length} productos (${alreadyRead} recuperados del checkpoint)...`);
 
-  console.log(`Leyendo ${urls.length} productos...`);
-  for (const [index, url] of urls.entries()) {
-    try {
-      const product = await readProduct(page, url);
-      if (product) products.push(product);
-      console.log(
-        `  [${index + 1}/${urls.length}] ${product?.sku ?? "omitido"} — ${product?.name ?? ""}`,
-      );
-    } catch (error) {
-      console.error(
-        `  Error leyendo ${url}:`,
-        error instanceof Error ? error.message : error,
-      );
+    for (const [index, url] of urls.entries()) {
+      if (readUrls.has(url)) continue;
+      try {
+        const product = await readProduct(page, url);
+        if (product) {
+          const previous = productsBySku.get(product.sku);
+          if (previous && previous.url !== product.url) {
+            console.warn(`  SKU duplicado ${product.sku}; se conserva la ficha más reciente leída.`);
+          }
+          productsBySku.set(product.sku, product);
+          readUrls.add(product.url);
+        }
+        console.log(
+          `  [${index + 1}/${urls.length}] ${product?.sku ?? "omitido"} — ${product?.name ?? ""}`,
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        errors.push({ url, message });
+        console.error(`  Error leyendo ${url}: ${message}`);
+      }
+
+      if ((index + 1) % 25 === 0 || index === urls.length - 1) {
+        await writeCheckpoint({
+          source: "devir-b2b",
+          generatedAt: new Date().toISOString(),
+          complete: false,
+          mode: hyperMode ? "hyper" : "standard",
+          categories: categoryUrls,
+          productUrls: urls,
+          products: Array.from(productsBySku.values()),
+          errors,
+        });
+        console.log(`  Checkpoint: ${productsBySku.size} SKUs guardados.`);
+      }
+
+      if (index < urls.length - 1) await sleep(delayMs);
     }
 
-    if (index < urls.length - 1) await sleep(delayMs);
+    const products = Array.from(productsBySku.values()).sort((a, b) =>
+      a.sku.localeCompare(b.sku),
+    );
+
+    await mkdir(dirname(outputPath), { recursive: true });
+    await writeFile(
+      outputPath,
+      JSON.stringify(
+        {
+          source: "devir-b2b",
+          generatedAt: new Date().toISOString(),
+          complete: true,
+          mode: hyperMode ? "hyper" : "standard",
+          categories: categoryUrls,
+          categoryCount: categoryUrls.length,
+          productUrlCount: urls.length,
+          productCount: products.length,
+          failedProductCount: errors.length,
+          products,
+          errors,
+        },
+        null,
+        2,
+      ),
+    );
+
+    await writeCheckpoint({
+      source: "devir-b2b",
+      generatedAt: new Date().toISOString(),
+      complete: true,
+      mode: hyperMode ? "hyper" : "standard",
+      categories: categoryUrls,
+      productUrls: urls,
+      products,
+      errors,
+    });
+    console.log(
+      `Catálogo guardado en ${outputPath}: ${products.length} SKUs únicos, ${errors.length} errores de ficha.`,
+    );
+  } finally {
+    await browser.close();
   }
-
-  await mkdir(dirname(outputPath), { recursive: true });
-  await writeFile(
-    outputPath,
-    JSON.stringify(
-      {
-        source: "devir-b2b",
-        generatedAt: new Date().toISOString(),
-        categories: categoryUrls,
-        productCount: products.length,
-        products,
-      },
-      null,
-      2,
-    ),
-  );
-
-  await browser.close();
-  console.log(`Catálogo guardado en ${outputPath}`);
 }
 
 main().catch((error) => {

@@ -29,7 +29,11 @@
     "devir:spree:categories": "tsx scripts/devir-b2b-spree.ts categories",
     "devir:spree:margin": "tsx scripts/devir-b2b-spree.ts margin",
     "devir:spree:margin-product": "tsx scripts/devir-b2b-spree.ts margin-product",
-    "devir:spree:activate": "tsx scripts/devir-b2b-spree.ts activate"
+    "devir:spree:activate": "tsx scripts/devir-b2b-spree.ts activate",
+    "devir:hyper:scan": "tsx scripts/devir-b2b-sync.ts --hyper",
+    "devir:hyper:resume": "tsx scripts/devir-b2b-sync.ts --hyper --resume",
+    "devir:hyper:once": "tsx scripts/devir-b2b-loop.ts --once --hyper",
+    "devir:hyper:watch": "tsx scripts/devir-b2b-loop.ts --hyper"
   },
   "dependencies": {
     "@adyen/adyen-web": "^6.33.0",

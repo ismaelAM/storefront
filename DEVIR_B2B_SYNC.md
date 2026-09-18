@@ -73,6 +73,52 @@ Cualquier otro  -> unknown
 
 El lector usa una sesión normal de Playwright, mantiene una cadencia deliberadamente baja y no intenta saltarse CAPTCHA, WAF, rate limits, fingerprinting ni otras medidas de protección. Si Devir exige una interacción adicional, el proceso debe detenerse y esa condición se debe resolver por una vía permitida.
 
+## Hyper sync: catálogo completo visible de Devir
+
+El modo normal sigue limitado a las categorías configuradas para no hacer un rastreo masivo innecesario. Para una carga integral existe el modo **hyper**:
+
+```bash
+pnpm devir:hyper:once
+```
+
+Hace en una sola ejecución:
+
+```text
+navegación autenticada de Devir
+→ descubre categorías visibles
+→ pagina cada categoría
+→ deduplica URLs
+→ lee fichas
+→ deduplica por SKU
+→ guarda catálogo/checkpoints
+→ dry-run
+→ crea/actualiza drafts en Spree
+```
+
+Los productos de categorías sin regla comercial conocida también pueden entrar como `draft`, pero quedan en `REVIEW_REQUIRED` y usan el fallback únicamente como referencia hasta que se configure su categoría/margen.
+
+El modo hyper usa por defecto hasta 200 páginas por categoría, mantiene el delay responsable entre peticiones y guarda un checkpoint cada 25 fichas en:
+
+```text
+.local/devir-b2b-catalog.checkpoint.json
+```
+
+Si una pasada se interrumpe, se puede recuperar la lectura de fichas ya guardadas:
+
+```bash
+pnpm devir:hyper:resume
+```
+
+Después se puede continuar manualmente con dry-run + sync, o repetir directamente `pnpm devir:hyper:once`.
+
+Para repetir la carga completa cada 6 horas mientras el proceso permanezca vivo:
+
+```bash
+pnpm devir:hyper:watch
+```
+
+Esto **no es un scheduler 24/7**: si Codespaces duerme, se apaga o el proceso termina, deja de ejecutarse. El worker persistente sigue siendo necesario para garantizar la cadencia permanentemente.
+
 ## Cadencia recomendada: cada 6 horas
 
 Para mantener el catálogo actualizado mientras el proceso siga activo:
