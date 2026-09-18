@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { use, useEffect, useRef } from "react";
 import { confirmPaymentAndCompleteCart } from "@/lib/data/payment";
+import { finalizeStripeLivePayment } from "@/lib/data/stripe-live";
 import { extractBasePath } from "@/lib/utils/path";
 
 interface ConfirmPaymentPageProps {
@@ -41,12 +42,38 @@ export default function ConfirmPaymentPage({
 
     // Stripe: ?session={spreeSessionId}
     // Adyen:  ?sessionId={adyenSessionId}&redirectResult=...
+    const stripeLive = searchParams.get("stripe_live") === "1";
+    const stripePaymentIntentId = searchParams.get("payment_intent");
     const sessionId = searchParams.get("session");
     const sessionResult = searchParams.get("sessionResult");
     const redirectResult = searchParams.get("redirectResult");
     const adyenSessionId = searchParams.get("sessionId");
 
     async function confirmAndRedirect() {
+      if (stripeLive && stripePaymentIntentId) {
+        const liveResult = await finalizeStripeLivePayment(
+          cartId,
+          stripePaymentIntentId,
+        );
+        if (liveResult.success) {
+          if (liveResult.order) {
+            const { cacheCompletedOrder } = await import(
+              "@/lib/utils/completed-order-cache"
+            );
+            cacheCompletedOrder(cartId, liveResult.order);
+          }
+          router.replace(`${basePath}/order-placed/${cartId}`);
+        } else {
+          const errorMessage = encodeURIComponent(
+            liveResult.error || t("paymentError"),
+          );
+          router.replace(
+            `${basePath}/checkout/${cartId}?payment_error=${errorMessage}`,
+          );
+        }
+        return;
+      }
+
       const result = await confirmPaymentAndCompleteCart(
         cartId,
         sessionId ?? undefined,

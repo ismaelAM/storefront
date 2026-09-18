@@ -43,6 +43,7 @@ import {
   createDirectPayment,
   updateCheckoutPaymentSession,
 } from "@/lib/data/payment";
+import { createStripeLiveIntent } from "@/lib/data/stripe-live";
 import {
   type AddressFormData,
   addressToFormData,
@@ -55,6 +56,7 @@ import { resolveGatewayId } from "@/lib/utils/payment-gateway";
 
 export type PaymentCompleteResult =
   | { type: "session"; sessionId: string; sessionResult?: string }
+  | { type: "stripe_live"; paymentIntentId: string }
   | { type: "direct" };
 
 export interface PaymentSectionHandle {
@@ -199,6 +201,21 @@ export function PaymentSection({
       gatewayHandleRef.current = null;
 
       try {
+        if (currentGatewayId === "stripe") {
+          const result = await createStripeLiveIntent(cart.id);
+          if (requestId !== sessionRequestIdRef.current) return;
+          if (result.success) {
+            setSessionExternalData({
+              client_secret: result.clientSecret,
+              _external_id: result.paymentIntentId,
+            });
+            setPaymentSessionId(result.paymentIntentId);
+          } else {
+            setGatewayError(result.error || t("failedToCreateSession"));
+          }
+          return;
+        }
+
         // Build gateway-specific external_data
         const basePath = extractBasePath(window.location.pathname);
         const returnUrl = `${window.location.origin}${basePath}/confirm-payment/${cart.id}`;
@@ -265,7 +282,10 @@ export function PaymentSection({
 
       let initialCardId: string | null = null;
 
-      if (isAuthenticated) {
+      if (
+        isAuthenticated &&
+        resolveGatewayId(selectedMethod.type) !== "stripe"
+      ) {
         try {
           const result = await getCreditCards();
           const gatewayCards = result.data.filter(
@@ -320,6 +340,17 @@ export function PaymentSection({
     const method = selectedMethod;
     const sync = async () => {
       try {
+        if (resolveGatewayId(method.type) === "stripe") {
+          const result = await createStripeLiveIntent(cart.id, paymentSessionId);
+          if (!result.success) throw new Error(result.error);
+          setSessionExternalData({
+            client_secret: result.clientSecret,
+            _external_id: result.paymentIntentId,
+          });
+          setPaymentSessionId(result.paymentIntentId);
+          return;
+        }
+
         const result = await updateCheckoutPaymentSession(
           cart.id,
           paymentSessionId,
@@ -395,7 +426,10 @@ export function PaymentSection({
           setLoading(true);
           let cardId: string | null = null;
 
-          if (isAuthenticated) {
+          if (
+            isAuthenticated &&
+            resolveGatewayId(newMethod.type) !== "stripe"
+          ) {
             try {
               const result = await getCreditCards();
               const gatewayCards = result.data.filter(
@@ -562,19 +596,21 @@ export function PaymentSection({
                 return { error: t("failedToInitPayment") };
               }
               const basePath = extractBasePath(window.location.pathname);
-              const returnUrl = `${window.location.origin}${basePath}/confirm-payment/${cart.id}?session=${paymentSessionId}`;
+              const gatewayId = resolveGatewayId(selectedMethod.type);
+              const isStripe = gatewayId === "stripe";
+              const returnUrl = isStripe
+                ? `${window.location.origin}${basePath}/confirm-payment/${cart.id}?stripe_live=1`
+                : `${window.location.origin}${basePath}/confirm-payment/${cart.id}?session=${paymentSessionId}`;
 
               let error: string | undefined;
 
               const clientSecret = sessionExternalData.client_secret as
                 | string
                 | undefined;
-              const gatewayId = resolveGatewayId(selectedMethod.type);
-              const isStripe = gatewayId === "stripe";
               const isApprovalDriven =
                 gatewayId === "adyen" || gatewayId === "paypal";
               const canUseSavedCard =
-                isStripe && Boolean(selectedCardId && clientSecret);
+                false && isStripe && Boolean(selectedCardId && clientSecret);
 
               if (!canUseSavedCard && !gatewayHandleRef.current) {
                 setProcessing(false);
@@ -609,10 +645,17 @@ export function PaymentSection({
                 return {};
               }
 
-              await onPaymentComplete({
-                type: "session",
-                sessionId: paymentSessionId,
-              });
+              if (isStripe) {
+                await onPaymentComplete({
+                  type: "stripe_live",
+                  paymentIntentId: paymentSessionId,
+                });
+              } else {
+                await onPaymentComplete({
+                  type: "session",
+                  sessionId: paymentSessionId,
+                });
+              }
               return {};
             }
 
@@ -786,13 +829,6 @@ export function PaymentSection({
                       {/* Stripe: saved cards selector */}
                       {pmGatewayId === "stripe" && (
                         <>
-                          {/* Demo-only test card note */}
-                          <p className="text-xs text-gray-400 px-4 pt-3">
-                            {t("testCardNote", {
-                              testCard: "4242 4242 4242 4242",
-                            })}
-                          </p>
-
                           {savedCards.length > 0 && (
                             <div className="px-4 pt-3">
                               <RadioGroup

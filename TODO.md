@@ -12,8 +12,10 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [ ] Verificar la conexión real del storefront con Spree en Vercel: `SPREE_API_URL` + `SPREE_PUBLISHABLE_KEY`, sin exponer claves.
 - [ ] Hospedar Spree en producción fuera del Sandbox y dejar configurados sus mercados, catálogo, stock, pagos, impuestos y envíos.
 - [ ] Configurar correctamente los métodos de pago por región/Market desde Spree, evitando mapas de países hardcodeados en Next.js.
-- [x] Stripe usa el flujo real de Spree Payment Sessions + Payment Element; eliminado el endpoint paralelo de Checkout Sessions con `price_...` de prueba.
-- [x] Estrategia Stripe definitiva: Spree Payment Sessions es la única fuente de verdad; Stripe secreto se configura en Spree y el storefront solo necesita la publishable key.
+- [ ] Configurar en Vercel `STRIPE_SECRET_KEY=sk_live_...`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_live_...` y `STRIPE_WEBHOOK_SECRET=whsec_...`; el conector de Vercel disponible no permite escribir env vars desde este chat.
+- [ ] Registrar en Stripe el webhook live `/api/payments/stripe/webhook` para `payment_intent.succeeded` y hacer una compra real de importe pequeño controlado.
+- [x] Stripe Live integrado directamente con PaymentIntents + Payment Element porque el Spree alojado no admite las claves live; Spree sigue controlando pedido/stock/envío y recibe un pago externo reconciliado sin segundo cargo.
+- [x] Estrategia Stripe definitiva: Stripe Live cobra directamente en el storefront; un método interno oculto `Stripe Live External` registra el cobro ya confirmado en Spree y completa el pedido.
 - [ ] Validar en Vercel el SEO técnico añadido: canonical, hreflang, JSON-LD y rutas por idioma/Market.
 - [ ] Corregir y probar la configuración del método de envío propio para Madrid en Spree.
 

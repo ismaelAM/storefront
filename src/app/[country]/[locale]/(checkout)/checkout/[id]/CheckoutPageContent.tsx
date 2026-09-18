@@ -2,7 +2,6 @@
 
 import type { Address, AddressParams, Cart, Country } from "@spree/sdk";
 import { CircleAlert, Loader2 } from "lucide-react";
-import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
@@ -47,17 +46,10 @@ import {
   completeCheckoutOrder,
   completeCheckoutPaymentSession,
 } from "@/lib/data/payment";
+import { finalizeStripeLivePayment } from "@/lib/data/stripe-live";
 import { extractBasePath } from "@/lib/utils/path";
 import { CheckoutSidebar } from "./CheckoutSidebar";
 import type { CheckoutInitialData } from "./page";
-
-const ExpressCheckoutButton = dynamic(
-  () =>
-    import("@/components/checkout/ExpressCheckoutButton").then((m) => ({
-      default: m.ExpressCheckoutButton,
-    })),
-  { ssr: false },
-);
 
 // Fingerprint of line-item state only. Used to detect when CartContext
 // has a different set of line items than our local checkout cart —
@@ -113,7 +105,6 @@ function CheckoutPageContentInner({
   const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState<string | null>(paymentError);
   const [processing, setProcessing] = useState(false);
-  const [expressAvailable, setExpressAvailable] = useState(false);
   const [saving, setSaving] = useState(false);
   const [sectionErrors, setSectionErrors] = useState<Record<string, string[]>>(
     {},
@@ -450,6 +441,28 @@ function CheckoutPageContentInner({
       setError(null);
 
       try {
+        if (result.type === "stripe_live") {
+          const stripeResult = await finalizeStripeLivePayment(
+            currentOrder.id,
+            result.paymentIntentId,
+          );
+          if (!stripeResult.success) {
+            setError(stripeResult.error || tRef.current("paymentError"));
+            setProcessing(false);
+            return;
+          }
+
+          if (stripeResult.order) {
+            const { cacheCompletedOrder } = await import(
+              "@/lib/utils/completed-order-cache"
+            );
+            cacheCompletedOrder(currentOrder.id, stripeResult.order);
+          }
+
+          routerRef.current.push(`${basePath}/order-placed/${currentOrder.id}`);
+          return;
+        }
+
         // For session-based payments, complete the payment session first
         if (result.type === "session") {
           const sessionResult = await completeCheckoutPaymentSession(
@@ -669,29 +682,7 @@ function CheckoutPageContentInner({
         </Alert>
       )}
 
-      {/* Express checkout for guests */}
-      {!isAuthenticated && parseFloat(cart.total ?? "0") > 0 && (
-        <div className={expressAvailable ? "mb-4" : ""}>
-          {expressAvailable && (
-            <h2 className="text-lg font-bold text-gray-900 mb-3">
-              Express checkout
-            </h2>
-          )}
-          <ExpressCheckoutButton
-            cart={cart}
-            basePath={basePath}
-            onComplete={async () => {
-              await loadOrder();
-            }}
-            onProcessingChange={setProcessing}
-            onAvailabilityChange={setExpressAvailable}
-            maxColumns={2}
-            showDivider
-          />
-        </div>
-      )}
-
-      {/* Checkout form sections — dimmed & disabled during express checkout */}
+      {/* Checkout form sections */}
       <div
         className={
           processing
