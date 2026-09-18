@@ -101,6 +101,7 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 
 ## Storefront / UI
 
+- [x] Eliminado el campo opcional `Nombre de empresa` de los formularios de dirección del checkout, conservando compatibilidad con direcciones históricas de Spree.
 - [x] Puck comprobado manualmente en el Preview anterior y funciona correctamente.
 - [x] Eliminada la pestaña/pantalla dedicada de edición de Productos.
 - [x] Eliminadas las rutas de edición por producto individual para evitar gestionar el display producto a producto.
