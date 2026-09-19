@@ -552,7 +552,13 @@ function priceFor(
   return { grossCost, retail, effective: (retail - grossCost) / retail };
 }
 
-async function spreeRequest<T>(config: ConfigRow, method: string, path: string, body?: unknown): Promise<T> {
+async function spreeRequest<T>(
+  config: ConfigRow,
+  method: string,
+  path: string,
+  body?: unknown,
+  attempt = 0,
+): Promise<T> {
   if (!config.spree_admin_api_key) throw new Error("Falta la Secret API Key de Spree en la configuración cloud.");
   const response = await fetch(config.spree_api_url.replace(/\/$/, "") + "/api/v3/admin" + path, {
     method,
@@ -564,6 +570,16 @@ async function spreeRequest<T>(config: ConfigRow, method: string, path: string, 
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   const text = await response.text();
+
+  if (response.status === 429 && attempt < 4) {
+    const retryAfter = Number(response.headers.get("retry-after"));
+    const waitMs = Number.isFinite(retryAfter) && retryAfter > 0
+      ? retryAfter * 1000
+      : Math.min(6000, 750 * (2 ** attempt));
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
+    return await spreeRequest<T>(config, method, path, body, attempt + 1);
+  }
+
   let payload: unknown = null;
   if (text) {
     try { payload = JSON.parse(text); } catch { payload = text; }
@@ -1199,8 +1215,8 @@ async function categorizeDraftBatch(
   const products = new Map<string, SpreeProduct | null>();
 
   // Resolve parent status once per product, in bounded concurrent chunks.
-  for (let index = 0; index < productIds.length; index += 10) {
-    const chunk = productIds.slice(index, index + 10);
+  for (let index = 0; index < productIds.length; index += 5) {
+    const chunk = productIds.slice(index, index + 5);
     await Promise.all(
       chunk.map(async (productId) => {
         try {
@@ -1278,10 +1294,12 @@ async function categorizeDraftBatch(
     repriced += 1;
   };
 
-  for (let index = 0; index < rows.length; index += 10) {
+  for (let index = 0; index < rows.length; index += 5) {
     await Promise.all(
-      rows.slice(index, index + 10).map((row) => processRow(row as Record<string, unknown>)),
+      rows.slice(index, index + 5).map((row) => processRow(row as Record<string, unknown>)),
     );
+    // Stay comfortably below Spree Cloud's burst limit.
+    await new Promise((resolve) => setTimeout(resolve, 250));
   }
 
   return {
