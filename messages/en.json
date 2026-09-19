@@ -192,8 +192,9 @@
     "preorder": "PRE-ORDER",
     "preorderAction": "Pre-order now",
     "preorderShipsAt": "Ships by: {date}",
-    "availableToOrder": "Available to order",
-    "preorderHelp": "Order now; it will ship when the release date arrives."
+    "availableToOrder": "Available",
+    "preorderHelp": "Order now; it will ship when the release date arrives.",
+    "extendedFulfillment": "Preparation time: 2–3 business days"
   },
   "navigation": {
     "home": "Home",
