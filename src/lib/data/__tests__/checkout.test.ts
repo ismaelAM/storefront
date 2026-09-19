@@ -204,8 +204,14 @@ describe("checkout server actions", () => {
   });
 
   describe("selectDeliveryRate", () => {
-    it("returns success", async () => {
+    it("returns the recalculated cart after selecting a rate", async () => {
+      const updatedOrder = {
+        ...mockOrder,
+        delivery_total: "4.95",
+        total: "24.95",
+      };
       mockClient.carts.fulfillments.update.mockResolvedValue(undefined);
+      mockClient.carts.get.mockResolvedValue(updatedOrder);
 
       const result = await selectDeliveryRate("order-1", "ship-1", "rate-1");
 
@@ -215,7 +221,11 @@ describe("checkout server actions", () => {
         { selected_delivery_rate_id: "rate-1" },
         { spreeToken: "order-token-123", token: undefined },
       );
-      expect(result).toEqual({ success: true });
+      expect(mockClient.carts.get).toHaveBeenCalledWith("order-1", {
+        spreeToken: "order-token-123",
+        token: undefined,
+      });
+      expect(result).toEqual({ success: true, cart: updatedOrder });
     });
 
     it("returns error on failure", async () => {
