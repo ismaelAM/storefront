@@ -1193,32 +1193,46 @@ async function categorizeDraftBatch(
   if (error) throw error;
 
   const rows = data ?? [];
+  const productIds = Array.from(
+    new Set(rows.map((row) => String(row.spree_product_id ?? "")).filter(Boolean)),
+  );
+  const products = new Map<string, SpreeProduct | null>();
+
+  // Resolve parent status once per product, in bounded concurrent chunks.
+  for (let index = 0; index < productIds.length; index += 10) {
+    const chunk = productIds.slice(index, index + 10);
+    await Promise.all(
+      chunk.map(async (productId) => {
+        try {
+          products.set(
+            productId,
+            await spreeRequest<SpreeProduct>(
+              config,
+              "GET",
+              "/products/" + encodeURIComponent(productId),
+            ),
+          );
+        } catch {
+          products.set(productId, null);
+        }
+      }),
+    );
+  }
+
   let updated = 0;
   let repriced = 0;
-  const productCache = new Map<string, SpreeProduct | null>();
 
-  for (const row of rows) {
+  const processRow = async (row: Record<string, unknown>) => {
     const productId = String(row.spree_product_id ?? "");
     const variantId = String(row.spree_variant_id ?? "");
-    if (!productId || !variantId) continue;
+    const spreeProduct = products.get(productId);
+    if (!productId || !variantId || !spreeProduct) return;
+    if (spreeProduct.status !== "draft" || !(spreeProduct.tags ?? []).includes("devir")) return;
 
-    let spreeProduct = productCache.get(productId);
-    if (spreeProduct === undefined) {
-      try {
-        spreeProduct = await spreeRequest<SpreeProduct>(
-          config,
-          "GET",
-          "/products/" + encodeURIComponent(productId),
-        );
-      } catch {
-        spreeProduct = null;
-      }
-      productCache.set(productId, spreeProduct);
-    }
-    if (!spreeProduct) continue;
-    if (spreeProduct.status !== "draft" || !(spreeProduct.tags ?? []).includes("devir")) continue;
-
-    const cost = Number((row.snapshot as Json | null)?.purchasePrice);
+    const snapshot = row.snapshot && typeof row.snapshot === "object"
+      ? row.snapshot as Json
+      : null;
+    const cost = Number(snapshot?.purchasePrice);
     const product: DevirProduct = {
       sku: String(row.supplier_sku),
       name: String(row.name),
@@ -1232,7 +1246,7 @@ async function categorizeDraftBatch(
     const key = categoryKey(product);
     const category = categories.find((item) => item.permalink === key);
     const margin = DEFAULT_CATEGORY_MARGINS[key];
-    if (!category || !Number.isFinite(margin) || !product.purchasePrice || product.purchasePrice <= 0) continue;
+    if (!category || !Number.isFinite(margin) || !product.purchasePrice || product.purchasePrice <= 0) return;
 
     const pricing = priceFor(
       product.purchasePrice,
@@ -1262,6 +1276,12 @@ async function categorizeDraftBatch(
 
     updated += 1;
     repriced += 1;
+  };
+
+  for (let index = 0; index < rows.length; index += 10) {
+    await Promise.all(
+      rows.slice(index, index + 10).map((row) => processRow(row as Record<string, unknown>)),
+    );
   }
 
   return {
@@ -1271,7 +1291,6 @@ async function categorizeDraftBatch(
     next_offset: rows.length < limit ? null : offset + limit,
   };
 }
-
 
 
 interface SpecialPricingProgram {
