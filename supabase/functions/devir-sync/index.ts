@@ -1444,6 +1444,10 @@ async function categorizeDraftBatch(
       name: String(row.name),
       url: String(row.source_url),
       purchasePrice: Number.isFinite(cost) ? cost : null,
+      referencePriceNet:
+        snapshot && Number.isFinite(Number(snapshot.referencePriceNet))
+          ? Number(snapshot.referencePriceNet)
+          : null,
       availability: "unknown",
       availabilityLabel: null,
       releaseDate: null,
@@ -2570,6 +2574,29 @@ async function operatorAction(
       product,
       has_add_to_cart: /tocart|AddToCart|product-add-form|action\s+primary\s+tocart/i.test(html),
       snippets,
+    });
+  }
+
+  if (action === "verify-devir-batch") {
+    const offset = Math.max(0, Number(body.offset ?? 0) || 0);
+    const limit = Math.min(100, Math.max(1, Number(body.limit ?? 50) || 50));
+    return json({ ok: true, ...(await verifyDevirBatch(config, offset, limit)) });
+  }
+
+  if (action === "repair-categories") {
+    await updateReviewFieldLabels(config);
+    return json({
+      ok: true,
+      ...(await repairCategoryTreeAndMembership(config)),
+    });
+  }
+
+  if (action === "prepare-publish-batch") {
+    const offset = Math.max(0, Number(body.offset ?? 0) || 0);
+    const limit = Math.min(50, Math.max(1, Number(body.limit ?? 20) || 20));
+    return json({
+      ok: true,
+      ...(await preparePublishBatch(config, offset, limit)),
     });
   }
 
