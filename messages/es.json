@@ -189,9 +189,11 @@
     "yes": "Si",
     "no": "No",
     "optionFilterChip": "{filter}: {value}",
-    "preorder": "Prereserva",
-    "preorderAction": "Reservar",
-    "preorderShipsAt": "Envío previsto: {date}"
+    "preorder": "PRERESERVA",
+    "preorderAction": "Reservar ahora",
+    "preorderShipsAt": "Envío previsto: {date}",
+    "availableToOrder": "Disponible bajo pedido",
+    "preorderHelp": "Reserva ahora; se enviará cuando llegue la fecha de lanzamiento."
   },
   "navigation": {
     "home": "Inicio",
