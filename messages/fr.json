@@ -191,7 +191,9 @@
     "optionFilterChip": "{filter} : {value}",
     "preorder": "Précommande",
     "preorderAction": "Précommander",
-    "preorderShipsAt": "Expédition prévue : {date}"
+    "preorderShipsAt": "Expédition prévue : {date}",
+    "standardEdition": "Édition standard",
+    "unavailableVariantHelp": "Les options marquées en rupture de stock restent au catalogue, mais ne peuvent pas être achetées pour le moment."
   },
   "navigation": {
     "home": "Accueil",
