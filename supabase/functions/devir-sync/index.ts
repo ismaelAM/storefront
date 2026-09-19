@@ -2126,11 +2126,19 @@ async function preparePublishBatch(
       tags = tags.filter((tag) => tag !== "devir-ready" && tag !== "devir-published");
     }
 
+    const resolvedCategory = categoryKeys.size === 1
+      ? categories.find((item) => item.permalink === Array.from(categoryKeys)[0])
+      : undefined;
+
     await spreeRequest(
       config,
       "PATCH",
       "/products/" + encodeURIComponent(productId),
-      { status: publish ? "active" : "draft", tags },
+      {
+        status: publish ? "active" : "draft",
+        tags,
+        ...(resolvedCategory ? { category_ids: [resolvedCategory.id] } : {}),
+      },
     );
 
     if (publish) {
