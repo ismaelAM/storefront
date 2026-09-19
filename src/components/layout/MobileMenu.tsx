@@ -32,7 +32,6 @@ export function MobileMenu({ rootCategories, basePath, wholesaleEnabled }: Mobil
           <ChevronRight className="size-4 shrink-0 text-gray-400 transition-transform group-open:rotate-90" />
         </summary>
         <div className="mt-0.5 flex flex-col gap-0.5 border-l border-gray-200 pl-1">
-          {category.permalink !== "tcg" && <Link href={`${basePath}/c/${category.permalink}`} onClick={close} className={linkClass} style={{ paddingLeft: `${24 + level * 12}px` }}>Ver todo en {category.name}</Link>}
           {renderCategoryLinks(category.children ?? [], level + 1)}
         </div>
       </details>
@@ -58,15 +57,7 @@ export function MobileMenu({ rootCategories, basePath, wholesaleEnabled }: Mobil
 
         <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-4 py-2">
           <Link href={basePath || "/"} onClick={close} className={linkClass}>{t("home")}</Link>
-          <details className="group">
-            <summary className={summaryClass}>
-              <span>{t("allProducts")}</span>
-              <ChevronRight className="size-4 text-gray-400 transition-transform group-open:rotate-90" />
-            </summary>
-            <div className="ml-2 mt-0.5 flex flex-col gap-0.5 border-l border-gray-200 pl-1">
-              {renderCategoryLinks(rootCategories)}
-            </div>
-          </details>
+          {renderCategoryLinks(rootCategories)}
           <Link href={`${basePath}/#contact`} onClick={close} className={linkClass}>{t("contact")}</Link>
           <div className="mt-2 border-t border-gray-200 pt-2">
             {wholesaleEnabled && <Link href={`${basePath}/wholesale`} onClick={close} className={linkClass}>{t("wholesale")}</Link>}
