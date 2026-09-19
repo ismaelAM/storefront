@@ -194,7 +194,9 @@
     "preorderShipsAt": "Ships by: {date}",
     "availableToOrder": "Available",
     "preorderHelp": "Order now; it will ship when the release date arrives.",
-    "extendedFulfillment": "Preparation time: 2–3 business days"
+    "extendedFulfillment": "Preparation time: 2–3 business days",
+    "standardEdition": "Standard edition",
+    "unavailableVariantHelp": "Options marked as out of stock remain in the catalog but cannot be purchased right now."
   },
   "navigation": {
     "home": "Home",
