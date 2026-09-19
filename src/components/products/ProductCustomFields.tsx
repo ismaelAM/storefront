@@ -5,6 +5,31 @@ interface ProductCustomFieldsProps {
   customFields?: Array<CustomField>;
 }
 
+function isCustomerVisibleField(field: CustomField): boolean {
+  const metadata = field as CustomField & {
+    key?: string | null;
+    namespace?: string | null;
+  };
+  const key = (metadata.key ?? "").toLowerCase();
+  const namespace = (metadata.namespace ?? "").toLowerCase();
+  const label = (field.label ?? "").toLowerCase();
+
+  if (
+    namespace === "devir" ||
+    namespace === "pricing" ||
+    key.startsWith("devir.") ||
+    key.startsWith("pricing.")
+  ) {
+    return false;
+  }
+
+  if (/\bisbn\b/i.test(key) || /\bisbn\b/i.test(label)) {
+    return false;
+  }
+
+  return true;
+}
+
 function renderBooleanValue(
   value: unknown,
   t: ReturnType<typeof useTranslations<"products">>,
@@ -40,7 +65,9 @@ export function ProductCustomFields({
 }: ProductCustomFieldsProps): React.JSX.Element | null {
   const t = useTranslations("products");
 
-  if (!customFields || customFields.length === 0) {
+  const visibleFields = (customFields || []).filter(isCustomerVisibleField);
+
+  if (visibleFields.length === 0) {
     return null;
   }
 
@@ -50,7 +77,7 @@ export function ProductCustomFields({
         {t("properties")}
       </h2>
       <dl className="space-y-3">
-        {customFields.map((field) => (
+        {visibleFields.map((field) => (
           <div key={field.id} className="flex">
             <dt className="w-32 shrink-0 text-gray-500 text-sm">
               {field.label}
