@@ -191,7 +191,9 @@
     "optionFilterChip": "{filter}: {value}",
     "preorder": "Vorbestellung",
     "preorderAction": "Vorbestellen",
-    "preorderShipsAt": "Voraussichtlicher Versand: {date}"
+    "preorderShipsAt": "Voraussichtlicher Versand: {date}",
+    "standardEdition": "Standardausgabe",
+    "unavailableVariantHelp": "Als nicht auf Lager markierte Optionen bleiben im Katalog, können aber derzeit nicht gekauft werden."
   },
   "navigation": {
     "home": "Startseite",
