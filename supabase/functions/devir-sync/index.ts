@@ -1255,19 +1255,319 @@ async function syncProductToSpree(
 interface CatalogGroupRow {
   supplier_sku: string;
   name: string;
+  source_url: string | null;
+  snapshot: Json | null;
+  image_urls: string[] | null;
   spree_product_id: string | null;
   spree_variant_id: string | null;
+  supplier_status: "available" | "preorder" | "unavailable" | "unknown" | "missing";
+  last_auto_price: number | string | null;
   group_key: string | null;
   group_name: string | null;
   variant_label: string | null;
   variant_position: number | null;
   grouping_confidence: "none" | "high" | "ambiguous";
+  language_group_key?: string | null;
+  language_label?: string | null;
+  language_base_name?: string | null;
+}
+
+interface LanguageGroupingInfo {
+  groupKey: string;
+  baseName: string;
+  language: string;
 }
 
 function variantEdition(label: string | null): string | null {
   if (!label) return null;
   const parts = label.split(" · ");
   return parts.length > 1 ? parts.slice(1).join(" · ").trim() || null : null;
+}
+
+function languageGroupingInfo(product: DevirProduct): LanguageGroupingInfo | null {
+  const patterns: Array<[string, RegExp]> = [
+    ["Español", /\b(?:español|castellano)\b/i],
+    ["Inglés", /\b(?:inglés|ingles|english)\b/i],
+    ["Francés", /\b(?:francés|frances|french)\b/i],
+    ["Alemán", /\b(?:alemán|aleman|german)\b/i],
+    ["Italiano", /\b(?:italiano|italian)\b/i],
+    ["Portugués", /\b(?:portugués|portugues|portuguese)\b/i],
+  ];
+  const match = patterns.find(([, regex]) => regex.test(product.name));
+  if (!match) return null;
+
+  const [language] = match;
+  const baseName = product.name
+    .replace(
+      /\s*[-–—]?\s*\(?\s*(?:español|castellano|inglés|ingles|english|francés|frances|french|alemán|aleman|german|italiano|italian|portugués|portugues|portuguese)\s*\)?\s*/gi,
+      " ",
+    )
+    .replace(/\s+/g, " ")
+    .replace(/\s+([,:;])/g, "$1")
+    .replace(/\s+([-–—])\s+/g, " $1 ")
+    .trim()
+    .replace(/^[-–—]\s*|\s*[-–—]$/g, "")
+    .trim();
+
+  const groupKey = normalizeGroupKey(baseName);
+  if (!groupKey || baseName.length < 4) return null;
+  return { groupKey, baseName, language };
+}
+
+function catalogRowProduct(row: CatalogGroupRow): DevirProduct {
+  const snapshot = row.snapshot && typeof row.snapshot === "object"
+    ? row.snapshot as Json
+    : {};
+  const availability =
+    row.supplier_status === "available" ||
+    row.supplier_status === "preorder" ||
+    row.supplier_status === "unavailable"
+      ? row.supplier_status
+      : snapshot.availability === "available" ||
+          snapshot.availability === "preorder" ||
+          snapshot.availability === "unavailable"
+        ? snapshot.availability
+        : "unknown";
+  return {
+    sku: row.supplier_sku,
+    name: cleanDevirTitle(row.name),
+    url: row.source_url ?? (typeof snapshot.url === "string" ? snapshot.url : ""),
+    purchasePrice: Number.isFinite(Number(snapshot.purchasePrice))
+      ? Number(snapshot.purchasePrice)
+      : null,
+    referencePriceNet: Number.isFinite(Number(snapshot.referencePriceNet))
+      ? Number(snapshot.referencePriceNet)
+      : null,
+    availability,
+    availabilityLabel:
+      typeof snapshot.availabilityLabel === "string"
+        ? snapshot.availabilityLabel
+        : null,
+    releaseDate:
+      typeof snapshot.releaseDate === "string" ? snapshot.releaseDate : null,
+    imageUrls: Array.isArray(row.image_urls)
+      ? row.image_urls.filter((item): item is string => typeof item === "string")
+      : Array.isArray(snapshot.imageUrls)
+        ? snapshot.imageUrls.filter((item): item is string => typeof item === "string")
+        : [],
+  };
+}
+
+async function retireReplacementSource(
+  config: ConfigRow,
+  productId: string,
+  replacementId: string,
+): Promise<void> {
+  if (!productId || productId === replacementId) return;
+  try {
+    const old = await spreeRequest<SpreeProduct>(
+      config,
+      "GET",
+      "/products/" + encodeURIComponent(productId),
+    );
+    if (
+      old.status === "draft" &&
+      (old.tags ?? []).includes("devir-group")
+    ) {
+      await spreeRequest(
+        config,
+        "DELETE",
+        "/products/" + encodeURIComponent(productId),
+      );
+      return;
+    }
+    const tags = Array.from(new Set([...(old.tags ?? []), "devir-merged"]));
+    await spreeRequest(config, "PATCH", "/products/" + encodeURIComponent(productId), {
+      status: "archived",
+      tags,
+    });
+  } catch {
+    // It may already have been removed during an earlier repair.
+  }
+}
+
+async function createGroupedVariant(
+  config: ConfigRow,
+  productId: string,
+  row: CatalogGroupRow,
+  options: Array<{ name: string; value: string }>,
+  key: string,
+): Promise<SpreeVariant> {
+  const product = catalogRowProduct(row);
+  if (!product.purchasePrice || product.purchasePrice <= 0) {
+    throw new Error("Producto sin coste Devir: " + row.supplier_sku);
+  }
+  const pricing = competitivePricing(
+    product,
+    key,
+    DEFAULT_CATEGORY_MARGINS[key] ?? 0.05,
+  );
+  const shipping = shippingDefaults(key, product);
+  const created = await spreeRequest<SpreeVariant>(
+    config,
+    "POST",
+    "/products/" + encodeURIComponent(productId) + "/variants",
+    {
+      sku: product.sku,
+      cost_price: product.purchasePrice,
+      cost_currency: "EUR",
+      ...shipping,
+      track_inventory: true,
+      backorder_limit: null,
+      preorderable: product.availability === "preorder",
+      preorder_ships_at:
+        product.availability === "preorder" ? product.releaseDate : null,
+      options,
+      prices: [{ currency: "EUR", amount: pricing.retail }],
+    },
+  );
+  await syncBackorderability(
+    config,
+    created.id,
+    product.availability === "available" || product.availability === "preorder"
+      ? "available"
+      : "unavailable",
+  );
+  return created;
+}
+
+async function rebuildMangaGroup(
+  config: ConfigRow,
+  groupKey: string,
+): Promise<{
+  ok: boolean;
+  group_key: string;
+  product_id?: string;
+  variants?: number;
+  skipped?: string;
+}> {
+  const { data, error } = await supabase
+    .from("devir_sync_catalog")
+    .select("supplier_sku,name,source_url,snapshot,image_urls,spree_product_id,spree_variant_id,supplier_status,last_auto_price,group_key,group_name,variant_label,variant_position,grouping_confidence")
+    .eq("group_key", groupKey)
+    .eq("item_kind", "variant_candidate")
+    .order("variant_position", { ascending: true })
+    .order("supplier_sku", { ascending: true });
+  if (error) throw error;
+  const rows = (data ?? []) as CatalogGroupRow[];
+  if (rows.length < 2) {
+    return { ok: true, group_key: groupKey, skipped: "needs_at_least_two_variants" };
+  }
+  if (rows.some((row) => categoryKey(catalogRowProduct(row)) !== "manga-comic")) {
+    return { ok: true, group_key: groupKey, skipped: "not_manga_group" };
+  }
+
+  const categories = await spreeCategories(config);
+  const category = categoryForKey(categories, "manga-comic");
+  if (!category) throw new Error("No existe la categoría Manga y cómic");
+
+  const groupName = rows.find((row) => row.group_name)?.group_name ?? groupKey;
+  const positions = new Map<number, number>();
+  for (const row of rows) {
+    const pos = Number(row.variant_position ?? -1);
+    positions.set(pos, (positions.get(pos) ?? 0) + 1);
+  }
+  const hasEditionDimension =
+    rows.some((row) => Boolean(variantEdition(row.variant_label))) ||
+    Array.from(positions.values()).some((count) => count > 1);
+
+  const created = await spreeRequest<SpreeProduct>(config, "POST", "/products", {
+    name: groupName,
+    status: "draft",
+    category_ids: [category.id],
+    tags: ["devir", "devir-group", "devir-group-" + groupKey],
+  });
+
+  const createdBySku = new Map<string, SpreeVariant>();
+  for (const row of rows) {
+    const position = Number(row.variant_position ?? 0);
+    const duplicated = (positions.get(position) ?? 0) > 1;
+    const edition =
+      variantEdition(row.variant_label) ??
+      (duplicated ? "ISBN " + row.supplier_sku : "Estándar");
+    const variant = await createGroupedVariant(
+      config,
+      created.id,
+      row,
+      [
+        { name: "tomo", value: String(position).padStart(2, "0") },
+        ...(hasEditionDimension ? [{ name: "edicion", value: edition }] : []),
+      ],
+      "manga-comic",
+    );
+    createdBySku.set(row.supplier_sku, variant);
+  }
+
+  const verified = await spreeList<SpreeVariant>(
+    config,
+    "/products/" + encodeURIComponent(created.id) + "/variants",
+  );
+  const verifiedSkus = new Set(
+    verified.map((variant) => variant.sku?.trim()).filter(Boolean),
+  );
+  for (const row of rows) {
+    if (!verifiedSkus.has(row.supplier_sku)) {
+      throw new Error("No se pudo verificar la variante migrada " + row.supplier_sku);
+    }
+  }
+
+  const anyAvailable = rows.some((row) => row.supplier_status === "available");
+  const anyPreorder = rows.some((row) => row.supplier_status === "preorder");
+  const anySellable = anyAvailable || anyPreorder;
+  await spreeRequest(config, "PATCH", "/products/" + encodeURIComponent(created.id), {
+    status: anySellable ? "active" : "draft",
+    category_ids: [category.id],
+    tags: [
+      "devir",
+      "devir-group",
+      "devir-group-" + groupKey,
+      ...(anySellable ? ["devir-ready", "devir-published"] : ["devir-waiting-stock"]),
+      ...(anyAvailable ? ["devir-buy-now"] : []),
+      ...(anyPreorder ? ["devir-preorder"] : []),
+    ],
+  });
+
+  const imageSource = rows.map(catalogRowProduct).find((product) => product.imageUrls.length);
+  if (imageSource) {
+    await syncImages(config, created.id, imageSource);
+  }
+
+  const oldProductIds = Array.from(
+    new Set(rows.map((row) => row.spree_product_id).filter(Boolean)),
+  ) as string[];
+
+  for (const row of rows) {
+    const variant = createdBySku.get(row.supplier_sku)!;
+    const state = row.supplier_status === "available"
+      ? "published"
+      : row.supplier_status === "preorder"
+        ? "preorder"
+        : "waiting_supplier";
+    const { error: updateError } = await supabase
+      .from("devir_sync_catalog")
+      .update({
+        spree_product_id: created.id,
+        spree_variant_id: variant.id,
+        catalog_state: state,
+        catalog_version: "devir-taxonomy-v2",
+        sellability_version: "devir-stock-v1",
+        last_error: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("supplier_sku", row.supplier_sku);
+    if (updateError) throw updateError;
+  }
+
+  for (const oldId of oldProductIds) {
+    await retireReplacementSource(config, oldId, created.id);
+  }
+
+  return {
+    ok: true,
+    group_key: groupKey,
+    product_id: created.id,
+    variants: rows.length,
+  };
 }
 
 async function migrateCatalogGroup(
@@ -1280,119 +1580,132 @@ async function migrateCatalogGroup(
   variants?: number;
   skipped?: string;
 }> {
+  return await rebuildMangaGroup(config, groupKey);
+}
+
+async function migrateLanguageGroup(
+  config: ConfigRow,
+  groupKey: string,
+): Promise<{
+  ok: boolean;
+  group_key: string;
+  product_id?: string;
+  variants?: number;
+  skipped?: string;
+}> {
   const { data, error } = await supabase
     .from("devir_sync_catalog")
-    .select("supplier_sku,name,spree_product_id,spree_variant_id,group_key,group_name,variant_label,variant_position,grouping_confidence")
-    .eq("group_key", groupKey)
-    .eq("item_kind", "variant_candidate")
-    .order("variant_position", { ascending: true });
+    .select("supplier_sku,name,source_url,snapshot,image_urls,spree_product_id,spree_variant_id,supplier_status,last_auto_price,group_key,group_name,variant_label,variant_position,grouping_confidence,language_group_key,language_label,language_base_name")
+    .eq("language_group_key", groupKey)
+    .order("language_label", { ascending: true });
   if (error) throw error;
   const rows = (data ?? []) as CatalogGroupRow[];
-  const highConfidence = rows.filter((row) => row.grouping_confidence === "high");
-  if (highConfidence.length < 2) {
-    return { ok: true, group_key: groupKey, skipped: "needs_at_least_two_high_confidence_variants" };
+  const languages = new Set(rows.map((row) => row.language_label).filter(Boolean));
+  if (rows.length < 2 || languages.size < 2) {
+    return { ok: true, group_key: groupKey, skipped: "needs_two_languages" };
   }
 
-  const groupName = rows.find((row) => row.group_name)?.group_name ?? groupKey;
-  const uniqueProducts = Array.from(new Set(rows.map((row) => row.spree_product_id).filter(Boolean))) as string[];
-  const sourceProducts = new Map<string, SpreeProduct>();
-  const sourceVariants = new Map<string, SpreeVariant>();
-
-  for (const productId of uniqueProducts) {
-    const product = await spreeRequest<SpreeProduct>(config, "GET", "/products/" + encodeURIComponent(productId));
-    sourceProducts.set(productId, product);
-    if (product.status !== "draft" || !(product.tags ?? []).includes("devir")) {
-      return { ok: true, group_key: groupKey, skipped: "contains_non_draft_or_unmanaged_product" };
-    }
-    const variants = await spreeList<SpreeVariant>(config, "/products/" + encodeURIComponent(productId) + "/variants");
-    for (const variant of variants) {
-      if (variant.sku) sourceVariants.set(variant.sku.trim(), variant);
-    }
+  const products = rows.map(catalogRowProduct);
+  const categoryKeys = new Set(products.map(categoryKey));
+  if (categoryKeys.size !== 1) {
+    return { ok: true, group_key: groupKey, skipped: "category_mismatch" };
   }
+  const categoryKeyValue = Array.from(categoryKeys)[0];
+  const categories = await spreeCategories(config);
+  const category = categoryForKey(categories, categoryKeyValue);
+  if (!category) return { ok: true, group_key: groupKey, skipped: "category_missing" };
 
-  const positions = new Map<number, number>();
-  for (const row of rows) {
-    const pos = Number(row.variant_position ?? -1);
-    positions.set(pos, (positions.get(pos) ?? 0) + 1);
-  }
-  const hasEditionDimension =
-    rows.some((row) => Boolean(variantEdition(row.variant_label))) ||
-    Array.from(positions.values()).some((count) => count > 1);
-
-  if (hasEditionDimension) {
-    const optionKeys = new Set<string>();
-    for (const row of rows) {
-      const position = Number(row.variant_position ?? 0);
-      const edition = variantEdition(row.variant_label) ?? "Estándar";
-      const key = String(position).padStart(2, "0") + "|" + edition.toLowerCase();
-      if (optionKeys.has(key)) {
-        return { ok: true, group_key: groupKey, skipped: "duplicate_variant_options_need_review" };
-      }
-      optionKeys.add(key);
-    }
-  }
-
-  const variants = rows.map((row) => {
-    const source = sourceVariants.get(row.supplier_sku);
-    const position = Number(row.variant_position ?? 0);
-    const edition = variantEdition(row.variant_label) ?? "Estándar";
-    const price = source ? variantPrice(source) : null;
-    const cost = Number(source?.cost_price);
-    return {
-      sku: row.supplier_sku,
-      ...(Number.isFinite(cost) && cost > 0 ? { cost_price: cost, cost_currency: "EUR" } : {}),
-      track_inventory: true,
-      options: [
-        { name: "tomo", value: String(position).padStart(2, "0") },
-        ...(hasEditionDimension ? [{ name: "edicion", value: edition }] : []),
-      ],
-      ...(price !== null ? { prices: [{ currency: "EUR", amount: price }] } : {}),
-    };
-  });
+  const baseName =
+    rows.find((row) => row.language_base_name)?.language_base_name ??
+    languageGroupingInfo(products[0])?.baseName ??
+    products[0].name;
 
   const created = await spreeRequest<SpreeProduct>(config, "POST", "/products", {
-    name: groupName,
+    name: baseName,
     status: "draft",
-    tags: ["devir", "devir-review", "devir-group", "devir-group-" + groupKey],
-    variants,
+    category_ids: [category.id],
+    tags: [
+      "devir",
+      "devir-group",
+      "devir-language-group",
+      "devir-language-group-" + groupKey,
+    ],
   });
-  const createdVariants = await spreeList<SpreeVariant>(
+
+  const createdBySku = new Map<string, SpreeVariant>();
+  for (const row of rows) {
+    const language = row.language_label ?? languageGroupingInfo(catalogRowProduct(row))?.language;
+    if (!language) throw new Error("Idioma no resuelto para " + row.supplier_sku);
+    const variant = await createGroupedVariant(
+      config,
+      created.id,
+      row,
+      [{ name: "idioma", value: language }],
+      categoryKeyValue,
+    );
+    createdBySku.set(row.supplier_sku, variant);
+  }
+
+  const verified = await spreeList<SpreeVariant>(
     config,
     "/products/" + encodeURIComponent(created.id) + "/variants",
   );
-  const createdBySku = new Map(
-    createdVariants.filter((variant) => variant.sku).map((variant) => [variant.sku!.trim(), variant]),
+  const verifiedSkus = new Set(
+    verified.map((variant) => variant.sku?.trim()).filter(Boolean),
   );
-
-  // Only after the replacement product exists and all SKU variants can be
-  // resolved do we archive the old draft products.
   for (const row of rows) {
-    if (!createdBySku.has(row.supplier_sku)) {
-      throw new Error("No se pudo resolver la variante migrada " + row.supplier_sku);
+    if (!verifiedSkus.has(row.supplier_sku)) {
+      throw new Error("No se pudo verificar la variante de idioma " + row.supplier_sku);
     }
   }
 
-  for (const productId of uniqueProducts) {
-    const old = sourceProducts.get(productId)!;
-    const tags = Array.from(new Set([...(old.tags ?? []), "devir-merged"]));
-    await spreeRequest(config, "PATCH", "/products/" + encodeURIComponent(productId), {
-      status: "archived",
-      tags,
-    });
-  }
+  const anyAvailable = rows.some((row) => row.supplier_status === "available");
+  const anyPreorder = rows.some((row) => row.supplier_status === "preorder");
+  const anySellable = anyAvailable || anyPreorder;
+  await spreeRequest(config, "PATCH", "/products/" + encodeURIComponent(created.id), {
+    status: anySellable ? "active" : "draft",
+    category_ids: [category.id],
+    tags: [
+      "devir",
+      "devir-group",
+      "devir-language-group",
+      "devir-language-group-" + groupKey,
+      ...(anySellable ? ["devir-ready", "devir-published"] : ["devir-waiting-stock"]),
+      ...(anyAvailable ? ["devir-buy-now"] : []),
+      ...(anyPreorder ? ["devir-preorder"] : []),
+    ],
+  });
+
+  const imageSource = products.find((product) => product.imageUrls.length);
+  if (imageSource) await syncImages(config, created.id, imageSource);
+
+  const oldProductIds = Array.from(
+    new Set(rows.map((row) => row.spree_product_id).filter(Boolean)),
+  ) as string[];
 
   for (const row of rows) {
     const variant = createdBySku.get(row.supplier_sku)!;
+    const state = row.supplier_status === "available"
+      ? "published"
+      : row.supplier_status === "preorder"
+        ? "preorder"
+        : "waiting_supplier";
     const { error: updateError } = await supabase
       .from("devir_sync_catalog")
       .update({
         spree_product_id: created.id,
         spree_variant_id: variant.id,
+        catalog_state: state,
+        sellability_version: "devir-stock-v1",
         last_error: null,
         updated_at: new Date().toISOString(),
       })
       .eq("supplier_sku", row.supplier_sku);
     if (updateError) throw updateError;
+  }
+
+  for (const oldId of oldProductIds) {
+    await retireReplacementSource(config, oldId, created.id);
   }
 
   return {
@@ -3424,6 +3737,12 @@ async function operatorAction(
     return json(await migrateCatalogGroup(config, groupKey));
   }
 
+  if (action === "regroup-language") {
+    const groupKey = typeof body.groupKey === "string" ? body.groupKey.trim() : "";
+    if (!groupKey) return json({ error: "group_key_required" }, 400);
+    return json(await migrateLanguageGroup(config, groupKey));
+  }
+
   return json({ error: "unknown_action" }, 400);
 }
 
@@ -3543,6 +3862,17 @@ async function processProducts(config: ConfigRow, cycleId: string): Promise<{ do
         variant_label: grouping.variantLabel,
         variant_position: grouping.variantPosition,
         grouping_confidence: grouping.confidence,
+        ...(languageGroupingInfo(product)
+          ? {
+              language_group_key: languageGroupingInfo(product)!.groupKey,
+              language_label: languageGroupingInfo(product)!.language,
+              language_base_name: languageGroupingInfo(product)!.baseName,
+            }
+          : {
+              language_group_key: null,
+              language_label: null,
+              language_base_name: null,
+            }),
         ...(product.availability === "available" ? { last_confirmed_available_at: now } : {}),
         last_seen_cycle_id: cycleId,
         last_seen_at: now,
