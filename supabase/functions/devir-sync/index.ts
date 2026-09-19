@@ -1097,6 +1097,81 @@ async function appendToExistingGroupedProduct(
   return null;
 }
 
+async function appendToExistingLanguageProduct(
+  config: ConfigRow,
+  product: DevirProduct,
+  info: LanguageGroupingInfo,
+  retailPrice: number,
+): Promise<{ product: SpreeProduct; variant: SpreeVariant } | null> {
+  const { data, error } = await supabase
+    .from("devir_sync_catalog")
+    .select("spree_product_id,language_label")
+    .eq("language_group_key", info.groupKey)
+    .not("spree_product_id", "is", null)
+    .limit(100);
+  if (error) throw error;
+
+  const candidateIds = Array.from(
+    new Set((data ?? []).map((row) => row.spree_product_id).filter(Boolean)),
+  ) as string[];
+
+  for (const productId of candidateIds) {
+    let parent: SpreeProduct;
+    try {
+      parent = await spreeRequest<SpreeProduct>(
+        config,
+        "GET",
+        "/products/" + encodeURIComponent(productId),
+      );
+    } catch {
+      continue;
+    }
+    if (!(parent.tags ?? []).includes("devir-language-group")) continue;
+
+    const variants = await spreeList<SpreeVariant>(
+      config,
+      "/products/" + encodeURIComponent(productId) + "/variants",
+    );
+    const already = variants.find((variant) => variant.sku?.trim() === product.sku);
+    if (already) return { product: parent, variant: already };
+
+    if ((data ?? []).some((row) => row.language_label === info.language)) {
+      return null;
+    }
+
+    const shipping = shippingDefaults(categoryKey(product), product);
+    const created = await spreeRequest<SpreeVariant>(
+      config,
+      "POST",
+      "/products/" + encodeURIComponent(productId) + "/variants",
+      {
+        sku: product.sku,
+        cost_price: product.purchasePrice,
+        cost_currency: "EUR",
+        ...shipping,
+        track_inventory: true,
+        backorder_limit: null,
+        preorderable: product.availability === "preorder",
+        preorder_ships_at:
+          product.availability === "preorder" ? product.releaseDate : null,
+        options: [{ name: "idioma", value: info.language }],
+        prices: [{ currency: "EUR", amount: retailPrice }],
+      },
+    );
+    const inventoryVariant = await patchVariantInventory(
+      config,
+      productId,
+      created.id,
+      0,
+      product.availability === "available" || product.availability === "preorder",
+      product.availability === "preorder",
+      product.releaseDate,
+    );
+    return { product: parent, variant: inventoryVariant };
+  }
+  return null;
+}
+
 async function syncProductToSpree(
   config: ConfigRow,
   product: DevirProduct,
@@ -1116,10 +1191,25 @@ async function syncProductToSpree(
   if (pricing.reviewReason) reasons.push(pricing.reviewReason);
   if (isPack(product)) reasons.push("pack_requires_operator_split");
   const grouping = groupingInfo(product);
+  const languageGrouping =
+    grouping.itemKind === "standalone" ? languageGroupingInfo(product) : null;
   if (grouping.confidence === "ambiguous") reasons.push("grouping_requires_operator_review");
   const review = reasons.length > 0;
   let existing = await findSpreeProduct(config, product.sku);
   let grouped = false;
+
+  if (!existing && languageGrouping) {
+    const groupedMatch = await appendToExistingLanguageProduct(
+      config,
+      product,
+      languageGrouping,
+      pricing.retail,
+    );
+    if (groupedMatch) {
+      existing = groupedMatch;
+      grouped = true;
+    }
+  }
 
   if (!existing && grouping.itemKind === "variant_candidate" && grouping.groupKey) {
     const groupedMatch = await appendToExistingGroupedProduct(
@@ -1392,6 +1482,7 @@ async function createGroupedVariant(
   row: CatalogGroupRow,
   options: Array<{ name: string; value: string }>,
   key: string,
+  position: number,
 ): Promise<SpreeVariant> {
   const product = catalogRowProduct(row);
   if (!product.purchasePrice || product.purchasePrice <= 0) {
@@ -1412,6 +1503,7 @@ async function createGroupedVariant(
       cost_price: product.purchasePrice,
       cost_currency: "EUR",
       ...shipping,
+      position,
       track_inventory: true,
       backorder_limit: null,
       preorderable: product.availability === "preorder",
@@ -1421,14 +1513,15 @@ async function createGroupedVariant(
       prices: [{ currency: "EUR", amount: pricing.retail }],
     },
   );
-  await syncBackorderability(
+  return await patchVariantInventory(
     config,
+    productId,
     created.id,
-    product.availability === "available" || product.availability === "preorder"
-      ? "available"
-      : "unavailable",
+    0,
+    product.availability === "available" || product.availability === "preorder",
+    product.availability === "preorder",
+    product.releaseDate,
   );
-  return created;
 }
 
 async function rebuildMangaGroup(
@@ -1479,7 +1572,23 @@ async function rebuildMangaGroup(
   });
 
   const createdBySku = new Map<string, SpreeVariant>();
-  for (const row of rows) {
+  const displayPosition = new Map(
+    rows.map((row, index) => [row.supplier_sku, index + 1]),
+  );
+  const creationRows = [...rows].sort((a, b) => {
+    const availabilityRank = (row: CatalogGroupRow) =>
+      row.supplier_status === "available" ? 0 :
+      row.supplier_status === "preorder" ? 1 : 2;
+    const editionRank = (row: CatalogGroupRow) =>
+      variantEdition(row.variant_label) ? 1 : 0;
+    return (
+      availabilityRank(a) - availabilityRank(b) ||
+      editionRank(a) - editionRank(b) ||
+      Number(a.variant_position ?? 0) - Number(b.variant_position ?? 0) ||
+      a.supplier_sku.localeCompare(b.supplier_sku)
+    );
+  });
+  for (const row of creationRows) {
     const position = Number(row.variant_position ?? 0);
     const duplicated = (positions.get(position) ?? 0) > 1;
     const edition =
@@ -1494,6 +1603,7 @@ async function rebuildMangaGroup(
         ...(hasEditionDimension ? [{ name: "edicion", value: edition }] : []),
       ],
       "manga-comic",
+      displayPosition.get(row.supplier_sku) ?? 1,
     );
     createdBySku.set(row.supplier_sku, variant);
   }
@@ -1632,8 +1742,26 @@ async function migrateLanguageGroup(
     ],
   });
 
+  const languageOrder: Record<string, number> = {
+    "Español": 1,
+    "Inglés": 2,
+    "Francés": 3,
+    "Alemán": 4,
+    "Italiano": 5,
+    "Portugués": 6,
+  };
+  const creationRows = [...rows].sort((a, b) => {
+    const availabilityRank = (row: CatalogGroupRow) =>
+      row.supplier_status === "available" ? 0 :
+      row.supplier_status === "preorder" ? 1 : 2;
+    return (
+      availabilityRank(a) - availabilityRank(b) ||
+      (languageOrder[a.language_label ?? ""] ?? 99) -
+        (languageOrder[b.language_label ?? ""] ?? 99)
+    );
+  });
   const createdBySku = new Map<string, SpreeVariant>();
-  for (const row of rows) {
+  for (const row of creationRows) {
     const language = row.language_label ?? languageGroupingInfo(catalogRowProduct(row))?.language;
     if (!language) throw new Error("Idioma no resuelto para " + row.supplier_sku);
     const variant = await createGroupedVariant(
@@ -1642,6 +1770,7 @@ async function migrateLanguageGroup(
       row,
       [{ name: "idioma", value: language }],
       categoryKeyValue,
+      languageOrder[language] ?? 99,
     );
     createdBySku.set(row.supplier_sku, variant);
   }
