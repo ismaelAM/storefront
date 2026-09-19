@@ -39,6 +39,10 @@ export const ProductCard = memo(function ProductCard({
   const currentAmountCents = product.price?.amount_in_cents;
   const originalAmountCents = product.original_price?.amount_in_cents;
   const compareAtAmountCents = product.price?.compare_at_amount_in_cents;
+  const showPreorder =
+    Boolean(product.preorder) &&
+    !(product.tags ?? []).includes("devir-buy-now");
+
   const onSale =
     (currentAmountCents != null &&
       originalAmountCents != null &&
@@ -78,7 +82,7 @@ export const ProductCard = memo(function ProductCard({
             {t("sale")}
           </span>
         )}
-        {product.preorder && (
+        {showPreorder && (
           <span className="absolute top-2 right-2 bg-amber-100 text-amber-800 text-xs font-medium px-2 py-1 rounded">
             {t("preorder")}
           </span>
@@ -117,7 +121,7 @@ export const ProductCard = memo(function ProductCard({
           )}
         </div>
 
-        {product.preorder ? (
+        {showPreorder ? (
           <span className="mt-2 text-sm font-medium text-amber-700">
             {t("preorder")}
           </span>
