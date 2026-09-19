@@ -194,7 +194,9 @@
     "preorderShipsAt": "Envío previsto: {date}",
     "availableToOrder": "Disponible",
     "preorderHelp": "Reserva ahora; se enviará cuando llegue la fecha de lanzamiento.",
-    "extendedFulfillment": "Preparación: 2–3 días laborables"
+    "extendedFulfillment": "Preparación: 2–3 días laborables",
+    "standardEdition": "Edición estándar",
+    "unavailableVariantHelp": "Las opciones marcadas como agotadas siguen en el catálogo, pero no se pueden comprar ahora mismo."
   },
   "navigation": {
     "home": "Inicio",
