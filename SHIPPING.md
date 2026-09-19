@@ -47,9 +47,9 @@ Cuando el proceso operativo esté probado, podremos estudiar estados adicionales
 
 Para el reparto local no hace falta una API externa. Podemos trabajar sin número de tracking y simplemente actualizar el Shipment desde Spree.
 
-Para envíos fuera del reparto local, la opción preferida pasa a ser **Correos**. Correos ofrece APIs oficiales para prerregistro, generación de etiquetas, solicitudes de recogida y tracking. La integración requiere contrato de transporte y acceso al Portal de Desarrolladores con OAuth 2.0.
+Para envíos fuera del reparto local, la opción preferida pasa a ser **Correos**. Correos ofrece APIs oficiales para prerregistro, generación de etiquetas, solicitudes de recogida, entrada de cajas/pallets y tracking. La integración requiere contrato de transporte y acceso al Portal de Desarrolladores. Las APIs no comparten una única política de seguridad: combinan JWT Bearer de Correos ID, Client ID Enforcement y subscription keys según la operación.
 
-El acceso a `Preregister`, `Labels` y `Trackpub` ya está aprobado. Se ha preparado el cliente OAuth server-only, pero la activación necesita los endpoints y esquemas exactos del portal, los secretos configurados en Vercel y la confirmación del contrato de transporte. Mientras tanto, se puede operar manualmente desde Mi Oficina de Correos y guardar el código de seguimiento en el Shipment de Spree. El storefront no necesita saber si la etiqueta se creó por API o manualmente: sigue leyendo estado y tracking desde Spree.
+Ya se han validado los OpenAPI de `Preregister`, `Labels`, `Trackpub`, `Requests` y `BoxEntry`. El transporte server-only refleja la autenticación y los contratos reales de cada API, pero la activación necesita el flujo oficial para obtener/renovar el JWT de Correos ID, los secretos configurados en Vercel y la confirmación del contrato de transporte. `Preregister` aparece deprecada en el portal y permanece desactivada; `BoxEntry` no la sustituye, ya que únicamente registra una caja o pallet y los códigos de sus elementos. Mientras tanto, se puede operar manualmente desde Mi Oficina de Correos y guardar el código de seguimiento en el Shipment de Spree.
 
 ## Configuración en Spree Sandbox / producción
 
@@ -76,7 +76,7 @@ No mezclar la futura integración de Correos con Stripe. El pago y el fulfillmen
 
 ## Futuro Correos
 
-Estado actual: transporte OAuth 2.0 server-only implementado y probado. Próximo paso: descargar OpenAPI/Swagger de las tres APIs aprobadas, configurar los secretos `CORREOS_*` en Vercel y mapear sus respuestas al Shipment de Spree. También se recomienda solicitar `Requests` para automatizar recogidas.
+Estado actual: transporte server-only y adaptadores de `Labels`, `Trackpub`, `Requests` y `BoxEntry` implementados según sus OpenAPI. Próximo paso: obtener el contrato de autenticación de Correos ID, aclarar la sustitución de `Preregister`, configurar los secretos `CORREOS_*` en Vercel y mapear los resultados al Shipment de Spree.
 
 Arquitectura objetivo:
 

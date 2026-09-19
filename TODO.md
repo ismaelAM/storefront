@@ -22,12 +22,13 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 ## Transporte externo
 
 - [x] UPS descartado tras respuesta negativa del proveedor.
-- [x] Investigada alternativa oficial de Correos: APIs de prerregistro, etiquetas, recogidas y tracking con OAuth 2.0.
-- [x] Acceso aprobado en el Portal de Desarrolladores para `Preregister`, `Labels` y `Trackpub`.
+- [x] Investigada alternativa oficial de Correos: APIs de prerregistro, etiquetas, recogidas, agrupación de cajas/pallets y tracking con políticas de autenticación distintas.
+- [x] Acceso y especificaciones obtenidos para `Preregister`, `Labels`, `Trackpub`, `Requests` y `BoxEntry`.
 - [ ] Confirmar que el contrato de transporte de Correos está firmado y vinculado al mismo Correos ID.
-- [ ] Solicitar `Requests` para automatizar recogidas; no bloquea prerregistro, etiquetas ni tracking.
-- [x] Añadido cliente server-only de Correos con OAuth 2.0, caché/renovación de token, reintento único tras 401, endpoints HTTPS configurables y errores sin secretos ni payloads de clientes.
-- [ ] Descargar del portal la especificación OpenAPI/Swagger de `Preregister`, `Labels` y `Trackpub` para implementar sus payloads exactos sin inventar contratos.
+- [x] Añadido transporte server-only con las políticas reales: Bearer de Correos ID, Client ID Enforcement y subscription key según cada API; reintento único tras 401 y errores sin secretos ni payloads de clientes.
+- [x] Añadidos adaptadores tipados para etiquetas, tracking, recogidas y entrada de cajas/pallets a partir de los OpenAPI descargados.
+- [ ] Obtener la especificación del flujo de autenticación de Correos ID para implementar el proveedor y renovación del JWT sin asumir `client_credentials`.
+- [ ] Confirmar con Correos la API sustituta y la fecha de retirada de `Preregister`; `BoxEntry` no la reemplaza porque solo registra contenedores y sus elementos.
 - [ ] Configurar las variables `CORREOS_*` como secretos de Vercel, sin compartir valores por chat.
 - [ ] Conectar prerregistro, etiqueta y tracking con los Shipments nativos de Spree y añadir protección persistente contra duplicados.
 - [ ] Si Correos no aprueba el acceso o el volumen no compensa, usar Mi Oficina de Correos como operativa manual y guardar tracking/estado en Spree; no crear una base logística paralela.
