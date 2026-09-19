@@ -1743,6 +1743,8 @@ interface CatalogAuditRow {
   item_kind: string | null;
   grouping_confidence: string | null;
   last_error: string | null;
+  catalog_version?: string | null;
+  catalog_state?: string | null;
 }
 
 interface SpreeChannel {
@@ -1840,6 +1842,13 @@ async function verifyDevirBatch(
         missing_cycles: 0,
         last_error: null,
         updated_at: now,
+        ...(row.supplier_status !== current.availability
+          ? {
+              catalog_version: null,
+              catalog_state: null,
+              catalog_prepared_at: null,
+            }
+          : {}),
       };
       if (current.availability === "available") {
         update.last_confirmed_available_at = now;
@@ -2064,8 +2073,9 @@ async function preparePublishBatch(
 }> {
   const { data, error } = await supabase
     .from("devir_sync_catalog")
-    .select("supplier_sku,source_url,name,snapshot,image_urls,spree_product_id,spree_variant_id,supplier_status,item_kind,grouping_confidence,last_error")
+    .select("supplier_sku,source_url,name,snapshot,image_urls,spree_product_id,spree_variant_id,supplier_status,item_kind,grouping_confidence,last_error,catalog_version,catalog_state")
     .not("spree_product_id", "is", null)
+    .or("catalog_version.is.null,catalog_version.neq.devir-taxonomy-v2")
     .order("spree_product_id")
     .order("supplier_sku");
   if (error) throw error;
@@ -2080,7 +2090,9 @@ async function preparePublishBatch(
     groups.set(productId, rows);
   }
   const productIds = Array.from(groups.keys()).sort();
-  const selected = productIds.slice(offset, offset + limit);
+  // Pending products only: always consume from the front. A completed product
+  // is checkpointed below, so repeated calls are naturally resumable.
+  const selected = productIds.slice(0, limit);
   const defs = await definitions(config);
   const categories = await spreeCategories(config);
   const channels = await spreeList<SpreeChannel>(config, "/channels");
@@ -2118,6 +2130,16 @@ async function preparePublishBatch(
     const originalTags = spreeProduct.tags ?? [];
     if (!originalTags.includes("devir")) {
       humanReview += 1;
+      await supabase
+        .from("devir_sync_catalog")
+        .update({
+          catalog_state: "review",
+          catalog_version: "devir-taxonomy-v2",
+          catalog_prepared_at: new Date().toISOString(),
+          last_error: "CATALOG: product not managed by Devir",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("spree_product_id", productId);
       return;
     }
 
@@ -2226,6 +2248,17 @@ async function preparePublishBatch(
     const human = productReasons.size > 0;
     const publish = !human && anySellable;
     const waiting = !human && !anySellable && anyWaiting;
+    const hasPreorder = rows.some((row) => row.supplier_status === "preorder");
+    const hasAvailable = rows.some((row) => row.supplier_status === "available");
+    const catalogState = human
+      ? "review"
+      : waiting
+        ? "waiting_supplier"
+        : hasPreorder && hasAvailable
+          ? "published_mixed"
+          : hasPreorder
+            ? "preorder"
+            : "published";
 
     let tags = Array.from(new Set([
       ...originalTags,
@@ -2301,7 +2334,11 @@ async function preparePublishBatch(
       "devir.review_status": human
         ? "⚠ REVISIÓN HUMANA"
         : publish
-          ? "PUBLICADO"
+          ? hasPreorder && hasAvailable
+            ? "PUBLICADO · COMPRA + PRERESERVA"
+            : hasPreorder
+              ? "PUBLICADO · PRERESERVA"
+              : "PUBLICADO · COMPRA"
           : "ESPERANDO STOCK DEVIR",
       "devir.review_reasons": human
         ? Array.from(productReasons).join(", ")
@@ -2321,6 +2358,16 @@ async function preparePublishBatch(
         .eq("spree_product_id", productId);
     }
 
+    await supabase
+      .from("devir_sync_catalog")
+      .update({
+        catalog_state: catalogState,
+        catalog_version: "devir-taxonomy-v2",
+        catalog_prepared_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("spree_product_id", productId);
+
     await new Promise((resolve) => setTimeout(resolve, 80));
   };
 
@@ -2335,7 +2382,7 @@ async function preparePublishBatch(
     waiting_supplier: waitingSupplier,
     human_review: humanReview,
     variants_updated: variantsUpdated,
-    next_offset: selected.length < limit ? null : offset + limit,
+    next_offset: selected.length < limit ? null : 0,
   };
 }
 
