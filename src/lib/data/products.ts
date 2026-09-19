@@ -1,6 +1,8 @@
 "use server";
 
 import type { ProductListParams } from "@spree/sdk";
+
+const CATALOG_CACHE_VERSION = "2026-09-19-manga-groups-v1";
 import { cacheLife, cacheTag } from "next/cache";
 import {
   cacheTagSuffix,
@@ -29,6 +31,7 @@ export async function cachedListProducts(
   options: { locale?: string; country?: string },
   surface: Surface,
   userToken?: string,
+  cacheVersion = CATALOG_CACHE_VERSION,
 ) {
   "use cache: remote";
   cacheLife("tenMinutes");
@@ -48,7 +51,13 @@ export async function getProducts(
 ) {
   const options = await getLocaleOptions();
   const userToken = await getAccessToken();
-  return cachedListProducts(params, options, surface, userToken);
+  return cachedListProducts(
+    params,
+    options,
+    surface,
+    userToken,
+    CATALOG_CACHE_VERSION,
+  );
 }
 
 /**
