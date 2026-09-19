@@ -9,7 +9,11 @@ import { Input } from "@/components/ui/input";
 
 interface CouponCodeProps {
   cart: Cart;
-  onApply: (code: string) => Promise<{ success: boolean; error?: string }>;
+  onApply: (code: string) => Promise<{
+    success: boolean;
+    error?: string;
+    notice?: string;
+  }>;
   onRemoveDiscount: (
     code: string,
   ) => Promise<{ success: boolean; error?: string }>;
@@ -29,6 +33,7 @@ export function CouponCode({
   const [applying, setApplying] = useState(false);
   const [removing, setRemoving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const appliedDiscounts = cart.discounts || [];
   const couponPromotions = appliedDiscounts.filter(
@@ -42,12 +47,17 @@ export function CouponCode({
 
     setApplying(true);
     setError(null);
+    setNotice(null);
 
     try {
       const result = await onApply(code.trim());
+      if (result.notice) {
+        setNotice(result.notice);
+        setCode("");
+      }
       if (result.success) {
         setCode("");
-      } else {
+      } else if (!result.notice) {
         setError(result.error || t("invalidCode"));
       }
     } catch {
@@ -162,6 +172,7 @@ export function CouponCode({
             onChange={(e) => {
               setCode(e.target.value);
               setError(null);
+              setNotice(null);
             }}
             placeholder={t("placeholder")}
             aria-label={t("placeholder")}
@@ -174,6 +185,9 @@ export function CouponCode({
         </form>
       )}
 
+      {notice && (
+        <p className="text-xs text-emerald-700 mt-1.5">{notice}</p>
+      )}
       {error && <p className="text-xs text-red-600 mt-1.5">{error}</p>}
     </div>
   );
