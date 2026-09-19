@@ -62,7 +62,6 @@ export async function Footer({ basePath, locale, categoryLinks, appearance }: Fo
           <div>
             <h3 className="text-sm font-medium" style={headingStyle}>{t("shop")}</h3>
             <ul className="mt-4 space-y-3">
-              <li><Link href={`${basePath}/products`} className="text-sm transition-colors" style={linkStyle}>{t("allProducts")}</Link></li>
               {categoryLinks}
             </ul>
           </div>
