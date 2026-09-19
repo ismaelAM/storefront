@@ -1988,13 +1988,13 @@ async function preparePublishBatch(
         })
         .eq("spree_product_id", productId);
       humanReview += 1;
-      continue;
+      return;
     }
 
     const originalTags = spreeProduct.tags ?? [];
     if (!originalTags.includes("devir")) {
       humanReview += 1;
-      continue;
+      return;
     }
 
     const variants = await spreeList<SpreeVariant>(
