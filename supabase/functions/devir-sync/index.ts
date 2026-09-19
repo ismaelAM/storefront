@@ -533,24 +533,47 @@ function isPack(product: DevirProduct): boolean {
 
 function categoryKey(product: DevirProduct): string {
   const value = (product.name + " " + product.url).toLowerCase();
-  if (/\bmtg\b|magic|\/magic/.test(value)) return "tcg/mtg";
-  if (/yugioh|yu-gi-oh|yu gi oh/.test(value)) return "tcg/yugioh";
-  if (/accesorio|sleeves|fundas|deck\s*box|tapete|playmat/.test(value)) return "accesorios";
+
+  // Accessories must be resolved before product-family rules.
+  if (/accesorio|sleeves|fundas|deck\s*box|tapete|playmat|carpeta|album/.test(value)) {
+    return "accesorios";
+  }
 
   // Serial manga/comic naming in Devir is very regular. "Tomo" on its own
-  // is deliberately excluded because it also appears in RPG campaigns.
+  // stays out because it is also used by RPG campaigns.
   if (/(?:n[uú]m\.?|num\.?|vol\.?|volumen)\s*0*\d{1,3}/i.test(product.name)) {
     return "manga-comic";
   }
 
-  if (/warhammer/.test(value)) return "warhammer";
   if (
-    /pathfinder|d&d|dungeons\s*&?\s*dragons|vampiro|cthulhu|runequest|forbidden\s+lands|alien.*rol|juego\s+de\s+rol|roleplaying|rpg\b/.test(value)
+    /yugioh|yu-gi-oh|yu gi oh|quarter century|duelist|battles of legend|dueling (?:heroes|mirrors)/.test(value)
   ) {
-    return "rol";
+    return "tcg/yugioh";
+  }
+  if (
+    /\bmtg\b|magic[:\s-].*(?:booster|commander|bundle|display|collector|starter|deck)|aetherdrift|tarkir|bloomburrow|duskmourn|innistrad|zendikar|modern horizons|foundations/.test(value)
+  ) {
+    return "tcg/mtg";
   }
 
-  return "juegos-de-mesa";
+  if (/pathfinder/.test(value)) return "rol/pathfinder";
+  if (/d&d|dungeons\s*&?\s*dragons|forgotten realms|dragonlance/.test(value)) {
+    return "rol/dungeons-dragons";
+  }
+  if (/warhammer/.test(value)) return "rol/warhammer";
+  if (
+    /vampiro|cthulhu|runequest|forbidden\s+lands|blade\s*runner|alien.*rol|candela\s+obscura|broken\s+tales|juego\s+de\s+rol|roleplaying|rpg\b|libro\s+b[aá]sico|pantalla\s+de\s+direcci[oó]n/.test(value)
+  ) {
+    return "rol/otros";
+  }
+
+  if (/expansi[oó]n|expansion|\bexp\.|ampliaci[oó]n|big\s*box/.test(value)) {
+    return "juegos-de-mesa/expansiones";
+  }
+  if (/junior|infantil|primaria|secundaria|kids|niñ[oa]s/.test(value)) {
+    return "juegos-de-mesa/infantil";
+  }
+  return "juegos-de-mesa/general";
 }
 
 
@@ -1204,21 +1227,29 @@ const DEFAULT_CATEGORY_MARGINS: Record<string, number> = {
   // Minimum contribution after VAT and a standard EEA Stripe card fee.
   // These are safety floors; the market/reference-price discount normally
   // leaves a larger realised margin.
-  "juegos-de-mesa": 0.05,
-  "warhammer": 0.05,
+  "juegos-de-mesa/general": 0.05,
+  "juegos-de-mesa/expansiones": 0.05,
+  "juegos-de-mesa/infantil": 0.05,
   "tcg/mtg": 0.04,
   "tcg/yugioh": 0.04,
-  "rol": 0.05,
+  "rol/dungeons-dragons": 0.05,
+  "rol/pathfinder": 0.05,
+  "rol/warhammer": 0.05,
+  "rol/otros": 0.05,
   "manga-comic": 0.05,
   "accesorios": 0.05,
 };
 
 const CATEGORY_REFERENCE_DISCOUNTS: Record<string, number> = {
-  "juegos-de-mesa": 0.17,
-  "warhammer": 0.12,
+  "juegos-de-mesa/general": 0.17,
+  "juegos-de-mesa/expansiones": 0.17,
+  "juegos-de-mesa/infantil": 0.15,
   "tcg/mtg": 0.12,
   "tcg/yugioh": 0.12,
-  "rol": 0.10,
+  "rol/dungeons-dragons": 0.10,
+  "rol/pathfinder": 0.10,
+  "rol/warhammer": 0.10,
+  "rol/otros": 0.10,
   "manga-comic": 0.05,
   "accesorios": 0.15,
 };
@@ -1232,7 +1263,7 @@ function isBookSku(sku: string): boolean {
 
 function isBookProduct(product: DevirProduct, key: string): boolean {
   if (isBookSku(product.sku)) return true;
-  if (key !== "rol") return false;
+  if (!key.startsWith("rol/")) return false;
   return /manual|gu[ií]a|libro|compendio|aventura|campaña|bestiario|suplemento|reglamento|pantalla de direcci[oó]n|d&d|dungeons|pathfinder|warhammer/i.test(product.name);
 }
 
@@ -1349,7 +1380,7 @@ function shippingDefaults(
   if (key === "manga-comic") {
     return { weight: 0.35, height: 21, width: 15, depth: 2.5, weight_unit: "kg", dimensions_unit: "cm" };
   }
-  if (key === "rol" && isBookProduct(product, key)) {
+  if (key.startsWith("rol/") && isBookProduct(product, key)) {
     return { weight: 1.2, height: 29, width: 22, depth: 3.5, weight_unit: "kg", dimensions_unit: "cm" };
   }
   if (key === "tcg/mtg" || key === "tcg/yugioh") {
@@ -1430,19 +1461,60 @@ async function setupCatalogCategoriesAndMargins(config: ConfigRow): Promise<Arra
   target_margin: number;
 }>> {
   const categories = await spreeCategories(config);
-  await ensureCategory(config, categories, "Rol", "rol");
-  await ensureCategory(config, categories, "Manga y cómic", "manga-comic");
-  await ensureCategory(config, categories, "Accesorios", "accesorios");
 
+  const juegos = await ensureCategory(config, categories, "Juegos de mesa", "juegos-de-mesa");
+  const juegosGeneral = await ensureCategory(config, categories, "General", "juegos-de-mesa/general");
+  const juegosExp = await ensureCategory(config, categories, "Expansiones", "juegos-de-mesa/expansiones");
+  const juegosInf = await ensureCategory(config, categories, "Infantil", "juegos-de-mesa/infantil");
+
+  const rol = await ensureCategory(config, categories, "Rol", "rol");
+  const rolDd = await ensureCategory(config, categories, "Dungeons & Dragons", "rol/dungeons-dragons");
+  const rolPf = await ensureCategory(config, categories, "Pathfinder", "rol/pathfinder");
+  const rolWh = await ensureCategory(config, categories, "Warhammer", "rol/warhammer");
+  const rolOtros = await ensureCategory(config, categories, "Otros juegos de rol", "rol/otros");
+
+  const tcg = await ensureCategory(config, categories, "TCG", "tcg");
+  const mtg = await ensureCategory(config, categories, "Magic: The Gathering", "tcg/mtg");
+  const yugioh = await ensureCategory(config, categories, "Yu-Gi-Oh!", "tcg/yugioh");
+
+  const manga = await ensureCategory(config, categories, "Manga y cómic", "manga-comic");
+  const accesorios = await ensureCategory(config, categories, "Accesorios", "accesorios");
+
+  const children: Array<[SpreeCategory, SpreeCategory, number]> = [
+    [juegosGeneral, juegos, 0],
+    [juegosExp, juegos, 1],
+    [juegosInf, juegos, 2],
+    [rolDd, rol, 0],
+    [rolPf, rol, 1],
+    [rolWh, rol, 2],
+    [rolOtros, rol, 3],
+    [mtg, tcg, 0],
+    [yugioh, tcg, 1],
+  ];
+  for (const [child, parent, position] of children) {
+    if (child.parent_id === parent.id) continue;
+    await spreeRequest(
+      config,
+      "PATCH",
+      "/categories/" + encodeURIComponent(child.id) + "/reposition",
+      { new_parent_id: parent.id, new_position: position },
+    );
+    child.parent_id = parent.id;
+  }
+
+  const leaves = [
+    juegosGeneral, juegosExp, juegosInf,
+    rolDd, rolPf, rolWh, rolOtros,
+    mtg, yugioh, manga, accesorios,
+  ];
   const output = [];
-  for (const [permalink, margin] of Object.entries(DEFAULT_CATEGORY_MARGINS)) {
-    const category = categories.find((item) => item.permalink === permalink);
-    if (!category) continue;
+  for (const category of leaves) {
+    const margin = DEFAULT_CATEGORY_MARGINS[category.permalink ?? ""] ?? 0.05;
     await setCategoryMargin(config, category, margin);
     output.push({
       id: category.id,
       name: category.name,
-      permalink,
+      permalink: category.permalink ?? "",
       target_margin: margin,
     });
   }
@@ -2118,7 +2190,12 @@ async function preparePublishBatch(
     let tags = Array.from(new Set([
       ...originalTags,
       "devir",
-      ...(publish ? ["devir-ready", "devir-published"] : []),
+      ...(publish ? [
+        "devir-ready",
+        "devir-published",
+        ...(rows.some((row) => row.supplier_status === "preorder") ? ["devir-preorder"] : []),
+        ...(rows.some((row) => row.supplier_status === "available") ? ["devir-buy-now"] : []),
+      ] : []),
       ...(waiting ? ["devir-waiting-stock"] : []),
       ...(human ? ["devir-review", "REVISION-HUMANA"] : []),
     ]));
@@ -2133,7 +2210,9 @@ async function preparePublishBatch(
         tag !== "devir-ready" &&
         tag !== "devir-published" &&
         tag !== "devir-review" &&
-        tag !== "REVISION-HUMANA"
+        tag !== "REVISION-HUMANA" &&
+        tag !== "devir-preorder" &&
+        tag !== "devir-buy-now"
       );
     } else {
       tags = tags.filter((tag) => tag !== "devir-ready" && tag !== "devir-published");
