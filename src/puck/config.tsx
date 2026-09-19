@@ -154,8 +154,6 @@ type HeroHomeProps = {
 
 type FeaturedProductsHomeProps = {
   title: string;
-  viewAllText: string;
-  viewAllUrl: string;
   columns: "2" | "3" | "4";
 };
 
@@ -417,7 +415,7 @@ export const config: Config<Components> = {
         title: "",
         text: "",
         primaryButtonText: "",
-        primaryButtonUrl: "/products",
+        primaryButtonUrl: "",
         secondaryButtonText: "",
         secondaryButtonUrl: "",
         tertiaryButtonText: "",
@@ -439,16 +437,6 @@ export const config: Config<Components> = {
         title: {
           type: "text",
           label: "Título",
-        },
-
-        viewAllText: {
-          type: "text",
-          label: "Texto ver todos",
-        },
-
-        viewAllUrl: {
-          type: "text",
-          label: "URL ver todos",
         },
 
         columns: {
@@ -473,8 +461,6 @@ export const config: Config<Components> = {
 
       defaultProps: {
         title: "",
-        viewAllText: "",
-        viewAllUrl: "/products",
         columns: "4",
       },
 
