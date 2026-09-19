@@ -21,6 +21,22 @@ interface ProductDetailsProps {
   basePath: string;
 }
 
+function isIsbnLike(value: string | null | undefined): boolean {
+  if (!value) return false;
+  const compact = value.replace(/[\s-]/g, "");
+  return /^(?:97[89]\d{10}|\d{9}[\dX])$/i.test(compact);
+}
+
+function cleanOptionsText(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const cleaned = value
+    .split(/\s*[,·]\s*/)
+    .filter((part) => !/\bISBN\s*(?:97[89]\d{10}|\d{9}[\dX])\b/i.test(part))
+    .join(" · ")
+    .trim();
+  return cleaned || null;
+}
+
 export function ProductDetails({ product, basePath }: ProductDetailsProps) {
   const { addItem } = useCart();
   const { currency } = useStore();
@@ -95,6 +111,8 @@ export function ProductDetails({ product, basePath }: ProductDetailsProps) {
     : null;
 
   const sku = selectedVariant?.sku ?? product.default_variant?.sku;
+  const displaySku = isIsbnLike(sku) ? null : sku;
+  const displayOptionsText = cleanOptionsText(selectedVariant?.options_text);
 
   // Purchasability
   const isPurchasable = hasVariants
@@ -287,17 +305,17 @@ export function ProductDetails({ product, basePath }: ProductDetailsProps) {
               {t("details")}
             </h2>
             <dl className="space-y-3">
-              {sku && (
+              {displaySku && (
                 <div className="flex">
                   <dt className="w-32 text-gray-500 text-sm">{t("sku")}</dt>
-                  <dd className="text-gray-900 text-sm">{sku}</dd>
+                  <dd className="text-gray-900 text-sm">{displaySku}</dd>
                 </div>
               )}
-              {selectedVariant?.options_text && (
+              {displayOptionsText && (
                 <div className="flex">
                   <dt className="w-32 text-gray-500 text-sm">{t("options")}</dt>
                   <dd className="text-gray-900 text-sm">
-                    {selectedVariant.options_text}
+                    {displayOptionsText}
                   </dd>
                 </div>
               )}
