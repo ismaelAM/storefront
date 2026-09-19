@@ -12,7 +12,9 @@ import {
   requireCartId,
   type Surface,
 } from "@/lib/spree";
+import { createSupabaseClient } from "@/lib/supabase/server";
 import { getCart } from "./cart";
+import { getCustomer } from "./customer";
 import { getOrder } from "./orders";
 import { actionResult, withFallback } from "./utils";
 import { getWholesaleChannel } from "./wholesale";
@@ -191,6 +193,90 @@ export async function applyCode(cartId: string, code: string) {
   const options = await getCartOptions(surface);
   const id = await requireCartId(surface);
   const client = getClientForSurface(surface);
+  const normalizedCode = code.trim().toUpperCase();
+
+  // Account-linked special pricing codes are requests, not percentage coupons.
+  // Once an account is approved, Spree's price list sets the exact per-SKU
+  // price needed for the configured target margin.
+  try {
+    const supabase = createSupabaseClient();
+    const { data: program } = await supabase
+      .from("special_pricing_programs")
+      .select("code,active,requires_approval")
+      .eq("code", normalizedCode)
+      .eq("active", true)
+      .maybeSingle();
+
+    if (program) {
+      const customer = await getCustomer();
+      if (!customer) {
+        return {
+          success: false,
+          error: "Inicia sesión para solicitar este precio especial.",
+        } as const;
+      }
+
+      const { data: currentRequest, error: requestReadError } = await supabase
+        .from("special_pricing_requests")
+        .select("id,status")
+        .eq("program_code", program.code)
+        .eq("spree_customer_id", customer.id)
+        .maybeSingle();
+      if (requestReadError) throw requestReadError;
+
+      if (currentRequest?.status === "approved") {
+        // Any cart write runs Spree's pricing pipeline again, causing the
+        // approved customer price list to be selected immediately.
+        const cart = await client.carts.update(id, {}, options);
+        updateTag(checkoutTag(surface));
+        updateTag(cartTag(surface));
+        return {
+          success: true,
+          cart,
+          type: "special_pricing" as const,
+          notice: "Precio especial de cuenta aplicado.",
+        };
+      }
+
+      const now = new Date().toISOString();
+      if (currentRequest) {
+        const { error: requestUpdateError } = await supabase
+          .from("special_pricing_requests")
+          .update({
+            status: "pending",
+            requested_at: now,
+            decided_at: null,
+            note: null,
+            updated_at: now,
+          })
+          .eq("id", currentRequest.id);
+        if (requestUpdateError) throw requestUpdateError;
+      } else {
+        const { error: requestInsertError } = await supabase
+          .from("special_pricing_requests")
+          .insert({
+            program_code: program.code,
+            spree_customer_id: customer.id,
+            email: customer.email,
+            status: program.requires_approval ? "pending" : "approved",
+            requested_at: now,
+            updated_at: now,
+          });
+        if (requestInsertError) throw requestInsertError;
+      }
+
+      return {
+        success: false,
+        notice: program.requires_approval
+          ? "Solicitud enviada. El precio especial se activará en tu cuenta cuando sea aprobado."
+          : "Precio especial vinculado a tu cuenta.",
+      } as const;
+    }
+  } catch (specialPricingError) {
+    // A failure in the private pricing-program lookup should not break normal
+    // Spree coupons or gift cards.
+    console.error("Special pricing code lookup failed", specialPricingError);
+  }
 
   // Try discount code first (more common)
   try {
