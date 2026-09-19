@@ -633,5 +633,13 @@
       "signInForPricing": "Zaloguj się, aby zobaczyć ceny",
       "signInToOrder": "Zaloguj się, aby zamówić"
     }
+  },
+  "cookies": {
+    "title": "Prywatność i pliki cookie",
+    "description": "Korzystamy z niezbędnego zapisu technicznego. Opcjonalne technologie analityczne włączamy wyłącznie za Twoją zgodą.",
+    "learnMore": "Przeczytaj politykę prywatności",
+    "reject": "Odrzuć",
+    "accept": "Akceptuj",
+    "preferences": "Ustawienia cookies"
   }
 }
