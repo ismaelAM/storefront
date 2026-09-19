@@ -1283,14 +1283,19 @@ async function categorizeDraftBatch(
     const patch = async () => {
       await spreeRequest(config, "PATCH", "/products/" + encodeURIComponent(productId), {
         category_ids: [category.id],
-        variants: [{
-          id: variantId,
+      });
+      await spreeRequest(
+        config,
+        "PATCH",
+        "/products/" + encodeURIComponent(productId) +
+          "/variants/" + encodeURIComponent(variantId),
+        {
           sku: product.sku,
           cost_price: product.purchasePrice,
           cost_currency: "EUR",
           prices: [{ currency: "EUR", amount: pricing.retail }],
-        }],
-      });
+        },
+      );
     };
 
     try {
