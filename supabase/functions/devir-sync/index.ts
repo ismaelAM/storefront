@@ -720,6 +720,18 @@ async function spreeRequest<T>(
   return payload as T;
 }
 
+async function ensureProductsInCategories(
+  config: ConfigRow,
+  productIds: string[],
+  categoryIds: string[],
+): Promise<void> {
+  if (productIds.length === 0 || categoryIds.length === 0) return;
+  await spreeRequest(config, "POST", "/products/bulk_add_to_categories", {
+    ids: productIds,
+    category_ids: categoryIds,
+  });
+}
+
 async function spreeList<T>(config: ConfigRow, path: string): Promise<T[]> {
   const sep = path.includes("?") ? "&" : "?";
   const payload = await spreeRequest<{ data?: T[] }>(config, "GET", path + sep + "limit=100");
@@ -1645,6 +1657,7 @@ async function rebuildMangaGroup(
       ...(anyPreorder ? ["devir-preorder"] : []),
     ],
   });
+  await ensureProductsInCategories(config, [created.id], [category.id]);
 
   const imageSource = rows.map(catalogRowProduct).find((product) => product.imageUrls.length);
   if (imageSource) {
@@ -1815,6 +1828,7 @@ async function migrateLanguageGroup(
       ...(anyPreorder ? ["devir-preorder"] : []),
     ],
   });
+  await ensureProductsInCategories(config, [created.id], [category.id]);
 
   const imageSource = products.find((product) => product.imageUrls.length);
   if (imageSource) await syncImages(config, created.id, imageSource);
