@@ -46,7 +46,7 @@ export function RealProductShowcase({ productPosition, description, badge, butto
             ) : (
               <div className="flex h-full w-full items-center justify-center bg-muted text-muted-foreground"><span className="px-6 text-center text-sm">Imagen no disponible</span></div>
             )}
-            {badge && <span className="absolute left-3 top-3 rounded-full bg-black px-3 py-1.5 text-xs font-semibold text-white sm:left-5 sm:top-5 sm:px-4 sm:py-2 sm:text-sm">{badge}</span>}
+            {(product.preorder || badge) && <span className="absolute left-3 top-3 rounded-full bg-black px-3 py-1.5 text-xs font-semibold text-white sm:left-5 sm:top-5 sm:px-4 sm:py-2 sm:text-sm">{product.preorder ? "Prereserva" : badge}</span>}
           </div>
         </div>
         <div className={`${alignmentClass} max-w-xl ${alignment === "center" ? "mx-auto" : ""}`}>
@@ -56,7 +56,7 @@ export function RealProductShowcase({ productPosition, description, badge, butto
             <span className="text-2xl font-bold sm:text-3xl" style={{ color: priceColor }}>{product.price?.display_amount ?? ""}</span>
             {product.original_price?.display_amount && product.original_price.display_amount !== product.price?.display_amount && <span className="text-base text-gray-400 line-through sm:text-lg">{product.original_price.display_amount}</span>}
           </div>
-          {buttonText && <Link href={productUrl} className="mt-7 inline-flex w-full items-center justify-center rounded-md px-6 py-3.5 font-semibold transition-opacity hover:opacity-80 sm:mt-8 sm:w-auto sm:px-7 sm:py-4" style={{ backgroundColor: buttonColor, color: buttonTextColor }}>{buttonText}</Link>}
+          {buttonText && <Link href={productUrl} className="mt-7 inline-flex w-full items-center justify-center rounded-md px-6 py-3.5 font-semibold transition-opacity hover:opacity-80 sm:mt-8 sm:w-auto sm:px-7 sm:py-4" style={{ backgroundColor: buttonColor, color: buttonTextColor }}>{product.preorder ? "Reservar" : buttonText}</Link>}
         </div>
       </div>
     </section>
