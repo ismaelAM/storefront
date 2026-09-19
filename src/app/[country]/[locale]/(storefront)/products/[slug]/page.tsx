@@ -69,10 +69,16 @@ export default async function ProductPage({
       )
     : undefined;
 
-  const breadcrumbCategory = findBreadcrumbCategory(
-    product.categories || [],
-    category_id,
-  );
+  let breadcrumbCategory: Category | undefined;
+  if (category_id) {
+    try {
+      breadcrumbCategory = await getCachedCategory(category_id, ["ancestors"]);
+    } catch {
+      breadcrumbCategory = undefined;
+    }
+  } else {
+    breadcrumbCategory = findBreadcrumbCategory(product.categories || []);
+  }
 
   const fallbackData: Data = {
     content: [],
