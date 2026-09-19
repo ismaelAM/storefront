@@ -1784,6 +1784,27 @@ async function operatorAction(
     return json({ ok: true, requested: true });
   }
 
+  if (action === "inspect-devir-source") {
+    const url = typeof body.url === "string" ? body.url.trim() : "";
+    if (!url || !url.startsWith(config.base_url)) return json({ error: "invalid_devir_url" }, 400);
+    const html = await devirFetch(config, url);
+    const product = parseProduct(html, url);
+    const snippets = Array.from(
+      new Set(
+        Array.from(html.matchAll(/.{0,180}(?:Disponibilidad|stock|is_in_stock|isInStock|tocart|AddToCart|salable|saleable).{0,260}/gi))
+          .map((match) => stripHtml(match[0]).slice(0, 500))
+          .filter(Boolean),
+      ),
+    ).slice(0, 20);
+    return json({
+      ok: true,
+      final_url: url,
+      product,
+      has_add_to_cart: /tocart|AddToCart|product-add-form|action\s+primary\s+tocart/i.test(html),
+      snippets,
+    });
+  }
+
   if (action === "special-pricing-setup") {
     const code = typeof body.code === "string" ? body.code.trim().toUpperCase() : "BISON3";
     return json({ ok: true, ...(await syncSpecialPricingProgram(config, code, true)) });
