@@ -5,7 +5,11 @@ import { notFound } from "next/navigation";
 import { Breadcrumbs } from "@/components/navigation/Breadcrumbs";
 import { ProductPuckRenderer } from "@/components/puck/ProductPuckRenderer";
 import { JsonLd } from "@/components/seo/JsonLd";
-import { getCachedProduct, PRODUCT_PAGE_EXPAND } from "@/lib/data/cached";
+import {
+  getCachedCategory,
+  getCachedProduct,
+  PRODUCT_PAGE_EXPAND,
+} from "@/lib/data/cached";
 import { generateProductMetadata } from "@/lib/metadata/product";
 import { getProductPageData } from "@/lib/puck/get-product-data";
 import {
