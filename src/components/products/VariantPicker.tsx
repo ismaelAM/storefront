@@ -1,13 +1,17 @@
 "use client";
 
 import type { OptionType, Variant } from "@spree/sdk";
+
+type PickerOptionType = Pick<OptionType, "id" | "label"> & {
+  kind?: OptionType["kind"];
+};
 import { useTranslations } from "next-intl";
 import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
 
 interface VariantPickerProps {
   variants: Variant[];
-  optionTypes: OptionType[];
+  optionTypes: PickerOptionType[];
   selectedVariant: Variant | null;
   onVariantChange: (variant: Variant | null) => void;
 }
@@ -19,10 +23,48 @@ export function VariantPicker({
   onVariantChange,
 }: VariantPickerProps) {
   const t = useTranslations("products");
+
+  const effectiveOptionTypes = useMemo<PickerOptionType[]>(() => {
+    if (optionTypes.length > 0) {
+      return optionTypes;
+    }
+
+    const derived = new Map<string, PickerOptionType>();
+
+    for (const variant of variants) {
+      for (const optionValue of variant.option_values || []) {
+        if (derived.has(optionValue.option_type_id)) {
+          continue;
+        }
+
+        const metadata = optionValue as typeof optionValue & {
+          option_type_label?: string | null;
+          option_type_name?: string | null;
+          option_type_presentation?: string | null;
+        };
+        const rawName =
+          metadata.option_type_label ||
+          metadata.option_type_presentation ||
+          metadata.option_type_name ||
+          "";
+        const label = rawName
+          ? rawName.charAt(0).toUpperCase() + rawName.slice(1)
+          : "Opción";
+
+        derived.set(optionValue.option_type_id, {
+          id: optionValue.option_type_id,
+          label,
+        });
+      }
+    }
+
+    return Array.from(derived.values());
+  }, [optionTypes, variants]);
+
   const optionValuesMap = useMemo(() => {
     const map: Record<string, Set<string>> = {};
 
-    optionTypes.forEach((optionType) => {
+    effectiveOptionTypes.forEach((optionType) => {
       map[optionType.id] = new Set();
     });
 
@@ -35,7 +77,7 @@ export function VariantPicker({
     });
 
     return map;
-  }, [variants, optionTypes]);
+  }, [variants, effectiveOptionTypes]);
 
   const selectedOptions = useMemo(() => {
     const options: Record<string, string> = {};
@@ -122,13 +164,13 @@ export function VariantPicker({
     return optionValueDetailsMap[`${optionTypeId}:${optionValueName}`] || null;
   };
 
-  if (optionTypes.length === 0) {
+  if (effectiveOptionTypes.length === 0) {
     return null;
   }
 
   return (
     <div className="space-y-6">
-      {optionTypes.map((optionType) => {
+      {effectiveOptionTypes.map((optionType) => {
         const values = Array.from(optionValuesMap[optionType.id] || []);
         const selectedValue = selectedOptions[optionType.id];
         const isColor = optionType.kind === "color_swatch";
