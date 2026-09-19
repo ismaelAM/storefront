@@ -571,7 +571,10 @@ async function spreeRequest<T>(
   });
   const text = await response.text();
 
-  if (response.status === 429 && attempt < 4) {
+  if (
+    (response.status === 429 || [500, 502, 503, 504].includes(response.status)) &&
+    attempt < 4
+  ) {
     const retryAfter = Number(response.headers.get("retry-after"));
     const waitMs = Number.isFinite(retryAfter) && retryAfter > 0
       ? retryAfter * 1000
@@ -1198,7 +1201,13 @@ async function categorizeDraftBatch(
   config: ConfigRow,
   offset: number,
   limit: number,
-): Promise<{ processed: number; updated: number; repriced: number; next_offset: number | null }> {
+): Promise<{
+  processed: number;
+  updated: number;
+  repriced: number;
+  failed: number;
+  next_offset: number | null;
+}> {
   const categories = await spreeCategories(config);
   const { data, error } = await supabase
     .from("devir_sync_catalog")
@@ -1214,7 +1223,6 @@ async function categorizeDraftBatch(
   );
   const products = new Map<string, SpreeProduct | null>();
 
-  // Resolve parent status once per product, in bounded concurrent chunks.
   for (let index = 0; index < productIds.length; index += 5) {
     const chunk = productIds.slice(index, index + 5);
     await Promise.all(
@@ -1237,12 +1245,14 @@ async function categorizeDraftBatch(
 
   let updated = 0;
   let repriced = 0;
+  let failed = 0;
 
   const processRow = async (row: Record<string, unknown>) => {
     const productId = String(row.spree_product_id ?? "");
-    const variantId = String(row.spree_variant_id ?? "");
+    let variantId = String(row.spree_variant_id ?? "");
+    const sku = String(row.supplier_sku ?? "");
     const spreeProduct = products.get(productId);
-    if (!productId || !variantId || !spreeProduct) return;
+    if (!productId || !variantId || !sku || !spreeProduct) return;
     if (spreeProduct.status !== "draft" || !(spreeProduct.tags ?? []).includes("devir")) return;
 
     const snapshot = row.snapshot && typeof row.snapshot === "object"
@@ -1250,7 +1260,7 @@ async function categorizeDraftBatch(
       : null;
     const cost = Number(snapshot?.purchasePrice);
     const product: DevirProduct = {
-      sku: String(row.supplier_sku),
+      sku,
       name: String(row.name),
       url: String(row.source_url),
       purchasePrice: Number.isFinite(cost) ? cost : null,
@@ -1270,35 +1280,71 @@ async function categorizeDraftBatch(
       key === "manga-comic" ? 0.95 : 0.99,
     );
 
-    await spreeRequest(config, "PATCH", "/products/" + encodeURIComponent(productId), {
-      category_ids: [category.id],
-      variants: [{
-        id: variantId,
-        sku: product.sku,
-        cost_price: product.purchasePrice,
-        cost_currency: "EUR",
-        prices: [{ currency: "EUR", amount: pricing.retail }],
-      }],
-    });
+    const patch = async () => {
+      await spreeRequest(config, "PATCH", "/products/" + encodeURIComponent(productId), {
+        category_ids: [category.id],
+        variants: [{
+          id: variantId,
+          sku: product.sku,
+          cost_price: product.purchasePrice,
+          cost_currency: "EUR",
+          prices: [{ currency: "EUR", amount: pricing.retail }],
+        }],
+      });
+    };
 
-    const { error: catalogUpdateError } = await supabase
-      .from("devir_sync_catalog")
-      .update({
-        last_auto_price: pricing.retail,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("supplier_sku", product.sku);
-    if (catalogUpdateError) throw catalogUpdateError;
+    try {
+      try {
+        await patch();
+      } catch (patchError) {
+        const message = patchError instanceof Error ? patchError.message : String(patchError);
+        if (!/variant_not_found|Variant no encontrado/i.test(message)) throw patchError;
 
-    updated += 1;
-    repriced += 1;
+        const variants = await spreeList<SpreeVariant>(
+          config,
+          "/products/" + encodeURIComponent(productId) + "/variants",
+        );
+        const repaired = variants.find((variant) => variant.sku?.trim() === sku);
+        if (!repaired) throw patchError;
+
+        variantId = repaired.id;
+        const { error: repairError } = await supabase
+          .from("devir_sync_catalog")
+          .update({ spree_variant_id: variantId, updated_at: new Date().toISOString() })
+          .eq("supplier_sku", sku);
+        if (repairError) throw repairError;
+        await patch();
+      }
+
+      const { error: catalogUpdateError } = await supabase
+        .from("devir_sync_catalog")
+        .update({
+          spree_variant_id: variantId,
+          last_auto_price: pricing.retail,
+          last_error: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("supplier_sku", product.sku);
+      if (catalogUpdateError) throw catalogUpdateError;
+
+      updated += 1;
+      repriced += 1;
+    } catch (rowError) {
+      failed += 1;
+      await supabase
+        .from("devir_sync_catalog")
+        .update({
+          last_error: rowError instanceof Error ? rowError.message : String(rowError),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("supplier_sku", product.sku);
+    }
   };
 
   for (let index = 0; index < rows.length; index += 5) {
     await Promise.all(
       rows.slice(index, index + 5).map((row) => processRow(row as Record<string, unknown>)),
     );
-    // Stay comfortably below Spree Cloud's burst limit.
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
 
@@ -1306,6 +1352,7 @@ async function categorizeDraftBatch(
     processed: rows.length,
     updated,
     repriced,
+    failed,
     next_offset: rows.length < limit ? null : offset + limit,
   };
 }
