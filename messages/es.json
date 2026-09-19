@@ -192,7 +192,7 @@
     "preorder": "PRERESERVA",
     "preorderAction": "Reservar ahora",
     "preorderShipsAt": "Envío previsto: {date}",
-    "availableToOrder": "Disponible por encargo",
+    "availableToOrder": "Disponible · Te lo pedimos para ti",
     "preorderHelp": "Reserva ahora; se enviará cuando llegue la fecha de lanzamiento."
   },
   "navigation": {
