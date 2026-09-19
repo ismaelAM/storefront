@@ -164,13 +164,20 @@ export async function selectDeliveryRate(
     const surface = await resolveSurfaceForCart(cartId);
     const options = await getCartOptions(surface);
     const id = await requireCartId(surface);
-    const cart = await getClientForSurface(surface).carts.fulfillments.update(
+    const client = getClientForSurface(surface);
+    await client.carts.fulfillments.update(
       id,
       fulfillmentId,
       { selected_delivery_rate_id: deliveryRateId },
       options,
     );
+
+    // Spree updates the fulfillment in-place but does not return the
+    // recalculated cart from this endpoint. Read the cart again so delivery
+    // total, taxes and grand total reflect the selected rate immediately.
+    const cart = await client.carts.get(id, options);
     updateTag(checkoutTag(surface));
+    updateTag(cartTag(surface));
     return { cart };
   }, "Failed to select delivery rate");
 }
