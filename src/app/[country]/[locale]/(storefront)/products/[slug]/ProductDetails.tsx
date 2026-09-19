@@ -209,7 +209,7 @@ export function ProductDetails({ product, basePath }: ProductDetailsProps) {
           </div>
 
           {/* Variant Picker */}
-          {hasVariants && optionTypes.length > 0 && (
+          {hasVariants && (
             <div className="mt-8">
               <VariantPicker
                 variants={variants}
