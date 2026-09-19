@@ -188,7 +188,10 @@
     "properties": "Propiedades",
     "yes": "Si",
     "no": "No",
-    "optionFilterChip": "{filter}: {value}"
+    "optionFilterChip": "{filter}: {value}",
+    "preorder": "Prereserva",
+    "preorderAction": "Reservar",
+    "preorderShipsAt": "Envío previsto: {date}"
   },
   "navigation": {
     "home": "Inicio",
