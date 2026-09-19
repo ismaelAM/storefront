@@ -699,6 +699,94 @@ async function syncImages(config: ConfigRow, productId: string, product: DevirPr
   return uploaded;
 }
 
+async function appendToExistingGroupedProduct(
+  config: ConfigRow,
+  product: DevirProduct,
+  grouping: GroupingInfo,
+  retailPrice: number,
+): Promise<{ product: SpreeProduct; variant: SpreeVariant } | null> {
+  if (!grouping.groupKey || grouping.itemKind !== "variant_candidate") return null;
+
+  const { data, error } = await supabase
+    .from("devir_sync_catalog")
+    .select("spree_product_id,variant_label,variant_position")
+    .eq("group_key", grouping.groupKey)
+    .not("spree_product_id", "is", null)
+    .limit(100);
+  if (error) throw error;
+
+  const candidateIds = Array.from(
+    new Set((data ?? []).map((row) => row.spree_product_id).filter(Boolean)),
+  ) as string[];
+
+  for (const productId of candidateIds) {
+    let parent: SpreeProduct;
+    try {
+      parent = await spreeRequest<SpreeProduct>(
+        config,
+        "GET",
+        "/products/" + encodeURIComponent(productId),
+      );
+    } catch {
+      continue;
+    }
+
+    if (!(parent.tags ?? []).includes("devir-group")) continue;
+
+    const variants = await spreeList<SpreeVariant>(
+      config,
+      "/products/" + encodeURIComponent(productId) + "/variants",
+    );
+    const already = variants.find((variant) => variant.sku?.trim() === product.sku);
+    if (already) return { product: parent, variant: already };
+
+    const existingRows = data ?? [];
+    const positionCounts = new Map<number, number>();
+    for (const row of existingRows) {
+      const pos = Number(row.variant_position ?? -1);
+      positionCounts.set(pos, (positionCounts.get(pos) ?? 0) + 1);
+    }
+    const hasEditionDimension =
+      existingRows.some((row) => Boolean(variantEdition(row.variant_label))) ||
+      Array.from(positionCounts.values()).some((count) => count > 1) ||
+      Boolean(variantEdition(grouping.variantLabel));
+
+    const position = Number(grouping.variantPosition ?? 0);
+    const edition = variantEdition(grouping.variantLabel) ?? "Estándar";
+    const options = [
+      { name: "tomo", value: String(position).padStart(2, "0") },
+      ...(hasEditionDimension ? [{ name: "edicion", value: edition }] : []),
+    ];
+
+    // If the existing group has only the tomo option and the incoming SKU
+    // introduces a special edition for an existing tomo, do not silently
+    // reshape all variants. Leave it separate for operator review.
+    if (
+      !hasEditionDimension &&
+      existingRows.some((row) => Number(row.variant_position) === position)
+    ) {
+      return null;
+    }
+
+    const created = await spreeRequest<SpreeVariant>(
+      config,
+      "POST",
+      "/products/" + encodeURIComponent(productId) + "/variants",
+      {
+        sku: product.sku,
+        cost_price: product.purchasePrice,
+        cost_currency: "EUR",
+        track_inventory: true,
+        options,
+        prices: [{ currency: "EUR", amount: retailPrice }],
+      },
+    );
+    return { product: parent, variant: created };
+  }
+
+  return null;
+}
+
 async function syncProductToSpree(
   config: ConfigRow,
   product: DevirProduct,
@@ -716,7 +804,28 @@ async function syncProductToSpree(
   else if (configuredMargin === null) reasons.push("category_margin_unconfigured");
   if (isPack(product)) reasons.push("pack_requires_operator_split");
   const review = reasons.length > 0;
-  const existing = await findSpreeProduct(config, product.sku);
+  const grouping = groupingInfo(product);
+  let existing = await findSpreeProduct(config, product.sku);
+  let grouped = false;
+
+  if (!existing && grouping.itemKind === "variant_candidate" && grouping.groupKey) {
+    const groupedMatch = await appendToExistingGroupedProduct(
+      config,
+      product,
+      grouping,
+      pricing.retail,
+    );
+    if (groupedMatch) {
+      existing = groupedMatch;
+      grouped = true;
+    }
+  } else if (
+    existing &&
+    (existing.product.tags ?? []).includes("devir-group")
+  ) {
+    grouped = true;
+  }
+
   let productId: string;
   let variantId: string | null = null;
   let manualPrice = false;
@@ -748,13 +857,13 @@ async function syncProductToSpree(
     const managed = (existing.product.tags ?? []).includes("devir");
     const active = existing.product.status === "active";
     const autoPrice = Number.isFinite(lastAuto) && currentPrice !== null && Math.abs(lastAuto - currentPrice) < 0.005;
-    const canWritePrice = managed && !active && autoPrice;
+    const canWritePrice = managed && !active && !grouped && autoPrice;
     manualPrice = currentPrice !== null && !canWritePrice;
     const tags = Array.from(new Set([...(existing.product.tags ?? []), "devir", review ? "devir-review" : "devir-ready"]))
       .filter((tag) => review ? tag !== "devir-ready" : tag !== "devir-review");
     await spreeRequest(config, "PATCH", "/products/" + productId, {
       tags,
-      ...(!active && managed ? { name: product.name } : {}),
+      ...(!active && managed && !grouped ? { name: product.name } : {}),
       variants: [{
         id: existing.variant.id,
         sku: product.sku,
@@ -768,11 +877,11 @@ async function syncProductToSpree(
   const effectivePrice = existing && manualPrice ? variantPrice(existing.variant) ?? pricing.retail : pricing.retail;
   const effectiveMargin = (effectivePrice - pricing.grossCost) / effectivePrice;
   await upsertProductFields(config, productId, defs, {
-    "devir.supplier_sku": product.sku,
-    "devir.source_url": product.url,
+    "devir.supplier_sku": grouped ? undefined : product.sku,
+    "devir.source_url": grouped ? undefined : product.url,
     "devir.category_key": key ?? undefined,
-    "devir.availability": product.availability,
-    "devir.release_date": product.releaseDate ?? undefined,
+    "devir.availability": grouped ? undefined : product.availability,
+    "devir.release_date": grouped ? undefined : product.releaseDate ?? undefined,
     "devir.review_status": review ? "review_required" : "ready",
     "devir.review_reasons": reasons.length ? reasons.join(", ") : "none",
     "devir.last_sync_at": new Date().toISOString(),
