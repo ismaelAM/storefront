@@ -78,6 +78,11 @@ export const ProductCard = memo(function ProductCard({
             {t("sale")}
           </span>
         )}
+        {product.preorder && (
+          <span className="absolute top-2 right-2 bg-amber-100 text-amber-800 text-xs font-medium px-2 py-1 rounded">
+            {t("preorder")}
+          </span>
+        )}
       </div>
 
       {/* Content */}
@@ -112,9 +117,13 @@ export const ProductCard = memo(function ProductCard({
           )}
         </div>
 
-        {!product.purchasable && (
+        {product.preorder ? (
+          <span className="mt-2 text-sm font-medium text-amber-700">
+            {t("preorder")}
+          </span>
+        ) : !product.purchasable ? (
           <span className="mt-2 text-sm text-gray-500">{t("outOfStock")}</span>
-        )}
+        ) : null}
       </div>
     </div>
   );
