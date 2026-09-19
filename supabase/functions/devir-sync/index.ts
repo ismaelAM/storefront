@@ -844,14 +844,17 @@ async function syncProductToSpree(
   const key = categoryKey(product);
   const category = key ? categories.find((c) => c.permalink === key) ?? null : null;
   const configuredMargin = await categoryMargin(config, category);
-  const targetMargin = configuredMargin ?? 0.25;
-  const pricing = priceFor(product.purchasePrice, targetMargin, key === "manga-comic" ? 0.95 : 0.99);
+  const targetMargin = configuredMargin ?? DEFAULT_CATEGORY_MARGINS[key] ?? 0.05;
+  const pricing = competitivePricing(product, key, targetMargin);
+  const shipping = shippingDefaults(key, product);
   const reasons: string[] = [];
-  if (!key || !category) reasons.push("category_unclassified");
+  if (!category) reasons.push("category_unclassified");
   else if (configuredMargin === null) reasons.push("category_margin_unconfigured");
+  if (pricing.reviewReason) reasons.push(pricing.reviewReason);
   if (isPack(product)) reasons.push("pack_requires_operator_split");
-  const review = reasons.length > 0;
   const grouping = groupingInfo(product);
+  if (grouping.confidence === "ambiguous") reasons.push("grouping_requires_operator_review");
+  const review = reasons.length > 0;
   let existing = await findSpreeProduct(config, product.sku);
   let grouped = false;
 
@@ -881,14 +884,16 @@ async function syncProductToSpree(
     const created = await spreeRequest<SpreeProduct>(config, "POST", "/products", {
       name: product.name,
       status: "draft",
-      tags: ["devir", review ? "devir-review" : "devir-ready"],
+      tags: ["devir", review ? "devir-review" : "devir-ready", ...(review ? ["REVISION-HUMANA"] : [])],
       ...(category ? { category_ids: [category.id] } : {}),
       variants: [{
         options: [],
         sku: product.sku,
         cost_price: product.purchasePrice,
         cost_currency: "EUR",
+        ...shipping,
         track_inventory: true,
+        backorder_limit: null,
         prices: [{ currency: "EUR", amount: pricing.retail }],
       }],
     });
@@ -913,37 +918,58 @@ async function syncProductToSpree(
     const autoPrice = Number.isFinite(lastAuto) && currentPrice !== null && Math.abs(lastAuto - currentPrice) < 0.005;
     const canWritePrice = managed && !active && autoPrice;
     manualPrice = currentPrice !== null && !canWritePrice;
-    const tags = Array.from(new Set([...(existing.product.tags ?? []), "devir", review ? "devir-review" : "devir-ready"]))
-      .filter((tag) => review ? tag !== "devir-ready" : tag !== "devir-review");
+    const tags = Array.from(new Set([
+      ...(existing.product.tags ?? []),
+      "devir",
+      review ? "devir-review" : "devir-ready",
+      ...(review ? ["REVISION-HUMANA"] : []),
+    ])).filter((tag) =>
+      review
+        ? tag !== "devir-ready"
+        : tag !== "devir-review" && tag !== "REVISION-HUMANA"
+    );
     await spreeRequest(config, "PATCH", "/products/" + productId, {
       tags,
       ...(!active && managed && !grouped ? { name: product.name } : {}),
-      ...(!active && managed && category ? { category_ids: [category.id] } : {}),
-      variants: [{
-        id: existing.variant.id,
+      ...(!active && managed && !grouped && category ? { category_ids: [category.id] } : {}),
+    });
+    await spreeRequest(
+      config,
+      "PATCH",
+      "/products/" + encodeURIComponent(productId) +
+        "/variants/" + encodeURIComponent(existing.variant.id),
+      {
         sku: product.sku,
         cost_price: product.purchasePrice,
         cost_currency: "EUR",
+        ...shipping,
+        track_inventory: true,
+        backorder_limit: null,
         ...(canWritePrice ? { prices: [{ currency: "EUR", amount: pricing.retail }] } : {}),
-      }],
-    });
+      },
+    );
   }
 
   const effectivePrice = existing && manualPrice ? variantPrice(existing.variant) ?? pricing.retail : pricing.retail;
-  const effectiveMargin = (effectivePrice - pricing.grossCost) / effectivePrice;
+  const stripeFee = effectivePrice * STANDARD_EEA_CARD_RATE + STANDARD_EEA_CARD_FIXED_EUR;
+  const effectiveProfit =
+    (effectivePrice / (1 + pricing.vatRate)) -
+    product.purchasePrice -
+    stripeFee;
+  const effectiveMargin = effectivePrice > 0 ? effectiveProfit / effectivePrice : 0;
   await upsertProductFields(config, productId, defs, {
     "devir.supplier_sku": grouped ? undefined : product.sku,
     "devir.source_url": grouped ? undefined : product.url,
-    "devir.category_key": key ?? undefined,
+    "devir.category_key": key,
     "devir.availability": grouped ? undefined : product.availability,
     "devir.release_date": grouped ? undefined : product.releaseDate ?? undefined,
-    "devir.review_status": review ? "review_required" : "ready",
+    "devir.review_status": review ? "⚠ REVISIÓN HUMANA" : "LISTO",
     "devir.review_reasons": reasons.length ? reasons.join(", ") : "none",
     "devir.last_sync_at": new Date().toISOString(),
     "pricing.applied_margin": targetMargin,
     "pricing.effective_margin": effectiveMargin,
-    "pricing.rule_source": configuredMargin !== null && category ? "spree_category:" + category.id : "default_reference",
-    "pricing.vat_rate": 0.21,
+    "pricing.rule_source": pricing.ruleSource + (category ? ":category=" + category.id : ""),
+    "pricing.vat_rate": pricing.vatRate,
     "pricing.cost_includes_vat": false,
     "pricing.last_synced_price": manualPrice ? undefined : pricing.retail,
     "pricing.manual_price_override": manualPrice,
