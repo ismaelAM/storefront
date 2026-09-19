@@ -29,7 +29,11 @@ export default async function HomePage({ params }: HomePageProps) {
 
   try {
     const response = await cachedListProducts(
-      { limit: 8, fields: PRODUCT_CARD_FIELDS },
+      {
+        limit: 8,
+        fields: PRODUCT_CARD_FIELDS,
+        tags_name_in: ["featured", "sale"],
+      },
       { locale, country },
       "dtc",
       userToken,
