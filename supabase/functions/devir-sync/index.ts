@@ -1791,7 +1791,7 @@ async function operatorAction(
     const product = parseProduct(html, url);
     const snippets = Array.from(
       new Set(
-        Array.from(html.matchAll(/.{0,180}(?:Disponibilidad|stock|is_in_stock|isInStock|tocart|AddToCart|salable|saleable).{0,260}/gi))
+        Array.from(html.matchAll(/.{0,180}(?:Disponibilidad|stock|is_in_stock|isInStock|tocart|AddToCart|salable|saleable|data-price|price-box|old-price|special-price|regular-price).{0,320}/gi))
           .map((match) => stripHtml(match[0]).slice(0, 500))
           .filter(Boolean),
       ),
