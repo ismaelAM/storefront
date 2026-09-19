@@ -1236,8 +1236,20 @@ function isBookProduct(product: DevirProduct, key: string): boolean {
   return /manual|gu[ií]a|libro|compendio|aventura|campaña|bestiario|suplemento|reglamento|pantalla de direcci[oó]n|d&d|dungeons|pathfinder|warhammer/i.test(product.name);
 }
 
-function roundUpToFiveCents(value: number): number {
-  return Math.ceil((value * 20) - 1e-9) / 20;
+function roundUpToProfessionalPrice(value: number): number {
+  // Keep the profitability floor untouched: choose the first clean retail
+  // ending at or above it instead of mathematically rounding down.
+  const euros = Math.floor(value);
+  const endings = [0.50, 0.90, 0.95, 0.99, 1.00];
+
+  for (const ending of endings) {
+    const candidate = euros + ending;
+    if (candidate + 1e-9 >= value) {
+      return Math.round(candidate * 100) / 100;
+    }
+  }
+
+  return Math.ceil(value * 100 - 1e-9) / 100;
 }
 
 function paymentAwareFloor(
@@ -1303,7 +1315,7 @@ function competitivePricing(
     // reviewReason above keeps the product in draft.
     retail = Math.min(retail, Math.round(referenceGross * 100) / 100);
   } else {
-    retail = roundUpToFiveCents(raw);
+    retail = roundUpToProfessionalPrice(raw);
   }
 
   const stripeFee = retail * STANDARD_EEA_CARD_RATE + STANDARD_EEA_CARD_FIXED_EUR;
