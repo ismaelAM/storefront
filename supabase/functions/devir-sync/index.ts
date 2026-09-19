@@ -578,15 +578,15 @@ function categoryKey(product: DevirProduct): string {
 
   // RPG brands are resolved before card-game keywords. A title containing
   // "magia"/"magic items" must never become MTG just because of that word.
-  if (/pathfinder/.test(value)) return "rol-pathfinder";
+  if (/pathfinder/.test(value)) return "rol/pathfinder";
   if (/d&d|dungeons\s*&?\s*dragons|forgotten realms|dragonlance/.test(value)) {
-    return "rol-dungeons-dragons";
+    return "rol/dungeons-dragons";
   }
-  if (/warhammer/.test(value)) return "rol-warhammer";
+  if (/warhammer/.test(value)) return "rol/warhammer";
   if (
     /vampiro|cthulhu|runequest|forbidden\s+lands|blade\s*runner|alien.*rol|candela\s+obscura|broken\s+tales|juego\s+de\s+rol|roleplaying|rpg\b|libro\s+b[aá]sico|pantalla\s+de\s+direcci[oó]n/.test(value)
   ) {
-    return "rol-otros";
+    return "rol/otros";
   }
 
   if (
@@ -606,19 +606,19 @@ function categoryKey(product: DevirProduct): string {
   }
 
   if (/expansi[oó]n|expansion|\bexp\.|ampliaci[oó]n|big\s*box/.test(value)) {
-    return "juegos-expansiones";
+    return "juegos-de-mesa/expansiones";
   }
   if (/junior|infantil|primaria|secundaria|kids|niñ[oa]s/.test(value)) {
-    return "juegos-infantil";
+    return "juegos-de-mesa/infantil";
   }
-  return "juegos-general";
+  return "juegos-de-mesa/general";
 }
 
 function isFixedPriceCandidate(product: DevirProduct, key: string): boolean {
   const digits = product.sku.replace(/\D/g, "");
   if (/^(978|979)\d{10}$/.test(digits)) return true;
   if (key === "manga-comic") return true;
-  if (key === "rol") {
+  if (key.startsWith("rol/")) {
     return /manual|gu[ií]a|libro|compendio|aventura|campaña|bestiario|reglamento|suplemento/i.test(product.name);
   }
   return false;
@@ -632,7 +632,7 @@ function shippingEstimate(product: DevirProduct, key: string): {
 } {
   const value = product.name.toLowerCase();
   if (key === "manga-comic") return { weight: 0.45, width: 17, height: 24, depth: 3 };
-  if (key === "rol") return { weight: 1.20, width: 24, height: 31, depth: 5 };
+  if (key.startsWith("rol/")) return { weight: 1.20, width: 24, height: 31, depth: 5 };
   if (key === "tcg/mtg" || key === "tcg/yugioh") {
     if (/blister|sobre\b|booster\b(?!.*display)/i.test(value)) {
       return { weight: 0.25, width: 12, height: 18, depth: 4 };
@@ -643,7 +643,7 @@ function shippingEstimate(product: DevirProduct, key: string): {
     return { weight: 0.40, width: 18, height: 14, depth: 7 };
   }
   if (key === "accesorios") return { weight: 1.00, width: 35, height: 25, depth: 10 };
-  if (key === "warhammer") return { weight: 1.50, width: 35, height: 25, depth: 10 };
+  if (key === "rol/warhammer") return { weight: 1.50, width: 35, height: 25, depth: 10 };
   if (/3d|edici[oó]n\s+3d|big box|deluxe/i.test(value)) {
     return { weight: 4.50, width: 45, height: 45, depth: 20 };
   }
@@ -1356,29 +1356,29 @@ const DEFAULT_CATEGORY_MARGINS: Record<string, number> = {
   // Minimum contribution after VAT and a standard EEA Stripe card fee.
   // These are safety floors; the market/reference-price discount normally
   // leaves a larger realised margin.
-  "juegos-general": 0.05,
-  "juegos-expansiones": 0.05,
-  "juegos-infantil": 0.05,
+  "juegos-de-mesa/general": 0.05,
+  "juegos-de-mesa/expansiones": 0.05,
+  "juegos-de-mesa/infantil": 0.05,
   "tcg/mtg": 0.04,
   "tcg/yugioh": 0.04,
-  "rol-dungeons-dragons": 0.05,
-  "rol-pathfinder": 0.05,
-  "rol-warhammer": 0.05,
-  "rol-otros": 0.05,
+  "rol/dungeons-dragons": 0.05,
+  "rol/pathfinder": 0.05,
+  "rol/warhammer": 0.05,
+  "rol/otros": 0.05,
   "manga-comic": 0.05,
   "accesorios": 0.05,
 };
 
 const CATEGORY_REFERENCE_DISCOUNTS: Record<string, number> = {
-  "juegos-general": 0.17,
-  "juegos-expansiones": 0.17,
-  "juegos-infantil": 0.15,
+  "juegos-de-mesa/general": 0.17,
+  "juegos-de-mesa/expansiones": 0.17,
+  "juegos-de-mesa/infantil": 0.15,
   "tcg/mtg": 0.12,
   "tcg/yugioh": 0.12,
-  "rol-dungeons-dragons": 0.10,
-  "rol-pathfinder": 0.10,
-  "rol-warhammer": 0.10,
-  "rol-otros": 0.10,
+  "rol/dungeons-dragons": 0.10,
+  "rol/pathfinder": 0.10,
+  "rol/warhammer": 0.10,
+  "rol/otros": 0.10,
   "manga-comic": 0.05,
   "accesorios": 0.15,
 };
@@ -1521,7 +1521,7 @@ function shippingDefaults(
   if (key === "accesorios") {
     return { weight: 0.3, height: 22, width: 16, depth: 6, weight_unit: "kg", dimensions_unit: "cm" };
   }
-  if (key === "warhammer") {
+  if (key === "rol/warhammer") {
     return { weight: 0.9, height: 30, width: 22, depth: 7, weight_unit: "kg", dimensions_unit: "cm" };
   }
   return { weight: 1.5, height: 30, width: 30, depth: 8, weight_unit: "kg", dimensions_unit: "cm" };
@@ -1621,30 +1621,90 @@ async function setupCatalogCategoriesAndMargins(config: ConfigRow): Promise<Arra
 
   const juegos = await ensureCategory(config, categories, "Juegos de mesa", "juegos-de-mesa");
   const juegosGeneral = await ensureCategoryAlias(
-    config, categories, "General", "juegos-general", ["juegos-de-mesa-slash-general"]
+    config,
+    categories,
+    "General",
+    "general",
+    [
+      "juegos-general",
+      "juegos-de-mesa/juegos-general",
+      "juegos-de-mesa/general",
+      "juegos-de-mesa-slash-general",
+    ],
   );
   const juegosExp = await ensureCategoryAlias(
-    config, categories, "Expansiones", "juegos-expansiones", ["juegos-de-mesa-slash-expansiones"]
+    config,
+    categories,
+    "Expansiones",
+    "expansiones",
+    [
+      "juegos-expansiones",
+      "juegos-de-mesa/juegos-expansiones",
+      "juegos-de-mesa/expansiones",
+      "juegos-de-mesa-slash-expansiones",
+    ],
   );
   const juegosInf = await ensureCategoryAlias(
-    config, categories, "Infantil", "juegos-infantil", ["juegos-de-mesa-slash-infantil"]
+    config,
+    categories,
+    "Infantil",
+    "infantil",
+    [
+      "juegos-infantil",
+      "juegos-de-mesa/juegos-infantil",
+      "juegos-de-mesa/infantil",
+      "juegos-de-mesa-slash-infantil",
+    ],
   );
 
   const rol = await ensureCategory(config, categories, "Rol", "rol");
   const rolDd = await ensureCategoryAlias(
-    config, categories, "Dungeons & Dragons", "rol-dungeons-dragons", ["rol-slash-dungeons-dragons"]
+    config,
+    categories,
+    "Dungeons & Dragons",
+    "dungeons-dragons",
+    [
+      "rol-dungeons-dragons",
+      "rol/rol-dungeons-dragons",
+      "rol/dungeons-dragons",
+      "rol-slash-dungeons-dragons",
+    ],
   );
   const rolPf = await ensureCategoryAlias(
-    config, categories, "Pathfinder", "rol-pathfinder", ["rol-slash-pathfinder"]
+    config,
+    categories,
+    "Pathfinder",
+    "pathfinder",
+    [
+      "rol-pathfinder",
+      "rol/rol-pathfinder",
+      "rol/pathfinder",
+      "rol-slash-pathfinder",
+    ],
   );
   const rolWh = await ensureCategoryAlias(
-    config, categories, "Warhammer", "rol-warhammer", ["warhammer", "rol-slash-warhammer"]
+    config,
+    categories,
+    "Warhammer",
+    "warhammer",
+    [
+      "rol-warhammer",
+      "rol/rol-warhammer",
+      "rol/warhammer",
+      "rol-slash-warhammer",
+    ],
   );
-  const rolOtros = await ensureCategory(config, categories, "Otros juegos de rol", "rol-otros");
+  const rolOtros = await ensureCategoryAlias(
+    config,
+    categories,
+    "Otros juegos de rol",
+    "otros",
+    ["rol-otros", "rol/rol-otros", "rol/otros"],
+  );
 
   const tcg = await ensureCategory(config, categories, "TCG", "tcg");
-  const mtg = await ensureCategory(config, categories, "Magic: The Gathering", "tcg/mtg");
-  const yugioh = await ensureCategory(config, categories, "Yu-Gi-Oh!", "tcg/yugioh");
+  const mtg = await ensureCategory(config, categories, "MTG", "tcg/mtg");
+  const yugioh = await ensureCategory(config, categories, "Yugioh", "tcg/yugioh");
 
   const manga = await ensureCategory(config, categories, "Manga y cómic", "manga-comic");
   const accesorios = await ensureCategory(config, categories, "Accesorios", "accesorios");
@@ -1671,24 +1731,34 @@ async function setupCatalogCategoriesAndMargins(config: ConfigRow): Promise<Arra
     child.parent_id = parent.id;
   }
 
-  const leaves = [
-    juegosGeneral, juegosExp, juegosInf,
-    rolDd, rolPf, rolWh, rolOtros,
-    mtg, yugioh, manga, accesorios,
+  const leaves: Array<[SpreeCategory, string]> = [
+    [juegosGeneral, "juegos-de-mesa/general"],
+    [juegosExp, "juegos-de-mesa/expansiones"],
+    [juegosInf, "juegos-de-mesa/infantil"],
+    [rolDd, "rol/dungeons-dragons"],
+    [rolPf, "rol/pathfinder"],
+    [rolWh, "rol/warhammer"],
+    [rolOtros, "rol/otros"],
+    [mtg, "tcg/mtg"],
+    [yugioh, "tcg/yugioh"],
+    [manga, "manga-comic"],
+    [accesorios, "accesorios"],
   ];
+
   const output = [];
-  for (const category of leaves) {
-    const margin = DEFAULT_CATEGORY_MARGINS[category.permalink ?? ""] ?? 0.05;
+  for (const [category, key] of leaves) {
+    const margin = DEFAULT_CATEGORY_MARGINS[key] ?? 0.05;
     await setCategoryMargin(config, category, margin);
     output.push({
       id: category.id,
       name: category.name,
-      permalink: category.permalink ?? "",
+      permalink: category.permalink ?? key,
       target_margin: margin,
     });
   }
   return output;
 }
+
 
 async function categorizeDraftBatch(
   config: ConfigRow,
@@ -2649,7 +2719,7 @@ async function cleanCatalogTitlesBatch(
   categories_changed: number;
   remaining_products: number;
 }> {
-  const version = "devir-title-v1";
+  const version = "devir-title-v2";
   const categories = await spreeCategories(config);
   const { data, error } = await supabase
     .from("devir_sync_catalog")
