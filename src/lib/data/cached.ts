@@ -8,7 +8,7 @@ export const PRODUCT_PAGE_EXPAND = [
   "variants",
   "media",
   "custom_fields",
-  "categories.ancestors",
+  "option_types",
 ];
 
 export const PRODUCT_METADATA_EXPAND = ["primary_media"];
