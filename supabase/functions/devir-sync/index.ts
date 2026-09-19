@@ -1116,14 +1116,158 @@ async function migrateCatalogGroup(
 
 
 const DEFAULT_CATEGORY_MARGINS: Record<string, number> = {
-  "juegos-de-mesa": 0.20,
-  "warhammer": 0.34,
-  "tcg/mtg": 0.15,
-  "tcg/yugioh": 0.14,
-  "rol": 0.34,
-  "manga-comic": 0.12,
-  "accesorios": 0.18,
+  // Minimum contribution after VAT and a standard EEA Stripe card fee.
+  // These are safety floors; the market/reference-price discount normally
+  // leaves a larger realised margin.
+  "juegos-de-mesa": 0.05,
+  "warhammer": 0.05,
+  "tcg/mtg": 0.04,
+  "tcg/yugioh": 0.04,
+  "rol": 0.05,
+  "manga-comic": 0.05,
+  "accesorios": 0.05,
 };
+
+const CATEGORY_REFERENCE_DISCOUNTS: Record<string, number> = {
+  "juegos-de-mesa": 0.17,
+  "warhammer": 0.12,
+  "tcg/mtg": 0.12,
+  "tcg/yugioh": 0.12,
+  "rol": 0.10,
+  "manga-comic": 0.05,
+  "accesorios": 0.15,
+};
+
+const STANDARD_EEA_CARD_RATE = 0.015;
+const STANDARD_EEA_CARD_FIXED_EUR = 0.25;
+
+function isBookSku(sku: string): boolean {
+  return /^(978|979)/.test(sku.replace(/\D/g, ""));
+}
+
+function vatRateForSku(sku: string): number {
+  return isBookSku(sku) ? 0.04 : 0.21;
+}
+
+function roundUpToFiveCents(value: number): number {
+  return Math.ceil((value * 20) - 1e-9) / 20;
+}
+
+function paymentAwareFloor(
+  costNet: number,
+  vatRate: number,
+  targetProfitRate: number,
+): number {
+  const denominator =
+    (1 / (1 + vatRate)) - STANDARD_EEA_CARD_RATE - targetProfitRate;
+  if (denominator <= 0) throw new Error("Margen objetivo incompatible con IVA/comisiones");
+  return (costNet + STANDARD_EEA_CARD_FIXED_EUR) / denominator;
+}
+
+function competitivePricing(
+  product: DevirProduct,
+  key: string,
+  targetProfitRate = DEFAULT_CATEGORY_MARGINS[key] ?? 0.05,
+): {
+  retail: number;
+  vatRate: number;
+  referenceGross: number | null;
+  floor: number;
+  effectiveProfitRate: number;
+  ruleSource: string;
+  reviewReason: string | null;
+} {
+  if (!product.purchasePrice || product.purchasePrice <= 0) {
+    throw new Error("Producto sin coste Devir: " + product.sku);
+  }
+
+  const vatRate = vatRateForSku(product.sku);
+  const floor = paymentAwareFloor(product.purchasePrice, vatRate, targetProfitRate);
+  const referenceNet = Number(product.referencePriceNet);
+  const hasReference = Number.isFinite(referenceNet) && referenceNet > product.purchasePrice;
+  const referenceGross = hasReference ? referenceNet * (1 + vatRate) : null;
+  const book = isBookSku(product.sku);
+
+  let raw = floor;
+  let ruleSource = "cost_floor";
+  let reviewReason: string | null = null;
+
+  if (referenceGross !== null) {
+    const discount = book ? 0.05 : (CATEGORY_REFERENCE_DISCOUNTS[key] ?? 0.12);
+    const marketTarget = referenceGross * (1 - discount);
+    raw = Math.max(floor, marketTarget);
+    ruleSource = book
+      ? "devir_rrp_fixed_book_5pct"
+      : "devir_rrp_competitive_discount";
+
+    if (book && floor > referenceGross + 0.005) {
+      reviewReason = "fixed_book_cost_floor_above_rrp";
+    } else if (!book && floor > referenceGross + 0.005) {
+      reviewReason = "cost_floor_above_reference_rrp";
+    }
+  } else if (book) {
+    // A book cannot safely be auto-priced without its fixed publisher price.
+    reviewReason = "fixed_book_reference_price_missing";
+  }
+
+  let retail: number;
+  if (book && referenceGross !== null) {
+    retail = Math.ceil(raw * 100 - 1e-9) / 100;
+    // Never exceed the fixed PVP automatically. If the safety floor would,
+    // reviewReason above keeps the product in draft.
+    retail = Math.min(retail, Math.round(referenceGross * 100) / 100);
+  } else {
+    retail = roundUpToFiveCents(raw);
+  }
+
+  const stripeFee = retail * STANDARD_EEA_CARD_RATE + STANDARD_EEA_CARD_FIXED_EUR;
+  const netSale = retail / (1 + vatRate);
+  const profit = netSale - product.purchasePrice - stripeFee;
+  const effectiveProfitRate = retail > 0 ? profit / retail : 0;
+
+  return {
+    retail,
+    vatRate,
+    referenceGross: referenceGross === null ? null : Math.round(referenceGross * 100) / 100,
+    floor: Math.round(floor * 100) / 100,
+    effectiveProfitRate,
+    ruleSource,
+    reviewReason,
+  };
+}
+
+function shippingDefaults(
+  key: string,
+  product: DevirProduct,
+): {
+  weight: number;
+  height: number;
+  width: number;
+  depth: number;
+  weight_unit: string;
+  dimensions_unit: string;
+} {
+  const name = product.name.toLowerCase();
+  if (key === "manga-comic") {
+    return { weight: 0.35, height: 21, width: 15, depth: 2.5, weight_unit: "kg", dimensions_unit: "cm" };
+  }
+  if (key === "rol" && isBookSku(product.sku)) {
+    return { weight: 1.2, height: 29, width: 22, depth: 3.5, weight_unit: "kg", dimensions_unit: "cm" };
+  }
+  if (key === "tcg/mtg" || key === "tcg/yugioh") {
+    if (/display|cart[oó]n|caja|\(\s*\d{2,}\s*\)|booster box/i.test(name)) {
+      return { weight: 1.5, height: 25, width: 18, depth: 15, weight_unit: "kg", dimensions_unit: "cm" };
+    }
+    return { weight: 0.5, height: 20, width: 14, depth: 8, weight_unit: "kg", dimensions_unit: "cm" };
+  }
+  if (key === "accesorios") {
+    return { weight: 0.3, height: 22, width: 16, depth: 6, weight_unit: "kg", dimensions_unit: "cm" };
+  }
+  if (key === "warhammer") {
+    return { weight: 0.9, height: 30, width: 22, depth: 7, weight_unit: "kg", dimensions_unit: "cm" };
+  }
+  return { weight: 1.5, height: 30, width: 30, depth: 8, weight_unit: "kg", dimensions_unit: "cm" };
+}
 
 async function ensureCategory(
   config: ConfigRow,
@@ -1389,18 +1533,19 @@ interface SpreePriceList {
   status?: string;
 }
 
-function specialProgramPrice(cost: number, targetMargin: number): number {
-  const grossCost = cost * 1.21;
-  // Round upward to cents so the configured margin is a floor, not an
-  // accidental 2.99% after rounding.
-  return Math.ceil((grossCost / (1 - targetMargin)) * 100 - 1e-9) / 100;
+function specialProgramPrice(
+  cost: number,
+  targetMargin: number,
+  sku: string,
+): number {
+  const vatRate = vatRateForSku(sku);
+  return Math.ceil(
+    paymentAwareFloor(cost, vatRate, targetMargin) * 100 - 1e-9,
+  ) / 100;
 }
 
 function isFixedPriceBookSku(sku: string): boolean {
-  // ISBN-13 / Bookland prefixes used by the Devir manga and RPG books.
-  // These remain on normal book pricing because Spanish fixed-price rules
-  // generally do not permit a 3% margin program to imply a large discount.
-  return /^(978|979)/.test(sku.replace(/\D/g, ""));
+  return isBookSku(sku);
 }
 
 async function getSpecialProgram(code: string): Promise<SpecialPricingProgram> {
@@ -1530,7 +1675,7 @@ async function syncSpecialPriceRows(
       variant_id: variantId,
       currency: "EUR",
       price_list_id: priceList.id,
-      amount: specialProgramPrice(cost, targetMargin),
+      amount: specialProgramPrice(cost, targetMargin, sku),
     });
   }
 
