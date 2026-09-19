@@ -46,6 +46,7 @@ interface SpreeCategory {
   id: string;
   name: string;
   permalink?: string;
+  parent_id?: string | null;
 }
 
 interface SpreeFieldDefinition {
@@ -1785,10 +1786,11 @@ async function repairCategoryTreeAndMembership(
   const manga = await ensureCategory(config, categories, "Manga y cómic", "manga-comic");
   const accesorios = await ensureCategory(config, categories, "Accesorios", "accesorios");
 
-  // Reposition sequentially: this forces the nested-set tree to rebuild even
-  // if earlier concurrent category creates collided on lft/rgt.
+  // Only move nodes whose parent is actually wrong. Repositioning an
+  // already-correct child can be rejected by Spree as a self/tree move.
   const roots = [juegos, warhammer, tcg, rol, manga, accesorios];
   for (let position = 0; position < roots.length; position += 1) {
+    if (roots[position].parent_id == null) continue;
     await spreeRequest(
       config,
       "PATCH",
@@ -1797,6 +1799,7 @@ async function repairCategoryTreeAndMembership(
     );
   }
   for (const [position, child] of [mtg, yugioh].entries()) {
+    if (child.parent_id === tcg.id) continue;
     await spreeRequest(
       config,
       "PATCH",
