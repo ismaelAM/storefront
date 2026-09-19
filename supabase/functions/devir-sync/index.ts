@@ -1462,21 +1462,29 @@ async function finishCycle(config: ConfigRow, cycleId: string): Promise<void> {
 
   const { data: missingRows, error: missingReadError } = await supabase
     .from("devir_sync_catalog")
-    .select("supplier_sku,missing_cycles")
+    .select("supplier_sku,missing_cycles,spree_variant_id")
     .or(`last_seen_cycle_id.is.null,last_seen_cycle_id.neq.${cycleId}`);
   if (missingReadError) throw missingReadError;
 
   for (const row of missingRows ?? []) {
     const missingCycles = Number(row.missing_cycles ?? 0) + 1;
+    const missing = missingCycles >= 2;
     const { error } = await supabase
       .from("devir_sync_catalog")
       .update({
         missing_cycles: missingCycles,
-        supplier_status: missingCycles >= 2 ? "missing" : "unknown",
+        supplier_status: missing ? "missing" : "unknown",
         updated_at: nowIso,
       })
       .eq("supplier_sku", row.supplier_sku);
     if (error) throw error;
+
+    // A SKU absent from two complete supplier crawls can no longer be sold
+    // against Devir stock. Preserve any physical count_on_hand, but stop
+    // accepting supplier-backed backorders immediately.
+    if (missing && row.spree_variant_id) {
+      await syncBackorderability(config, row.spree_variant_id, "unavailable");
+    }
   }
 
   const { count: products } = await supabase
