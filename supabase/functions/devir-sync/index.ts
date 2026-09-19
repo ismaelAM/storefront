@@ -791,6 +791,142 @@ async function syncProductToSpree(
 }
 
 
+
+interface CatalogGroupRow {
+  supplier_sku: string;
+  name: string;
+  spree_product_id: string | null;
+  spree_variant_id: string | null;
+  group_key: string | null;
+  group_name: string | null;
+  variant_label: string | null;
+  variant_position: number | null;
+  grouping_confidence: "none" | "high" | "ambiguous";
+}
+
+function variantEdition(label: string | null): string | null {
+  if (!label) return null;
+  const parts = label.split(" · ");
+  return parts.length > 1 ? parts.slice(1).join(" · ").trim() || null : null;
+}
+
+async function migrateCatalogGroup(
+  config: ConfigRow,
+  groupKey: string,
+): Promise<{
+  ok: boolean;
+  group_key: string;
+  product_id?: string;
+  variants?: number;
+  skipped?: string;
+}> {
+  const { data, error } = await supabase
+    .from("devir_sync_catalog")
+    .select("supplier_sku,name,spree_product_id,spree_variant_id,group_key,group_name,variant_label,variant_position,grouping_confidence")
+    .eq("group_key", groupKey)
+    .eq("grouping_confidence", "high")
+    .order("variant_position", { ascending: true });
+  if (error) throw error;
+  const rows = (data ?? []) as CatalogGroupRow[];
+  if (rows.length < 2) return { ok: true, group_key: groupKey, skipped: "needs_at_least_two_variants" };
+
+  const groupName = rows.find((row) => row.group_name)?.group_name ?? groupKey;
+  const uniqueProducts = Array.from(new Set(rows.map((row) => row.spree_product_id).filter(Boolean))) as string[];
+  const sourceProducts = new Map<string, SpreeProduct>();
+  const sourceVariants = new Map<string, SpreeVariant>();
+
+  for (const productId of uniqueProducts) {
+    const product = await spreeRequest<SpreeProduct>(config, "GET", "/products/" + encodeURIComponent(productId));
+    sourceProducts.set(productId, product);
+    if (product.status !== "draft" || !(product.tags ?? []).includes("devir")) {
+      return { ok: true, group_key: groupKey, skipped: "contains_non_draft_or_unmanaged_product" };
+    }
+    const variants = await spreeList<SpreeVariant>(config, "/products/" + encodeURIComponent(productId) + "/variants");
+    for (const variant of variants) {
+      if (variant.sku) sourceVariants.set(variant.sku.trim(), variant);
+    }
+  }
+
+  const positions = new Map<number, number>();
+  for (const row of rows) {
+    const pos = Number(row.variant_position ?? -1);
+    positions.set(pos, (positions.get(pos) ?? 0) + 1);
+  }
+  const hasEditionDimension =
+    rows.some((row) => Boolean(variantEdition(row.variant_label))) ||
+    Array.from(positions.values()).some((count) => count > 1);
+
+  const variants = rows.map((row) => {
+    const source = sourceVariants.get(row.supplier_sku);
+    const position = Number(row.variant_position ?? 0);
+    const edition = variantEdition(row.variant_label) ?? "Estándar";
+    const price = source ? variantPrice(source) : null;
+    const cost = Number(source?.cost_price);
+    return {
+      sku: row.supplier_sku,
+      ...(Number.isFinite(cost) && cost > 0 ? { cost_price: cost, cost_currency: "EUR" } : {}),
+      track_inventory: true,
+      options: [
+        { name: "tomo", value: String(position).padStart(2, "0") },
+        ...(hasEditionDimension ? [{ name: "edicion", value: edition }] : []),
+      ],
+      ...(price !== null ? { prices: [{ currency: "EUR", amount: price }] } : {}),
+    };
+  });
+
+  const created = await spreeRequest<SpreeProduct>(config, "POST", "/products", {
+    name: groupName,
+    status: "draft",
+    tags: ["devir", "devir-review", "devir-group", "devir-group-" + groupKey],
+    variants,
+  });
+  const createdVariants = await spreeList<SpreeVariant>(
+    config,
+    "/products/" + encodeURIComponent(created.id) + "/variants",
+  );
+  const createdBySku = new Map(
+    createdVariants.filter((variant) => variant.sku).map((variant) => [variant.sku!.trim(), variant]),
+  );
+
+  // Only after the replacement product exists and all SKU variants can be
+  // resolved do we archive the old draft products.
+  for (const row of rows) {
+    if (!createdBySku.has(row.supplier_sku)) {
+      throw new Error("No se pudo resolver la variante migrada " + row.supplier_sku);
+    }
+  }
+
+  for (const productId of uniqueProducts) {
+    const old = sourceProducts.get(productId)!;
+    const tags = Array.from(new Set([...(old.tags ?? []), "devir-merged"]));
+    await spreeRequest(config, "PATCH", "/products/" + encodeURIComponent(productId), {
+      status: "archived",
+      tags,
+    });
+  }
+
+  for (const row of rows) {
+    const variant = createdBySku.get(row.supplier_sku)!;
+    const { error: updateError } = await supabase
+      .from("devir_sync_catalog")
+      .update({
+        spree_product_id: created.id,
+        spree_variant_id: variant.id,
+        last_error: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("supplier_sku", row.supplier_sku);
+    if (updateError) throw updateError;
+  }
+
+  return {
+    ok: true,
+    group_key: groupKey,
+    product_id: created.id,
+    variants: rows.length,
+  };
+}
+
 async function validateSpreeAdminKey(spreeApiUrl: string, key: string): Promise<void> {
   if (!key.startsWith("sk_")) throw new Error("La clave de Spree no es una Secret API Key válida.");
   const response = await fetch(
@@ -1004,6 +1140,48 @@ async function operatorAction(
       .eq("id", "primary");
     if (error) throw error;
     return json({ ok: true, requested: true });
+  }
+
+  if (action === "regroup-preview") {
+    const { data, error } = await supabase
+      .from("devir_sync_catalog")
+      .select("group_key,group_name,variant_position,variant_label,spree_product_id")
+      .eq("item_kind", "variant_candidate")
+      .eq("grouping_confidence", "high")
+      .not("group_key", "is", null)
+      .order("group_key");
+    if (error) throw error;
+
+    const groups = new Map<string, { name: string; count: number; positions: Map<number, number> }>();
+    for (const row of data ?? []) {
+      const key = String(row.group_key);
+      const current = groups.get(key) ?? {
+        name: String(row.group_name ?? key),
+        count: 0,
+        positions: new Map<number, number>(),
+      };
+      current.count += 1;
+      const pos = Number(row.variant_position ?? -1);
+      current.positions.set(pos, (current.positions.get(pos) ?? 0) + 1);
+      groups.set(key, current);
+    }
+    return json({
+      ok: true,
+      groups: Array.from(groups.entries())
+        .filter(([, value]) => value.count >= 2)
+        .map(([group_key, value]) => ({
+          group_key,
+          group_name: value.name,
+          variants: value.count,
+          duplicate_positions: Array.from(value.positions.entries()).filter(([, count]) => count > 1).map(([position]) => position),
+        })),
+    });
+  }
+
+  if (action === "regroup") {
+    const groupKey = typeof body.groupKey === "string" ? body.groupKey.trim() : "";
+    if (!groupKey) return json({ error: "group_key_required" }, 400);
+    return json(await migrateCatalogGroup(config, groupKey));
   }
 
   return json({ error: "unknown_action" }, 400);
