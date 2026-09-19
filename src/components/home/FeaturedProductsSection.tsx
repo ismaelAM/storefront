@@ -1,9 +1,7 @@
-import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 import { Suspense } from "react";
 import { FeaturedProducts } from "@/components/products/FeaturedProducts";
 import { ProductCardSkeleton } from "@/components/products/ProductCardSkeleton";
-import { Button } from "@/components/ui/button";
 
 function CarouselSkeleton() {
   return (
@@ -35,13 +33,10 @@ export async function FeaturedProductsSection({
 
   return (
     <section className="container mx-auto px-4 sm:px-6 lg:px-8 py-16 featured-products">
-      <div className="flex items-center justify-between mb-8">
+      <div className="mb-8">
         <h2 className="text-2xl font-bold text-gray-900">
           {t("featuredProducts")}
         </h2>
-        <Button variant="link" asChild>
-          <Link href={`${basePath}/products`}>{t("viewAll")} &rarr;</Link>
-        </Button>
       </div>
       <Suspense fallback={<CarouselSkeleton />}>
         <FeaturedProducts
