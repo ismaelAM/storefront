@@ -127,6 +127,10 @@ export const ProductCard = memo(function ProductCard({
           </span>
         ) : !product.purchasable ? (
           <span className="mt-2 text-sm text-gray-500">{t("outOfStock")}</span>
+        ) : !product.in_stock ? (
+          <span className="mt-2 text-sm text-gray-500">
+            {t("extendedFulfillment")}
+          </span>
         ) : null}
       </div>
     </div>
