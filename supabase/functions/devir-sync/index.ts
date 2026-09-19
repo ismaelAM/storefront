@@ -783,6 +783,58 @@ async function spreeCategories(config: ConfigRow): Promise<SpreeCategory[]> {
   return await spreeList<SpreeCategory>(config, "/categories");
 }
 
+function categoryForKey(
+  categories: SpreeCategory[],
+  key: string,
+): SpreeCategory | undefined {
+  const aliases: Record<string, string[]> = {
+    "juegos-de-mesa/general": [
+      "juegos-de-mesa/general",
+      "juegos-de-mesa/juegos-general",
+      "juegos-general",
+    ],
+    "juegos-de-mesa/expansiones": [
+      "juegos-de-mesa/expansiones",
+      "juegos-de-mesa/juegos-expansiones",
+      "juegos-expansiones",
+    ],
+    "juegos-de-mesa/infantil": [
+      "juegos-de-mesa/infantil",
+      "juegos-de-mesa/juegos-infantil",
+      "juegos-infantil",
+    ],
+    "rol/dungeons-dragons": [
+      "rol/dungeons-dragons",
+      "rol/rol-dungeons-dragons",
+      "rol-dungeons-dragons",
+    ],
+    "rol/pathfinder": [
+      "rol/pathfinder",
+      "rol/rol-pathfinder",
+      "rol-pathfinder",
+    ],
+    "rol/warhammer": [
+      "rol/warhammer",
+      "rol/rol-warhammer",
+      "rol-warhammer",
+      "warhammer",
+    ],
+    "rol/otros": [
+      "rol/otros",
+      "rol/rol-otros",
+      "rol-otros",
+    ],
+    "tcg/mtg": ["tcg/mtg"],
+    "tcg/yugioh": ["tcg/yugioh"],
+    "manga-comic": ["manga-comic"],
+    "accesorios": ["accesorios"],
+  };
+  const candidates = aliases[key] ?? [key];
+  return categories.find((category) =>
+    candidates.includes(category.permalink ?? "")
+  );
+}
+
 async function categoryMargin(config: ConfigRow, category: SpreeCategory | null): Promise<number | null> {
   if (!category) return null;
   try {
@@ -1053,7 +1105,7 @@ async function syncProductToSpree(
 ): Promise<{ productId: string; variantId: string | null; images: number; review: boolean; backorderItems: number; lastAutoPrice: number | null }> {
   if (!product.purchasePrice || product.purchasePrice <= 0) throw new Error("Producto sin coste Devir: " + product.sku);
   const key = categoryKey(product);
-  const category = key ? categories.find((c) => c.permalink === key) ?? null : null;
+  const category = key ? categoryForKey(categories, key) ?? null : null;
   const configuredMargin = await categoryMargin(config, category);
   const targetMargin = configuredMargin ?? DEFAULT_CATEGORY_MARGINS[key] ?? 0.05;
   const pricing = competitivePricing(product, key, targetMargin);
@@ -1617,142 +1669,60 @@ async function setupCatalogCategoriesAndMargins(config: ConfigRow): Promise<Arra
   permalink: string;
   target_margin: number;
 }>> {
-  const categories = await spreeCategories(config);
-
+  let categories = await spreeCategories(config);
   const juegos = await ensureCategory(config, categories, "Juegos de mesa", "juegos-de-mesa");
-  const juegosGeneral = await ensureCategoryAlias(
-    config,
-    categories,
-    "General",
-    "general",
-    [
-      "juegos-general",
-      "juegos-de-mesa/juegos-general",
-      "juegos-de-mesa/general",
-      "juegos-de-mesa-slash-general",
-    ],
-  );
-  const juegosExp = await ensureCategoryAlias(
-    config,
-    categories,
-    "Expansiones",
-    "expansiones",
-    [
-      "juegos-expansiones",
-      "juegos-de-mesa/juegos-expansiones",
-      "juegos-de-mesa/expansiones",
-      "juegos-de-mesa-slash-expansiones",
-    ],
-  );
-  const juegosInf = await ensureCategoryAlias(
-    config,
-    categories,
-    "Infantil",
-    "infantil",
-    [
-      "juegos-infantil",
-      "juegos-de-mesa/juegos-infantil",
-      "juegos-de-mesa/infantil",
-      "juegos-de-mesa-slash-infantil",
-    ],
-  );
-
   const rol = await ensureCategory(config, categories, "Rol", "rol");
-  const rolDd = await ensureCategoryAlias(
-    config,
-    categories,
-    "Dungeons & Dragons",
-    "dungeons-dragons",
-    [
-      "rol-dungeons-dragons",
-      "rol/rol-dungeons-dragons",
-      "rol/dungeons-dragons",
-      "rol-slash-dungeons-dragons",
-    ],
-  );
-  const rolPf = await ensureCategoryAlias(
-    config,
-    categories,
-    "Pathfinder",
-    "pathfinder",
-    [
-      "rol-pathfinder",
-      "rol/rol-pathfinder",
-      "rol/pathfinder",
-      "rol-slash-pathfinder",
-    ],
-  );
-  const rolWh = await ensureCategoryAlias(
-    config,
-    categories,
-    "Warhammer",
-    "warhammer",
-    [
-      "rol-warhammer",
-      "rol/rol-warhammer",
-      "rol/warhammer",
-      "rol-slash-warhammer",
-    ],
-  );
-  const rolOtros = await ensureCategoryAlias(
-    config,
-    categories,
-    "Otros juegos de rol",
-    "otros",
-    ["rol-otros", "rol/rol-otros", "rol/otros"],
-  );
-
   const tcg = await ensureCategory(config, categories, "TCG", "tcg");
-  const mtg = await ensureCategory(config, categories, "MTG", "tcg/mtg");
-  const yugioh = await ensureCategory(config, categories, "Yugioh", "tcg/yugioh");
+  await ensureCategory(config, categories, "Manga y cómic", "manga-comic");
+  await ensureCategory(config, categories, "Accesorios", "accesorios");
 
-  const manga = await ensureCategory(config, categories, "Manga y cómic", "manga-comic");
-  const accesorios = await ensureCategory(config, categories, "Accesorios", "accesorios");
-
-  const children: Array<[SpreeCategory, SpreeCategory, number]> = [
-    [juegosGeneral, juegos, 0],
-    [juegosExp, juegos, 1],
-    [juegosInf, juegos, 2],
-    [rolDd, rol, 0],
-    [rolPf, rol, 1],
-    [rolWh, rol, 2],
-    [rolOtros, rol, 3],
-    [mtg, tcg, 0],
-    [yugioh, tcg, 1],
+  const specs: Array<{
+    key: string;
+    name: string;
+    slug: string;
+    parent: SpreeCategory | null;
+    position: number;
+  }> = [
+    { key: "juegos-de-mesa/general", name: "General", slug: "general", parent: juegos, position: 0 },
+    { key: "juegos-de-mesa/expansiones", name: "Expansiones", slug: "expansiones", parent: juegos, position: 1 },
+    { key: "juegos-de-mesa/infantil", name: "Infantil", slug: "infantil", parent: juegos, position: 2 },
+    { key: "rol/dungeons-dragons", name: "Dungeons & Dragons", slug: "dungeons-dragons", parent: rol, position: 0 },
+    { key: "rol/pathfinder", name: "Pathfinder", slug: "pathfinder", parent: rol, position: 1 },
+    { key: "rol/warhammer", name: "Warhammer", slug: "warhammer", parent: rol, position: 2 },
+    { key: "rol/otros", name: "Otros juegos de rol", slug: "otros", parent: rol, position: 3 },
+    { key: "tcg/mtg", name: "MTG", slug: "mtg", parent: tcg, position: 0 },
+    { key: "tcg/yugioh", name: "Yugioh", slug: "yugioh", parent: tcg, position: 1 },
+    { key: "manga-comic", name: "Manga y cómic", slug: "manga-comic", parent: null, position: 0 },
+    { key: "accesorios", name: "Accesorios", slug: "accesorios", parent: null, position: 0 },
   ];
-  for (const [child, parent, position] of children) {
-    if (child.parent_id === parent.id) continue;
-    await spreeRequest(
-      config,
-      "PATCH",
-      "/categories/" + encodeURIComponent(child.id) + "/reposition",
-      { new_parent_id: parent.id, new_position: position },
-    );
-    child.parent_id = parent.id;
+
+  for (const spec of specs) {
+    if (categoryForKey(categories, spec.key)) continue;
+    const created = await spreeRequest<SpreeCategory>(config, "POST", "/categories", {
+      name: spec.name,
+      permalink: spec.slug,
+    });
+    if (spec.parent) {
+      await spreeRequest(
+        config,
+        "PATCH",
+        "/categories/" + encodeURIComponent(created.id) + "/reposition",
+        { new_parent_id: spec.parent.id, new_position: spec.position },
+      );
+    }
+    categories = await spreeCategories(config);
   }
 
-  const leaves: Array<[SpreeCategory, string]> = [
-    [juegosGeneral, "juegos-de-mesa/general"],
-    [juegosExp, "juegos-de-mesa/expansiones"],
-    [juegosInf, "juegos-de-mesa/infantil"],
-    [rolDd, "rol/dungeons-dragons"],
-    [rolPf, "rol/pathfinder"],
-    [rolWh, "rol/warhammer"],
-    [rolOtros, "rol/otros"],
-    [mtg, "tcg/mtg"],
-    [yugioh, "tcg/yugioh"],
-    [manga, "manga-comic"],
-    [accesorios, "accesorios"],
-  ];
-
   const output = [];
-  for (const [category, key] of leaves) {
-    const margin = DEFAULT_CATEGORY_MARGINS[key] ?? 0.05;
+  for (const spec of specs) {
+    const category = categoryForKey(categories, spec.key);
+    if (!category) continue;
+    const margin = DEFAULT_CATEGORY_MARGINS[spec.key] ?? 0.05;
     await setCategoryMargin(config, category, margin);
     output.push({
       id: category.id,
       name: category.name,
-      permalink: category.permalink ?? key,
+      permalink: category.permalink ?? spec.key,
       target_margin: margin,
     });
   }
@@ -1837,7 +1807,7 @@ async function categorizeDraftBatch(
       imageUrls: [],
     };
     const key = categoryKey(product);
-    const category = categories.find((item) => item.permalink === key);
+    const category = categoryForKey(categories, key);
     const margin = DEFAULT_CATEGORY_MARGINS[key];
     if (!category || !Number.isFinite(margin) || !product.purchasePrice || product.purchasePrice <= 0) return;
 
@@ -2514,7 +2484,7 @@ async function preparePublishBatch(
     }
 
     const resolvedCategory = categoryKeys.size === 1
-      ? categories.find((item) => item.permalink === Array.from(categoryKeys)[0])
+      ? categoryForKey(categories, Array.from(categoryKeys)[0])
       : undefined;
 
     await spreeRequest(
@@ -2802,7 +2772,7 @@ async function cleanCatalogTitlesBatch(
 
     const categoryKeyValue = keys.size === 1 ? Array.from(keys)[0] : null;
     const category = categoryKeyValue
-      ? categories.find((item) => item.permalink === categoryKeyValue)
+      ? categoryForKey(categories, categoryKeyValue)
       : null;
 
     const patch: Record<string, unknown> = {};
