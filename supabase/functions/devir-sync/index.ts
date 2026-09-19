@@ -839,6 +839,68 @@ interface SpreeStockItem {
   backorderable?: boolean;
 }
 
+let cachedDefaultStockLocationId: string | null = null;
+
+async function defaultStockLocationId(config: ConfigRow): Promise<string> {
+  if (cachedDefaultStockLocationId) return cachedDefaultStockLocationId;
+  const locations = await spreeList<SpreeStockLocation>(config, "/stock_locations");
+  const location =
+    locations.find((item) => item.active && item.default) ??
+    locations.find((item) => item.active) ??
+    locations[0];
+  if (!location) throw new Error("No hay ubicación de stock activa en Spree");
+  cachedDefaultStockLocationId = location.id;
+  return location.id;
+}
+
+async function patchVariantInventory(
+  config: ConfigRow,
+  productId: string,
+  variantId: string,
+  countOnHand: number,
+  backorderable: boolean,
+  preorderable: boolean,
+  preorderShipsAt: string | null,
+): Promise<SpreeVariant> {
+  const locationId = await defaultStockLocationId(config);
+  const inventory = [{
+    stock_location_id: locationId,
+    count_on_hand: Math.max(0, Number.isFinite(countOnHand) ? countOnHand : 0),
+    backorderable,
+  }];
+
+  let updated = await spreeRequest<SpreeVariant>(
+    config,
+    "PATCH",
+    "/products/" + encodeURIComponent(productId) +
+      "/variants/" + encodeURIComponent(variantId),
+    {
+      track_inventory: true,
+      preorderable,
+      preorder_ships_at: preorderable ? preorderShipsAt : null,
+      stock_levels: inventory,
+    },
+  );
+
+  // Spree 5.x accepts the legacy stock_items key while newer releases use
+  // stock_levels. Verify the result and transparently fall back when needed.
+  if (updated.backorderable !== backorderable) {
+    updated = await spreeRequest<SpreeVariant>(
+      config,
+      "PATCH",
+      "/products/" + encodeURIComponent(productId) +
+        "/variants/" + encodeURIComponent(variantId),
+      {
+        track_inventory: true,
+        preorderable,
+        preorder_ships_at: preorderable ? preorderShipsAt : null,
+        stock_items: inventory,
+      },
+    );
+  }
+  return updated;
+}
+
 async function syncBackorderability(
   config: ConfigRow,
   variantId: string | null,
@@ -2471,6 +2533,251 @@ async function preparePublishBatch(
 
 
 
+
+async function repairSellabilityBatch(
+  config: ConfigRow,
+  limit: number,
+): Promise<{
+  processed: number;
+  repaired: number;
+  failed: number;
+  remaining: number;
+}> {
+  const version = "devir-stock-v1";
+  const { data, error } = await supabase
+    .from("devir_sync_catalog")
+    .select("supplier_sku,spree_product_id,spree_variant_id,supplier_status,snapshot,catalog_state")
+    .in("catalog_state", ["published", "preorder", "published_mixed"])
+    .or("sellability_version.is.null,sellability_version.neq." + version)
+    .not("spree_product_id", "is", null)
+    .not("spree_variant_id", "is", null)
+    .order("supplier_sku")
+    .limit(limit);
+  if (error) throw error;
+
+  const rows = data ?? [];
+  let repaired = 0;
+  let failed = 0;
+
+  const processRow = async (row: Record<string, unknown>) => {
+    const sku = String(row.supplier_sku ?? "");
+    const productId = String(row.spree_product_id ?? "");
+    const variantId = String(row.spree_variant_id ?? "");
+    const status = String(row.supplier_status ?? "");
+    if (!sku || !productId || !variantId) return;
+
+    try {
+      const current = await spreeRequest<SpreeVariant>(
+        config,
+        "GET",
+        "/products/" + encodeURIComponent(productId) +
+          "/variants/" + encodeURIComponent(variantId),
+      );
+      const preorder = status === "preorder";
+      const snapshot = row.snapshot && typeof row.snapshot === "object"
+        ? row.snapshot as Json
+        : {};
+      const releaseDate =
+        typeof snapshot.releaseDate === "string" ? snapshot.releaseDate : null;
+
+      const updated = await patchVariantInventory(
+        config,
+        productId,
+        variantId,
+        Number(current.total_on_hand ?? 0),
+        true,
+        preorder,
+        releaseDate,
+      );
+
+      if (!updated.backorderable && !updated.purchasable) {
+        throw new Error("Spree no dejó la variante backorderable/comprable");
+      }
+
+      const { error: updateError } = await supabase
+        .from("devir_sync_catalog")
+        .update({
+          sellability_version: version,
+          last_error: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("supplier_sku", sku);
+      if (updateError) throw updateError;
+      repaired += 1;
+    } catch (err) {
+      failed += 1;
+      await supabase
+        .from("devir_sync_catalog")
+        .update({
+          last_error: "SELLABILITY: " + (err instanceof Error ? err.message : String(err)),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("supplier_sku", sku);
+    }
+  };
+
+  for (let index = 0; index < rows.length; index += 5) {
+    await Promise.all(
+      rows.slice(index, index + 5).map((row) =>
+        processRow(row as Record<string, unknown>)
+      ),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+
+  const { count, error: countError } = await supabase
+    .from("devir_sync_catalog")
+    .select("supplier_sku", { count: "exact", head: true })
+    .in("catalog_state", ["published", "preorder", "published_mixed"])
+    .or("sellability_version.is.null,sellability_version.neq." + version);
+  if (countError) throw countError;
+
+  return {
+    processed: rows.length,
+    repaired,
+    failed,
+    remaining: count ?? 0,
+  };
+}
+
+async function cleanCatalogTitlesBatch(
+  config: ConfigRow,
+  limit: number,
+): Promise<{
+  processed_products: number;
+  titles_changed: number;
+  categories_changed: number;
+  remaining_products: number;
+}> {
+  const version = "devir-title-v1";
+  const categories = await spreeCategories(config);
+  const { data, error } = await supabase
+    .from("devir_sync_catalog")
+    .select("supplier_sku,name,snapshot,source_url,spree_product_id,title_cleanup_version")
+    .not("spree_product_id", "is", null)
+    .or("title_cleanup_version.is.null,title_cleanup_version.neq." + version)
+    .order("spree_product_id")
+    .order("supplier_sku");
+  if (error) throw error;
+
+  const groups = new Map<string, Array<Record<string, unknown>>>();
+  for (const raw of data ?? []) {
+    const row = raw as Record<string, unknown>;
+    const productId = String(row.spree_product_id ?? "");
+    if (!productId) continue;
+    const list = groups.get(productId) ?? [];
+    list.push(row);
+    groups.set(productId, list);
+  }
+
+  const selected = Array.from(groups.entries()).slice(0, limit);
+  let titlesChanged = 0;
+  let categoriesChanged = 0;
+
+  const processProduct = async (
+    productId: string,
+    rows: Array<Record<string, unknown>>,
+  ) => {
+    const keys = new Set<string>();
+    let singleCleanName: string | null = null;
+
+    for (const row of rows) {
+      const rawName = String(row.name ?? "");
+      const cleanName = cleanDevirTitle(rawName);
+      const snapshot = row.snapshot && typeof row.snapshot === "object"
+        ? row.snapshot as Json
+        : {};
+      const product: DevirProduct = {
+        sku: String(row.supplier_sku ?? ""),
+        name: cleanName,
+        url: String(row.source_url ?? ""),
+        purchasePrice: Number.isFinite(Number(snapshot.purchasePrice))
+          ? Number(snapshot.purchasePrice)
+          : null,
+        referencePriceNet: Number.isFinite(Number(snapshot.referencePriceNet))
+          ? Number(snapshot.referencePriceNet)
+          : null,
+        availability:
+          snapshot.availability === "available" ||
+          snapshot.availability === "preorder" ||
+          snapshot.availability === "unavailable"
+            ? snapshot.availability
+            : "unknown",
+        availabilityLabel:
+          typeof snapshot.availabilityLabel === "string"
+            ? snapshot.availabilityLabel
+            : null,
+        releaseDate:
+          typeof snapshot.releaseDate === "string" ? snapshot.releaseDate : null,
+        imageUrls: Array.isArray(snapshot.imageUrls)
+          ? snapshot.imageUrls.filter((item): item is string => typeof item === "string")
+          : [],
+      };
+      keys.add(categoryKey(product));
+
+      const nextSnapshot = { ...snapshot, name: cleanName };
+      await supabase
+        .from("devir_sync_catalog")
+        .update({
+          name: cleanName,
+          snapshot: nextSnapshot,
+          title_cleanup_version: version,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("supplier_sku", product.sku);
+
+      if (cleanName !== rawName) titlesChanged += 1;
+      if (rows.length === 1) singleCleanName = cleanName;
+    }
+
+    const categoryKeyValue = keys.size === 1 ? Array.from(keys)[0] : null;
+    const category = categoryKeyValue
+      ? categories.find((item) => item.permalink === categoryKeyValue)
+      : null;
+
+    const patch: Record<string, unknown> = {};
+    if (singleCleanName) patch.name = singleCleanName;
+    if (category) {
+      patch.category_ids = [category.id];
+      categoriesChanged += 1;
+    }
+    if (Object.keys(patch).length) {
+      await spreeRequest(
+        config,
+        "PATCH",
+        "/products/" + encodeURIComponent(productId),
+        patch,
+      );
+    }
+  };
+
+  for (let index = 0; index < selected.length; index += 5) {
+    await Promise.all(
+      selected.slice(index, index + 5).map(([productId, rows]) =>
+        processProduct(productId, rows)
+      ),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 120));
+  }
+
+  const { data: remainingRows, error: remainingError } = await supabase
+    .from("devir_sync_catalog")
+    .select("spree_product_id")
+    .not("spree_product_id", "is", null)
+    .or("title_cleanup_version.is.null,title_cleanup_version.neq." + version);
+  if (remainingError) throw remainingError;
+
+  return {
+    processed_products: selected.length,
+    titles_changed: titlesChanged,
+    categories_changed: categoriesChanged,
+    remaining_products: new Set(
+      (remainingRows ?? []).map((row) => String(row.spree_product_id ?? ""))
+        .filter(Boolean),
+    ).size,
+  };
+}
+
 interface SpecialPricingProgram {
   code: string;
   name: string;
@@ -2945,6 +3252,22 @@ async function operatorAction(
     return json({
       ok: true,
       ...(await preparePublishBatch(config, offset, limit)),
+    });
+  }
+
+  if (action === "repair-sellability-batch") {
+    const limit = Math.min(50, Math.max(1, Number(body.limit ?? 20) || 20));
+    return json({
+      ok: true,
+      ...(await repairSellabilityBatch(config, limit)),
+    });
+  }
+
+  if (action === "clean-catalog-titles") {
+    const limit = Math.min(100, Math.max(1, Number(body.limit ?? 50) || 50));
+    return json({
+      ok: true,
+      ...(await cleanCatalogTitlesBatch(config, limit)),
     });
   }
 
