@@ -192,8 +192,9 @@
     "preorder": "PRERESERVA",
     "preorderAction": "Reservar ahora",
     "preorderShipsAt": "Envío previsto: {date}",
-    "availableToOrder": "Disponible · Envío en 2–3 días laborables",
-    "preorderHelp": "Reserva ahora; se enviará cuando llegue la fecha de lanzamiento."
+    "availableToOrder": "Disponible",
+    "preorderHelp": "Reserva ahora; se enviará cuando llegue la fecha de lanzamiento.",
+    "extendedFulfillment": "Preparación: 2–3 días laborables"
   },
   "navigation": {
     "home": "Inicio",
