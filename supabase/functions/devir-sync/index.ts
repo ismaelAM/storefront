@@ -1572,8 +1572,17 @@ async function rebuildMangaGroup(
   });
 
   const createdBySku = new Map<string, SpreeVariant>();
+  const displayRows = [...rows].sort((a, b) => {
+    const editionRank = (row: CatalogGroupRow) =>
+      variantEdition(row.variant_label) ? 1 : 0;
+    return (
+      Number(a.variant_position ?? 0) - Number(b.variant_position ?? 0) ||
+      editionRank(a) - editionRank(b) ||
+      a.supplier_sku.localeCompare(b.supplier_sku)
+    );
+  });
   const displayPosition = new Map(
-    rows.map((row, index) => [row.supplier_sku, index + 1]),
+    displayRows.map((row, index) => [row.supplier_sku, index + 1]),
   );
   const creationRows = [...rows].sort((a, b) => {
     const availabilityRank = (row: CatalogGroupRow) =>
@@ -1750,16 +1759,18 @@ async function migrateLanguageGroup(
     "Italiano": 5,
     "Portugués": 6,
   };
-  const creationRows = [...rows].sort((a, b) => {
-    const availabilityRank = (row: CatalogGroupRow) =>
-      row.supplier_status === "available" ? 0 :
-      row.supplier_status === "preorder" ? 1 : 2;
-    return (
-      availabilityRank(a) - availabilityRank(b) ||
-      (languageOrder[a.language_label ?? ""] ?? 99) -
-        (languageOrder[b.language_label ?? ""] ?? 99)
-    );
-  });
+  const availabilityRank = (row: CatalogGroupRow) =>
+    row.supplier_status === "available" ? 0 :
+    row.supplier_status === "preorder" ? 1 : 2;
+  const displayRows = [...rows].sort((a, b) =>
+    availabilityRank(a) - availabilityRank(b) ||
+    (languageOrder[a.language_label ?? ""] ?? 99) -
+      (languageOrder[b.language_label ?? ""] ?? 99)
+  );
+  const displayPosition = new Map(
+    displayRows.map((row, index) => [row.supplier_sku, index + 1]),
+  );
+  const creationRows = [...displayRows];
   const createdBySku = new Map<string, SpreeVariant>();
   for (const row of creationRows) {
     const language = row.language_label ?? languageGroupingInfo(catalogRowProduct(row))?.language;
@@ -1770,7 +1781,7 @@ async function migrateLanguageGroup(
       row,
       [{ name: "idioma", value: language }],
       categoryKeyValue,
-      languageOrder[language] ?? 99,
+      displayPosition.get(row.supplier_sku) ?? (languageOrder[language] ?? 99),
     );
     createdBySku.set(row.supplier_sku, variant);
   }
