@@ -189,9 +189,11 @@
     "yes": "Yes",
     "no": "No",
     "optionFilterChip": "{filter}: {value}",
-    "preorder": "Pre-order",
-    "preorderAction": "Pre-order",
-    "preorderShipsAt": "Ships by: {date}"
+    "preorder": "PRE-ORDER",
+    "preorderAction": "Pre-order now",
+    "preorderShipsAt": "Ships by: {date}",
+    "availableToOrder": "Available to order",
+    "preorderHelp": "Order now; it will ship when the release date arrives."
   },
   "navigation": {
     "home": "Home",
