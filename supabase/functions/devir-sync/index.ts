@@ -689,6 +689,36 @@ async function spreeList<T>(config: ConfigRow, path: string): Promise<T[]> {
   return payload.data ?? [];
 }
 
+async function spreeListAll<T>(
+  config: ConfigRow,
+  path: string,
+  maxPages = 25,
+): Promise<T[]> {
+  const rows: T[] = [];
+  for (let page = 1; page <= maxPages; page += 1) {
+    const sep = path.includes("?") ? "&" : "?";
+    const payload = await spreeRequest<{
+      data?: T[];
+      meta?: { next?: number | null; page?: number; pages?: number };
+    }>(
+      config,
+      "GET",
+      path + sep + "limit=100&page=" + page,
+    );
+    const batch = payload.data ?? [];
+    rows.push(...batch);
+    const pages = Number(payload.meta?.pages);
+    if (
+      batch.length < 100 ||
+      payload.meta?.next == null ||
+      (Number.isFinite(pages) && page >= pages)
+    ) {
+      break;
+    }
+  }
+  return rows;
+}
+
 function variantPrice(variant: SpreeVariant): number | null {
   if (typeof variant.price === "number") return variant.price;
   if (typeof variant.price === "string") {
@@ -2101,6 +2131,15 @@ async function preparePublishBatch(
     channels[0];
   if (!channel) throw new Error("No hay canal de venta activo en Spree");
 
+  const stockItems = await spreeListAll<SpreeStockItem>(config, "/stock_items");
+  const stockByVariant = new Map<string, SpreeStockItem[]>();
+  for (const item of stockItems) {
+    if (!item.variant_id) continue;
+    const list = stockByVariant.get(item.variant_id) ?? [];
+    list.push(item);
+    stockByVariant.set(item.variant_id, list);
+  }
+
   let published = 0;
   let waitingSupplier = 0;
   let humanReview = 0;
@@ -2220,11 +2259,14 @@ async function preparePublishBatch(
           prices: [{ currency: "EUR", amount: pricing.retail }],
         },
       );
-      await syncBackorderability(
-        config,
-        variant.id,
-        isSellableAtSupplier ? "available" : "unavailable",
-      );
+      const desiredBackorderable = isSellableAtSupplier;
+      for (const item of stockByVariant.get(variant.id) ?? []) {
+        if (item.backorderable === desiredBackorderable) continue;
+        await spreeRequest(config, "PATCH", "/stock_items/" + item.id, {
+          backorderable: desiredBackorderable,
+        });
+        item.backorderable = desiredBackorderable;
+      }
       await supabase
         .from("devir_sync_catalog")
         .update({
@@ -2260,8 +2302,19 @@ async function preparePublishBatch(
             ? "preorder"
             : "published";
 
+    const cleanTags = originalTags.filter((tag) =>
+      ![
+        "devir-ready",
+        "devir-published",
+        "devir-preorder",
+        "devir-buy-now",
+        "devir-waiting-stock",
+        "devir-review",
+        "REVISION-HUMANA",
+      ].includes(tag)
+    );
     let tags = Array.from(new Set([
-      ...originalTags,
+      ...cleanTags,
       "devir",
       ...(publish ? [
         "devir-ready",
@@ -2330,23 +2383,13 @@ async function preparePublishBatch(
       else waitingSupplier += 1;
     }
 
-    await upsertProductFields(config, productId, defs, {
-      "devir.review_status": human
-        ? "⚠ REVISIÓN HUMANA"
-        : publish
-          ? hasPreorder && hasAvailable
-            ? "PUBLICADO · COMPRA + PRERESERVA"
-            : hasPreorder
-              ? "PUBLICADO · PRERESERVA"
-              : "PUBLICADO · COMPRA"
-          : "ESPERANDO STOCK DEVIR",
-      "devir.review_reasons": human
-        ? Array.from(productReasons).join(", ")
-        : waiting
-          ? "supplier_unavailable"
-          : "none",
-      "devir.last_sync_at": new Date().toISOString(),
-    });
+    if (human) {
+      await upsertProductFields(config, productId, defs, {
+        "devir.review_status": "⚠ REVISIÓN HUMANA",
+        "devir.review_reasons": Array.from(productReasons).join(", "),
+        "devir.last_sync_at": new Date().toISOString(),
+      });
+    }
 
     if (!human && updatedForProduct === 0 && rows.length > 0) {
       await supabase
@@ -2364,6 +2407,9 @@ async function preparePublishBatch(
         catalog_state: catalogState,
         catalog_version: "devir-taxonomy-v2",
         catalog_prepared_at: new Date().toISOString(),
+        last_error: human
+          ? "REVIEW: " + Array.from(productReasons).join(", ")
+          : null,
         updated_at: new Date().toISOString(),
       })
       .eq("spree_product_id", productId);
