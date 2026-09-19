@@ -1273,6 +1273,213 @@ async function categorizeDraftBatch(
 }
 
 
+
+interface SpecialPricingProgram {
+  code: string;
+  name: string;
+  target_margin: number | string;
+  active: boolean;
+  requires_approval: boolean;
+  exclude_fixed_price_books: boolean;
+  spree_price_list_id: string | null;
+}
+
+interface SpreePriceList {
+  id: string;
+  name: string;
+  status?: string;
+}
+
+function specialProgramPrice(cost: number, targetMargin: number): number {
+  const grossCost = cost * 1.21;
+  // Round upward to cents so the configured margin is a floor, not an
+  // accidental 2.99% after rounding.
+  return Math.ceil((grossCost / (1 - targetMargin)) * 100 - 1e-9) / 100;
+}
+
+function isFixedPriceBookSku(sku: string): boolean {
+  // ISBN-13 / Bookland prefixes used by the Devir manga and RPG books.
+  // These remain on normal book pricing because Spanish fixed-price rules
+  // generally do not permit a 3% margin program to imply a large discount.
+  return /^(978|979)/.test(sku.replace(/\D/g, ""));
+}
+
+async function getSpecialProgram(code: string): Promise<SpecialPricingProgram> {
+  const { data, error } = await supabase
+    .from("special_pricing_programs")
+    .select("*")
+    .eq("code", code.toUpperCase())
+    .single();
+  if (error) throw error;
+  return data as SpecialPricingProgram;
+}
+
+async function ensureSpecialPriceList(
+  config: ConfigRow,
+  program: SpecialPricingProgram,
+): Promise<SpreePriceList> {
+  if (program.spree_price_list_id) {
+    try {
+      return await spreeRequest<SpreePriceList>(
+        config,
+        "GET",
+        "/price_lists/" + encodeURIComponent(program.spree_price_list_id),
+      );
+    } catch {
+      // Recreate if the stored list was removed manually.
+    }
+  }
+
+  const created = await spreeRequest<SpreePriceList>(config, "POST", "/price_lists", {
+    name: program.code + " · " + program.name,
+    description:
+      "Precio por cuenta aprobada. Margen objetivo configurable; no altera el PVP público.",
+    match_policy: "all",
+  });
+
+  const { error } = await supabase
+    .from("special_pricing_programs")
+    .update({
+      spree_price_list_id: created.id,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("code", program.code);
+  if (error) throw error;
+
+  program.spree_price_list_id = created.id;
+  return created;
+}
+
+async function approvedSpecialCustomerIds(programCode: string): Promise<string[]> {
+  const { data, error } = await supabase
+    .from("special_pricing_requests")
+    .select("spree_customer_id")
+    .eq("program_code", programCode)
+    .eq("status", "approved");
+  if (error) throw error;
+  return Array.from(
+    new Set((data ?? []).map((row) => String(row.spree_customer_id)).filter(Boolean)),
+  );
+}
+
+async function syncSpecialPriceListRules(
+  config: ConfigRow,
+  program: SpecialPricingProgram,
+  priceList: SpreePriceList,
+): Promise<number> {
+  const customerIds = await approvedSpecialCustomerIds(program.code);
+
+  await spreeRequest(config, "PATCH", "/price_lists/" + encodeURIComponent(priceList.id), {
+    rules: customerIds.length
+      ? [{
+          type: "user_rule",
+          preferences: { user_ids: customerIds },
+        }]
+      : [],
+  });
+
+  if (customerIds.length && program.active) {
+    await spreeRequest(
+      config,
+      "PATCH",
+      "/price_lists/" + encodeURIComponent(priceList.id) + "/activate",
+    );
+  } else {
+    try {
+      await spreeRequest(
+        config,
+        "PATCH",
+        "/price_lists/" + encodeURIComponent(priceList.id) + "/deactivate",
+      );
+    } catch {
+      // A fresh draft list is already inactive.
+    }
+  }
+
+  return customerIds.length;
+}
+
+async function syncSpecialPriceRows(
+  config: ConfigRow,
+  program: SpecialPricingProgram,
+  priceList: SpreePriceList,
+): Promise<number> {
+  const targetMargin = Number(program.target_margin);
+  if (!Number.isFinite(targetMargin) || targetMargin < 0 || targetMargin >= 0.95) {
+    throw new Error("Margen especial inválido");
+  }
+
+  const { data, error } = await supabase
+    .from("devir_sync_catalog")
+    .select("supplier_sku,spree_variant_id,snapshot")
+    .not("spree_variant_id", "is", null)
+    .order("supplier_sku");
+  if (error) throw error;
+
+  const rows = [];
+  const seenVariants = new Set<string>();
+  for (const row of data ?? []) {
+    const sku = String(row.supplier_sku ?? "");
+    const variantId = String(row.spree_variant_id ?? "");
+    if (!sku || !variantId || seenVariants.has(variantId)) continue;
+    if (program.exclude_fixed_price_books && isFixedPriceBookSku(sku)) continue;
+    const cost = Number((row.snapshot as Json | null)?.purchasePrice);
+    if (!Number.isFinite(cost) || cost <= 0) continue;
+
+    seenVariants.add(variantId);
+    rows.push({
+      variant_id: variantId,
+      currency: "EUR",
+      price_list_id: priceList.id,
+      amount: specialProgramPrice(cost, targetMargin),
+    });
+  }
+
+  for (let index = 0; index < rows.length; index += 100) {
+    await spreeRequest(config, "POST", "/prices/bulk_upsert", {
+      prices: rows.slice(index, index + 100),
+    });
+  }
+
+  const { error: updateError } = await supabase
+    .from("special_pricing_programs")
+    .update({
+      last_prices_synced_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("code", program.code);
+  if (updateError) throw updateError;
+
+  return rows.length;
+}
+
+async function syncSpecialPricingProgram(
+  config: ConfigRow,
+  code: string,
+  syncPrices = true,
+): Promise<{
+  code: string;
+  price_list_id: string;
+  target_margin: number;
+  price_rows?: number;
+  approved_customers: number;
+}> {
+  const program = await getSpecialProgram(code);
+  const priceList = await ensureSpecialPriceList(config, program);
+  const priceRows = syncPrices
+    ? await syncSpecialPriceRows(config, program, priceList)
+    : undefined;
+  const approvedCustomers = await syncSpecialPriceListRules(config, program, priceList);
+
+  return {
+    code: program.code,
+    price_list_id: priceList.id,
+    target_margin: Number(program.target_margin),
+    ...(priceRows === undefined ? {} : { price_rows: priceRows }),
+    approved_customers: approvedCustomers,
+  };
+}
+
 async function validateSpreeAdminKey(spreeApiUrl: string, key: string): Promise<void> {
   if (!key.startsWith("sk_")) throw new Error("La clave de Spree no es una Secret API Key válida.");
   const response = await fetch(
@@ -1486,6 +1693,63 @@ async function operatorAction(
       .eq("id", "primary");
     if (error) throw error;
     return json({ ok: true, requested: true });
+  }
+
+  if (action === "special-pricing-setup") {
+    const code = typeof body.code === "string" ? body.code.trim().toUpperCase() : "BISON3";
+    return json({ ok: true, ...(await syncSpecialPricingProgram(config, code, true)) });
+  }
+
+  if (action === "special-pricing-status") {
+    const code = typeof body.code === "string" ? body.code.trim().toUpperCase() : "BISON3";
+    const program = await getSpecialProgram(code);
+    const { data: requests, error } = await supabase
+      .from("special_pricing_requests")
+      .select("id,spree_customer_id,email,status,requested_at,decided_at,note")
+      .eq("program_code", code)
+      .order("requested_at", { ascending: false });
+    if (error) throw error;
+    return json({ ok: true, program, requests: requests ?? [] });
+  }
+
+  if (action === "special-pricing-approve" || action === "special-pricing-reject") {
+    const requestId = typeof body.requestId === "string" ? body.requestId.trim() : "";
+    if (!requestId) return json({ error: "request_id_required" }, 400);
+    const status = action === "special-pricing-approve" ? "approved" : "rejected";
+    const { data: requestRow, error } = await supabase
+      .from("special_pricing_requests")
+      .update({
+        status,
+        decided_at: new Date().toISOString(),
+        note: typeof body.note === "string" ? body.note : null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", requestId)
+      .select("program_code")
+      .single();
+    if (error) throw error;
+    return json({
+      ok: true,
+      status,
+      ...(await syncSpecialPricingProgram(config, String(requestRow.program_code), false)),
+    });
+  }
+
+  if (action === "special-pricing-set-margin") {
+    const code = typeof body.code === "string" ? body.code.trim().toUpperCase() : "BISON3";
+    const targetMargin = Number(body.targetMargin);
+    if (!Number.isFinite(targetMargin) || targetMargin < 0 || targetMargin >= 0.95) {
+      return json({ error: "invalid_target_margin" }, 400);
+    }
+    const { error } = await supabase
+      .from("special_pricing_programs")
+      .update({
+        target_margin: targetMargin,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("code", code);
+    if (error) throw error;
+    return json({ ok: true, ...(await syncSpecialPricingProgram(config, code, true)) });
   }
 
   if (action === "catalog-pricing-setup") {
