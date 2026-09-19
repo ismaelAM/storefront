@@ -633,5 +633,13 @@
       "signInForPricing": "Zur Preisanzeige anmelden",
       "signInToOrder": "Zum Bestellen anmelden"
     }
+  },
+  "cookies": {
+    "title": "Datenschutz und Cookies",
+    "description": "Wir verwenden notwendige technische Speichermechanismen. Nur mit deiner Zustimmung aktivieren wir optionale Analyse-Technologien.",
+    "learnMore": "Mehr zur Datenschutzerklärung",
+    "reject": "Ablehnen",
+    "accept": "Akzeptieren",
+    "preferences": "Cookie-Einstellungen"
   }
 }
