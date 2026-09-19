@@ -58,10 +58,10 @@ export function MobileMenu({ rootCategories, basePath, wholesaleEnabled }: Mobil
         <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-4 py-2">
           <Link href={basePath || "/"} onClick={close} className={linkClass}>{t("home")}</Link>
           {renderCategoryLinks(rootCategories)}
-          <Link href={`${basePath}/#contact`} onClick={close} className={linkClass}>{t("contact")}</Link>
           <div className="mt-2 border-t border-gray-200 pt-2">
             {wholesaleEnabled && <Link href={`${basePath}/wholesale`} onClick={close} className={linkClass}>{t("wholesale")}</Link>}
             <SheetClose asChild><Link href={`${basePath}/account`} className={linkClass}>{t("myAccount")}</Link></SheetClose>
+            <Link href={`${basePath}/#contact`} onClick={close} className={linkClass}>{t("contact")}</Link>
           </div>
         </nav>
         <SheetFooter className="items-center gap-2 border-t border-gray-200 pt-3 lg:hidden"><RegionPreferences variant="menu" /></SheetFooter>
