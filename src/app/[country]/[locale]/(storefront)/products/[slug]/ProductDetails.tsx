@@ -183,10 +183,10 @@ export function ProductDetails({ product, basePath }: ProductDetailsProps) {
                   </p>
                 )}
               </div>
-            ) : inStock ? (
+            ) : isPurchasable ? (
               <span className="inline-flex items-center gap-1.5 text-green-600">
                 <CircleCheckBig className="w-5 h-5" />
-                {t("inStock")}
+                {inStock ? t("inStock") : t("availableToOrder")}
               </span>
             ) : (
               <span className="inline-flex items-center gap-1.5 text-red-600">
