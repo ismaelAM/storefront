@@ -517,19 +517,37 @@ function isPack(product: DevirProduct): boolean {
     /\bcommander\s+decks?\s+set\b/.test(value);
 }
 
-function categoryKey(product: DevirProduct): string | null {
+function categoryKey(product: DevirProduct): string {
   const value = (product.name + " " + product.url).toLowerCase();
   if (/\bmtg\b|magic|\/magic/.test(value)) return "tcg/mtg";
   if (/yugioh|yu-gi-oh|yu gi oh/.test(value)) return "tcg/yugioh";
-  if (/juego de mesa|juegos-de-mesa/.test(value)) return "juegos-de-mesa";
-  if (/accesorio|sleeves|fundas|deck box|tapete/.test(value)) return "accesorios";
-  return null;
+  if (/accesorio|sleeves|fundas|deck\s*box|tapete|playmat/.test(value)) return "accesorios";
+
+  // Serial manga/comic naming in Devir is very regular. "Tomo" on its own
+  // is deliberately excluded because it also appears in RPG campaigns.
+  if (/(?:n[uú]m\.?|num\.?|vol\.?|volumen)\s*0*\d{1,3}/i.test(product.name)) {
+    return "manga-comic";
+  }
+
+  if (/warhammer/.test(value)) return "warhammer";
+  if (
+    /pathfinder|d&d|dungeons\s*&?\s*dragons|vampiro|cthulhu|runequest|forbidden\s+lands|alien.*rol|juego\s+de\s+rol|roleplaying|rpg\b/.test(value)
+  ) {
+    return "rol";
+  }
+
+  return "juegos-de-mesa";
 }
 
-function priceFor(cost: number, margin: number): { grossCost: number; retail: number; effective: number } {
+function priceFor(
+  cost: number,
+  margin: number,
+  ending = 0.99,
+): { grossCost: number; retail: number; effective: number } {
   const grossCost = cost * 1.21;
-  let retail = Math.floor(grossCost / (1 - margin)) + 0.99;
-  if (retail + 1e-9 < grossCost / (1 - margin)) retail += 1;
+  const threshold = grossCost / (1 - margin);
+  let retail = Math.floor(threshold) + ending;
+  if (retail + 1e-9 < threshold) retail += 1;
   retail = Math.round(retail * 100) / 100;
   return { grossCost, retail, effective: (retail - grossCost) / retail };
 }
@@ -798,7 +816,7 @@ async function syncProductToSpree(
   const category = key ? categories.find((c) => c.permalink === key) ?? null : null;
   const configuredMargin = await categoryMargin(config, category);
   const targetMargin = configuredMargin ?? 0.25;
-  const pricing = priceFor(product.purchasePrice, targetMargin);
+  const pricing = priceFor(product.purchasePrice, targetMargin, key === "manga-comic" ? 0.95 : 0.99);
   const reasons: string[] = [];
   if (!key || !category) reasons.push("category_unclassified");
   else if (configuredMargin === null) reasons.push("category_margin_unconfigured");
@@ -864,6 +882,7 @@ async function syncProductToSpree(
     await spreeRequest(config, "PATCH", "/products/" + productId, {
       tags,
       ...(!active && managed && !grouped ? { name: product.name } : {}),
+      ...(!active && managed && category ? { category_ids: [category.id] } : {}),
       variants: [{
         id: existing.variant.id,
         sku: product.sku,
@@ -1049,6 +1068,159 @@ async function migrateCatalogGroup(
     group_key: groupKey,
     product_id: created.id,
     variants: rows.length,
+  };
+}
+
+
+const DEFAULT_CATEGORY_MARGINS: Record<string, number> = {
+  "juegos-de-mesa": 0.20,
+  "warhammer": 0.34,
+  "tcg/mtg": 0.15,
+  "tcg/yugioh": 0.14,
+  "rol": 0.34,
+  "manga-comic": 0.12,
+  "accesorios": 0.18,
+};
+
+async function ensureCategory(
+  config: ConfigRow,
+  categories: SpreeCategory[],
+  name: string,
+  permalink: string,
+): Promise<SpreeCategory> {
+  const existing = categories.find((category) => category.permalink === permalink);
+  if (existing) return existing;
+  const created = await spreeRequest<SpreeCategory>(config, "POST", "/categories", {
+    name,
+    permalink,
+  });
+  categories.push(created);
+  return created;
+}
+
+async function setCategoryMargin(
+  config: ConfigRow,
+  category: SpreeCategory,
+  margin: number,
+): Promise<void> {
+  const defs = await spreeList<SpreeFieldDefinition>(config, "/custom_field_definitions");
+  const def = defs.find(
+    (item) =>
+      item.resource_type === "Spree::Taxon" &&
+      item.namespace === "pricing" &&
+      item.key === "target_margin",
+  );
+  if (!def) throw new Error("Falta custom field pricing.target_margin para categorías");
+
+  const fields = await spreeList<SpreeCustomField>(
+    config,
+    "/categories/" + encodeURIComponent(category.id) + "/custom_fields",
+  );
+  const current = fields.find((field) => field.key === "target_margin");
+  if (current) {
+    if (Math.abs(Number(current.value) - margin) > 0.0001) {
+      await spreeRequest(
+        config,
+        "PATCH",
+        "/categories/" + encodeURIComponent(category.id) + "/custom_fields/" + current.id,
+        { value: margin },
+      );
+    }
+  } else {
+    await spreeRequest(
+      config,
+      "POST",
+      "/categories/" + encodeURIComponent(category.id) + "/custom_fields",
+      { custom_field_definition_id: def.id, value: margin },
+    );
+  }
+}
+
+async function setupCatalogCategoriesAndMargins(config: ConfigRow): Promise<Array<{
+  id: string;
+  name: string;
+  permalink: string;
+  target_margin: number;
+}>> {
+  const categories = await spreeCategories(config);
+  await ensureCategory(config, categories, "Rol", "rol");
+  await ensureCategory(config, categories, "Manga y cómic", "manga-comic");
+  await ensureCategory(config, categories, "Accesorios", "accesorios");
+
+  const output = [];
+  for (const [permalink, margin] of Object.entries(DEFAULT_CATEGORY_MARGINS)) {
+    const category = categories.find((item) => item.permalink === permalink);
+    if (!category) continue;
+    await setCategoryMargin(config, category, margin);
+    output.push({
+      id: category.id,
+      name: category.name,
+      permalink,
+      target_margin: margin,
+    });
+  }
+  return output;
+}
+
+async function categorizeDraftBatch(
+  config: ConfigRow,
+  offset: number,
+  limit: number,
+): Promise<{ processed: number; updated: number; next_offset: number | null }> {
+  const categories = await spreeCategories(config);
+  const { data, error } = await supabase
+    .from("devir_sync_catalog")
+    .select("supplier_sku,name,source_url,spree_product_id")
+    .not("spree_product_id", "is", null)
+    .order("supplier_sku")
+    .range(offset, offset + limit - 1);
+  if (error) throw error;
+
+  const rows = data ?? [];
+  let updated = 0;
+  const seen = new Set<string>();
+
+  for (const row of rows) {
+    const productId = String(row.spree_product_id ?? "");
+    if (!productId || seen.has(productId)) continue;
+    seen.add(productId);
+
+    let spreeProduct: SpreeProduct;
+    try {
+      spreeProduct = await spreeRequest<SpreeProduct>(
+        config,
+        "GET",
+        "/products/" + encodeURIComponent(productId),
+      );
+    } catch {
+      continue;
+    }
+    if (spreeProduct.status !== "draft" || !(spreeProduct.tags ?? []).includes("devir")) continue;
+
+    const product: DevirProduct = {
+      sku: String(row.supplier_sku),
+      name: String(row.name),
+      url: String(row.source_url),
+      purchasePrice: null,
+      availability: "unknown",
+      availabilityLabel: null,
+      releaseDate: null,
+      imageUrls: [],
+    };
+    const key = categoryKey(product);
+    const category = categories.find((item) => item.permalink === key);
+    if (!category) continue;
+
+    await spreeRequest(config, "PATCH", "/products/" + encodeURIComponent(productId), {
+      category_ids: [category.id],
+    });
+    updated += 1;
+  }
+
+  return {
+    processed: rows.length,
+    updated,
+    next_offset: rows.length < limit ? null : offset + limit,
   };
 }
 
@@ -1265,6 +1437,20 @@ async function operatorAction(
       .eq("id", "primary");
     if (error) throw error;
     return json({ ok: true, requested: true });
+  }
+
+  if (action === "catalog-pricing-setup") {
+    const categories = await setupCatalogCategoriesAndMargins(config);
+    return json({ ok: true, categories });
+  }
+
+  if (action === "categorize-drafts") {
+    const offset = Math.max(0, Number(body.offset ?? 0) || 0);
+    const limit = Math.min(40, Math.max(1, Number(body.limit ?? 25) || 25));
+    return json({
+      ok: true,
+      ...(await categorizeDraftBatch(config, offset, limit)),
+    });
   }
 
   if (action === "regroup-preview") {
