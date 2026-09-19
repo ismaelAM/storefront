@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { getTranslations } from "next-intl/server";
+import { redirect } from "next/navigation";
 import { ProductListing } from "@/components/products/ProductListing";
 import { resolveCurrency } from "@/lib/data/markets";
 import { getProductFilters, getProducts } from "@/lib/data/products";
@@ -32,6 +33,10 @@ export default async function ProductsPage({
 
   const listingState = parseListingSearchParams(rawSearchParams);
   const query = listingState.query;
+
+  if (!query) {
+    redirect(basePath);
+  }
 
   const t = await getTranslations({
     locale: locale as Locale,
