@@ -636,5 +636,13 @@
       "signInForPricing": "Inicia sesión para ver precios",
       "signInToOrder": "Inicia sesión para pedir"
     }
+  },
+  "cookies": {
+    "title": "Privacidad y cookies",
+    "description": "Usamos almacenamiento técnico necesario. Solo con tu permiso activamos tecnologías opcionales de analítica.",
+    "learnMore": "Consulta la política de privacidad",
+    "reject": "Rechazar",
+    "accept": "Aceptar",
+    "preferences": "Preferencias de cookies"
   }
 }
