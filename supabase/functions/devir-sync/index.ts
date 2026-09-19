@@ -1116,7 +1116,9 @@ async function setCategoryMargin(
     config,
     "/categories/" + encodeURIComponent(category.id) + "/custom_fields",
   );
-  const current = fields.find((field) => field.key === "target_margin");
+  const current = fields.find(
+    (field) => field.key === "pricing.target_margin" || field.key === "target_margin",
+  );
   if (current) {
     if (Math.abs(Number(current.value) - margin) > 0.0001) {
       await spreeRequest(
