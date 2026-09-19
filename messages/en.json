@@ -636,5 +636,13 @@
       "signInForPricing": "Sign in for pricing",
       "signInToOrder": "Sign in to order"
     }
+  },
+  "cookies": {
+    "title": "Privacy and cookies",
+    "description": "We use necessary technical storage. We only enable optional analytics technologies with your permission.",
+    "learnMore": "Read the privacy policy",
+    "reject": "Reject",
+    "accept": "Accept",
+    "preferences": "Cookie preferences"
   }
 }
