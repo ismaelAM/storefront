@@ -67,6 +67,7 @@ interface DevirProduct {
   name: string;
   url: string;
   purchasePrice: number | null;
+  referencePriceNet: number | null;
   availability: "available" | "preorder" | "unavailable" | "unknown";
   availabilityLabel: string | null;
   releaseDate: string | null;
@@ -420,6 +421,10 @@ function parseAvailability(html: string): {
   if (jsonInStock === "true") return { availability: "available", label: meaningful || "Disponible" };
   if (jsonInStock === "false") return { availability: "unavailable", label: meaningful || "No disponible" };
 
+  const salable = html.match(/["']is_salable["']\s*:\s*["']?([01])["']?/i)?.[1];
+  if (salable === "1") return { availability: "available", label: meaningful || "Disponible" };
+  if (salable === "0") return { availability: "unavailable", label: meaningful || "No disponible" };
+
   return { availability: "unknown", label: meaningful || null };
 }
 
@@ -497,12 +502,16 @@ function parseProduct(html: string, url: string): DevirProduct | null {
   const finalPrice = parsePriceTag(html, /finalPrice/i);
   const minPrice = parsePriceTag(html, /minPrice/i);
   const purchasePrice = maxPrice ?? finalPrice ?? minPrice;
+  const referencePriceNet =
+    parsePriceTag(html, /oldPrice|regularPrice/i) ??
+    (maxPrice !== null && purchasePrice !== null && maxPrice > purchasePrice ? maxPrice : null);
   const stock = parseAvailability(html);
   return {
     sku,
     name,
     url,
     purchasePrice,
+    referencePriceNet,
     availability: stock.availability,
     availabilityLabel: stock.label,
     releaseDate: releaseDate(html),
@@ -543,8 +552,9 @@ function priceFor(
   cost: number,
   margin: number,
   ending = 0.99,
+  vatRate = 0.21,
 ): { grossCost: number; retail: number; effective: number } {
-  const grossCost = cost * 1.21;
+  const grossCost = cost * (1 + vatRate);
   const threshold = grossCost / (1 - margin);
   let retail = Math.floor(threshold) + ending;
   if (retail + 1e-9 < threshold) retail += 1;
