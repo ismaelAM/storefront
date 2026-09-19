@@ -5,10 +5,29 @@ import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
 import { cachedGetPolicy, getPolicy } from "@/lib/data/policies";
 import { getSitePageData } from "@/lib/puck/get-site-page-data";
+import { getSpanishLegalPolicy, type LocalLegalPolicy } from "@/lib/legal/spain";
 import { buildLocalizedAlternates, translationFingerprint } from "@/lib/metadata/alternates";
 import { getStoreName, getStoreUrl } from "@/lib/store";
 
 interface PolicyPageProps { params: Promise<{ country: string; locale: string; slug: string }> }
+
+type ResolvedPolicy = Awaited<ReturnType<typeof getPolicy>> | LocalLegalPolicy;
+
+async function resolvePolicy(
+  slug: string,
+  country: string,
+  locale: string,
+): Promise<ResolvedPolicy> {
+  if (locale.toLowerCase().startsWith("es")) {
+    const localPolicy = getSpanishLegalPolicy(slug);
+    if (localPolicy) return localPolicy;
+  }
+  return getPolicy(slug, { country, locale });
+}
+
+function isLocalPolicy(policy: NonNullable<ResolvedPolicy>): policy is LocalLegalPolicy {
+  return "local" in policy && policy.local === true;
+}
 
 type PolicyVisualConfig = {
   title: string; intro: string; backgroundColor: string; titleColor: string; textColor: string;
@@ -17,7 +36,7 @@ type PolicyVisualConfig = {
 
 export async function generateMetadata({ params }: PolicyPageProps): Promise<Metadata> {
   const { country, locale, slug } = await params;
-  const policy = await getPolicy(slug, { country, locale });
+  const policy = await resolvePolicy(slug, country, locale);
   const storeName = getStoreName();
   if (!policy) {
     const t = await getTranslations({ locale: locale as Locale, namespace: "policies" });
@@ -25,14 +44,25 @@ export async function generateMetadata({ params }: PolicyPageProps): Promise<Met
   }
   const description = `${policy.name} — ${storeName}`;
   const storeUrl = getStoreUrl();
-  const localizedAlternates = storeUrl ? await buildLocalizedAlternates({
-    storeUrl, country, locale, path: `/policies/${policy.slug}`,
-    currentResourceFingerprint: policyTranslationFingerprint(policy),
-    resolvePath: async (target) => {
-      const localizedPolicy = await cachedGetPolicy(policy.id, target);
-      return localizedPolicy ? { path: `/policies/${localizedPolicy.slug}`, fingerprint: policyTranslationFingerprint(localizedPolicy) } : undefined;
-    },
-  }) : undefined;
+  const localizedAlternates =
+    storeUrl && !isLocalPolicy(policy)
+      ? await buildLocalizedAlternates({
+          storeUrl,
+          country,
+          locale,
+          path: `/policies/${policy.slug}`,
+          currentResourceFingerprint: policyTranslationFingerprint(policy),
+          resolvePath: async (target) => {
+            const localizedPolicy = await cachedGetPolicy(policy.id, target);
+            return localizedPolicy
+              ? {
+                  path: `/policies/${localizedPolicy.slug}`,
+                  fingerprint: policyTranslationFingerprint(localizedPolicy),
+                }
+              : undefined;
+          },
+        })
+      : undefined;
   return {
     title: policy.name,
     description,
@@ -45,7 +75,7 @@ export default async function PolicyPage({ params }: PolicyPageProps): Promise<R
   await connection();
   const { country, slug, locale } = await params;
   const [policy, t] = await Promise.all([
-    getPolicy(slug, { country, locale }),
+    resolvePolicy(slug, country, locale),
     getTranslations({ locale: locale as Locale, namespace: "policies" }),
   ]);
   if (!policy) notFound();
