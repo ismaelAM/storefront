@@ -34,6 +34,7 @@ export async function cachedListProducts(
   cacheVersion = CATALOG_CACHE_VERSION,
 ) {
   "use cache: remote";
+  void cacheVersion;
   cacheLife("tenMinutes");
   cacheTag(`products${cacheTagSuffix(surface)}`);
   return getClientForSurface(surface).products.list(params, {
