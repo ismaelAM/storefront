@@ -556,24 +556,24 @@ function categoryKey(product: DevirProduct): string {
     return "tcg/mtg";
   }
 
-  if (/pathfinder/.test(value)) return "rol/pathfinder";
+  if (/pathfinder/.test(value)) return "rol-pathfinder";
   if (/d&d|dungeons\s*&?\s*dragons|forgotten realms|dragonlance/.test(value)) {
-    return "rol/dungeons-dragons";
+    return "rol-dungeons-dragons";
   }
-  if (/warhammer/.test(value)) return "rol/warhammer";
+  if (/warhammer/.test(value)) return "rol-warhammer";
   if (
     /vampiro|cthulhu|runequest|forbidden\s+lands|blade\s*runner|alien.*rol|candela\s+obscura|broken\s+tales|juego\s+de\s+rol|roleplaying|rpg\b|libro\s+b[aá]sico|pantalla\s+de\s+direcci[oó]n/.test(value)
   ) {
-    return "rol/otros";
+    return "rol-otros";
   }
 
   if (/expansi[oó]n|expansion|\bexp\.|ampliaci[oó]n|big\s*box/.test(value)) {
-    return "juegos-de-mesa/expansiones";
+    return "juegos-expansiones";
   }
   if (/junior|infantil|primaria|secundaria|kids|niñ[oa]s/.test(value)) {
-    return "juegos-de-mesa/infantil";
+    return "juegos-infantil";
   }
-  return "juegos-de-mesa/general";
+  return "juegos-general";
 }
 
 
@@ -1227,29 +1227,29 @@ const DEFAULT_CATEGORY_MARGINS: Record<string, number> = {
   // Minimum contribution after VAT and a standard EEA Stripe card fee.
   // These are safety floors; the market/reference-price discount normally
   // leaves a larger realised margin.
-  "juegos-de-mesa/general": 0.05,
-  "juegos-de-mesa/expansiones": 0.05,
-  "juegos-de-mesa/infantil": 0.05,
+  "juegos-general": 0.05,
+  "juegos-expansiones": 0.05,
+  "juegos-infantil": 0.05,
   "tcg/mtg": 0.04,
   "tcg/yugioh": 0.04,
-  "rol/dungeons-dragons": 0.05,
-  "rol/pathfinder": 0.05,
-  "rol/warhammer": 0.05,
-  "rol/otros": 0.05,
+  "rol-dungeons-dragons": 0.05,
+  "rol-pathfinder": 0.05,
+  "rol-warhammer": 0.05,
+  "rol-otros": 0.05,
   "manga-comic": 0.05,
   "accesorios": 0.05,
 };
 
 const CATEGORY_REFERENCE_DISCOUNTS: Record<string, number> = {
-  "juegos-de-mesa/general": 0.17,
-  "juegos-de-mesa/expansiones": 0.17,
-  "juegos-de-mesa/infantil": 0.15,
+  "juegos-general": 0.17,
+  "juegos-expansiones": 0.17,
+  "juegos-infantil": 0.15,
   "tcg/mtg": 0.12,
   "tcg/yugioh": 0.12,
-  "rol/dungeons-dragons": 0.10,
-  "rol/pathfinder": 0.10,
-  "rol/warhammer": 0.10,
-  "rol/otros": 0.10,
+  "rol-dungeons-dragons": 0.10,
+  "rol-pathfinder": 0.10,
+  "rol-warhammer": 0.10,
+  "rol-otros": 0.10,
   "manga-comic": 0.05,
   "accesorios": 0.15,
 };
@@ -1414,6 +1414,34 @@ async function ensureCategory(
   return created;
 }
 
+async function ensureCategoryAlias(
+  config: ConfigRow,
+  categories: SpreeCategory[],
+  name: string,
+  permalink: string,
+  aliases: string[] = [],
+): Promise<SpreeCategory> {
+  let existing = categories.find(
+    (category) =>
+      category.permalink === permalink ||
+      aliases.includes(category.permalink ?? ""),
+  );
+  if (!existing) {
+    return await ensureCategory(config, categories, name, permalink);
+  }
+  if (existing.permalink !== permalink || existing.name !== name) {
+    existing = await spreeRequest<SpreeCategory>(
+      config,
+      "PATCH",
+      "/categories/" + encodeURIComponent(existing.id),
+      { name, permalink },
+    );
+    const index = categories.findIndex((item) => item.id === existing!.id);
+    if (index >= 0) categories[index] = existing;
+  }
+  return existing;
+}
+
 async function setCategoryMargin(
   config: ConfigRow,
   category: SpreeCategory,
@@ -1463,28 +1491,27 @@ async function setupCatalogCategoriesAndMargins(config: ConfigRow): Promise<Arra
   const categories = await spreeCategories(config);
 
   const juegos = await ensureCategory(config, categories, "Juegos de mesa", "juegos-de-mesa");
-  const juegosGeneral = await ensureCategory(config, categories, "General", "juegos-de-mesa/general");
-  const juegosExp = await ensureCategory(config, categories, "Expansiones", "juegos-de-mesa/expansiones");
-  const juegosInf = await ensureCategory(config, categories, "Infantil", "juegos-de-mesa/infantil");
+  const juegosGeneral = await ensureCategoryAlias(
+    config, categories, "General", "juegos-general", ["juegos-de-mesa-slash-general"]
+  );
+  const juegosExp = await ensureCategoryAlias(
+    config, categories, "Expansiones", "juegos-expansiones", ["juegos-de-mesa-slash-expansiones"]
+  );
+  const juegosInf = await ensureCategoryAlias(
+    config, categories, "Infantil", "juegos-infantil", ["juegos-de-mesa-slash-infantil"]
+  );
 
   const rol = await ensureCategory(config, categories, "Rol", "rol");
-  const rolDd = await ensureCategory(config, categories, "Dungeons & Dragons", "rol/dungeons-dragons");
-  const rolPf = await ensureCategory(config, categories, "Pathfinder", "rol/pathfinder");
-  let rolWh = categories.find((item) => item.permalink === "rol/warhammer") ??
-    categories.find((item) => item.permalink === "warhammer");
-  if (!rolWh) {
-    rolWh = await ensureCategory(config, categories, "Warhammer", "rol/warhammer");
-  } else if (rolWh.permalink !== "rol/warhammer") {
-    rolWh = await spreeRequest<SpreeCategory>(
-      config,
-      "PATCH",
-      "/categories/" + encodeURIComponent(rolWh.id),
-      { name: "Warhammer", permalink: "rol/warhammer" },
-    );
-    const index = categories.findIndex((item) => item.id === rolWh!.id);
-    if (index >= 0) categories[index] = rolWh;
-  }
-  const rolOtros = await ensureCategory(config, categories, "Otros juegos de rol", "rol/otros");
+  const rolDd = await ensureCategoryAlias(
+    config, categories, "Dungeons & Dragons", "rol-dungeons-dragons", ["rol-slash-dungeons-dragons"]
+  );
+  const rolPf = await ensureCategoryAlias(
+    config, categories, "Pathfinder", "rol-pathfinder", ["rol-slash-pathfinder"]
+  );
+  const rolWh = await ensureCategoryAlias(
+    config, categories, "Warhammer", "rol-warhammer", ["warhammer", "rol-slash-warhammer"]
+  );
+  const rolOtros = await ensureCategory(config, categories, "Otros juegos de rol", "rol-otros");
 
   const tcg = await ensureCategory(config, categories, "TCG", "tcg");
   const mtg = await ensureCategory(config, categories, "Magic: The Gathering", "tcg/mtg");
