@@ -1230,8 +1230,10 @@ function isBookSku(sku: string): boolean {
   return /^(978|979)/.test(sku.replace(/\D/g, ""));
 }
 
-function vatRateForSku(sku: string): number {
-  return isBookSku(sku) ? 0.04 : 0.21;
+function isBookProduct(product: DevirProduct, key: string): boolean {
+  if (isBookSku(product.sku)) return true;
+  if (key !== "rol") return false;
+  return /manual|gu[ií]a|libro|compendio|aventura|campaña|bestiario|suplemento|reglamento|pantalla de direcci[oó]n|d&d|dungeons|pathfinder|warhammer/i.test(product.name);
 }
 
 function roundUpToFiveCents(value: number): number {
@@ -1266,13 +1268,12 @@ function competitivePricing(
     throw new Error("Producto sin coste Devir: " + product.sku);
   }
 
-  const vatRate = vatRateForSku(product.sku);
+  const book = isBookProduct(product, key);
+  const vatRate = book ? 0.04 : 0.21;
   const floor = paymentAwareFloor(product.purchasePrice, vatRate, targetProfitRate);
   const referenceNet = Number(product.referencePriceNet);
   const hasReference = Number.isFinite(referenceNet) && referenceNet > product.purchasePrice;
   const referenceGross = hasReference ? referenceNet * (1 + vatRate) : null;
-  const book = isBookSku(product.sku);
-
   let raw = floor;
   let ruleSource = "cost_floor";
   let reviewReason: string | null = null;
@@ -1336,7 +1337,7 @@ function shippingDefaults(
   if (key === "manga-comic") {
     return { weight: 0.35, height: 21, width: 15, depth: 2.5, weight_unit: "kg", dimensions_unit: "cm" };
   }
-  if (key === "rol" && isBookSku(product.sku)) {
+  if (key === "rol" && isBookProduct(product, key)) {
     return { weight: 1.2, height: 29, width: 22, depth: 3.5, weight_unit: "kg", dimensions_unit: "cm" };
   }
   if (key === "tcg/mtg" || key === "tcg/yugioh") {
