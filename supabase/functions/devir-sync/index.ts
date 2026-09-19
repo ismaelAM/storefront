@@ -387,6 +387,106 @@ function imageUrls(html: string, sourceUrl: string): string[] {
     .slice(0, 12);
 }
 
+function parseAvailability(html: string): {
+  availability: DevirProduct["availability"];
+  label: string | null;
+} {
+  const signals: Array<{ className: string; text: string }> = [];
+  for (const match of html.matchAll(/<([^\s>]+)\b[^>]*class=["']([^"']*\bstock\b[^"']*)["'][^>]*>[\s\S]*?<\/\1>/gi)) {
+    signals.push({ className: match[2] ?? "", text: stripHtml(match[0]) });
+  }
+
+  const combined = signals.map((s) => `${s.className} ${s.text}`).join(" | ");
+  const meaningful =
+    signals.map((s) => s.text).find((text) => text && !/^disponibilidad\s*:?$/i.test(text)) ??
+    signals.map((s) => s.text).find(Boolean) ??
+    "";
+
+  // Magento normally exposes the decisive state in the stock element class
+  // ("available" / "unavailable"). Text is a fallback because Devir has used
+  // several templates over time. Generic "Disponibilidad:" labels are ignored.
+  if (/\bunavailable\b|no est[aá] disponible|agotad[oa]|sin stock|no disponible/i.test(combined)) {
+    return { availability: "unavailable", label: meaningful || "No disponible" };
+  }
+  if (/pre\s*reserva|preorder|pr[eé]-?commande/i.test(combined)) {
+    return { availability: "preorder", label: meaningful || "Pre reserva" };
+  }
+  if (/\bavailable\b|\ben stock\b|\bdisponible\b/i.test(combined)) {
+    return { availability: "available", label: meaningful || "Disponible" };
+  }
+
+  // Some Magento themes render inventory state inside JSON configuration.
+  const jsonInStock = html.match(/["'](?:is_in_stock|isInStock)["']\s*:\s*(true|false)/i)?.[1];
+  if (jsonInStock === "true") return { availability: "available", label: meaningful || "Disponible" };
+  if (jsonInStock === "false") return { availability: "unavailable", label: meaningful || "No disponible" };
+
+  return { availability: "unknown", label: meaningful || null };
+}
+
+interface GroupingInfo {
+  itemKind: "standalone" | "variant_candidate";
+  groupKey: string | null;
+  groupName: string | null;
+  variantLabel: string | null;
+  variantPosition: number | null;
+  confidence: "none" | "high" | "ambiguous";
+}
+
+function normalizeGroupKey(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 120);
+}
+
+function groupingInfo(product: DevirProduct): GroupingInfo {
+  const raw = product.name.replace(/\s+/g, " ").trim();
+  // Strong signal for manga/serial publishing. We deliberately do not group
+  // arbitrary titles ending in a number (board games, expansions, etc.).
+  const match = raw.match(
+    /^(.*?)\s+(?:n[uú]m\.?|num\.?|vol\.?|volumen)\s*0*(\d{1,3})(?:\s+de\s+\d+)?(?:[.\s-]+(.*))?$/i,
+  );
+  if (!match) {
+    const tome = raw.match(/^(.*?)\s+-?\s*tomo\s*0*(\d{1,3})(?:\s+de\s+\d+)?(?:[.\s-]+(.*))?$/i);
+    if (!tome) {
+      return {
+        itemKind: "standalone",
+        groupKey: null,
+        groupName: null,
+        variantLabel: null,
+        variantPosition: null,
+        confidence: "none",
+      };
+    }
+    const groupName = tome[1].replace(/[\s:;,.\-]+$/g, "").trim();
+    const position = Number(tome[2]);
+    return {
+      itemKind: "variant_candidate",
+      groupKey: normalizeGroupKey(groupName),
+      groupName,
+      variantLabel: `Tomo ${String(position).padStart(2, "0")}${tome[3] ? " · " + tome[3].trim() : ""}`,
+      variantPosition: position,
+      confidence: "ambiguous",
+    };
+  }
+
+  const groupName = match[1].replace(/[\s:;,.\-]+$/g, "").trim();
+  const position = Number(match[2]);
+  const suffix = match[3]?.trim() ?? "";
+  const specialEdition = /ed(?:ici[oó]n)?\.?\s*(?:especial|aniversario|limitada)|especial|aniversario/i.test(suffix);
+  return {
+    itemKind: "variant_candidate",
+    groupKey: normalizeGroupKey(groupName),
+    groupName,
+    variantLabel: `Tomo ${String(position).padStart(2, "0")}${suffix ? " · " + suffix : ""}`,
+    variantPosition: position,
+    confidence: specialEdition ? "ambiguous" : "high",
+  };
+}
+
 function parseProduct(html: string, url: string): DevirProduct | null {
   const skuHtml = html.match(/<[^>]+itemprop=["']sku["'][^>]*>[\s\S]*?<\/[^>]+>/i)?.[0] ?? "";
   const sku = stripHtml(skuHtml);
@@ -397,19 +497,14 @@ function parseProduct(html: string, url: string): DevirProduct | null {
   const finalPrice = parsePriceTag(html, /finalPrice/i);
   const minPrice = parsePriceTag(html, /minPrice/i);
   const purchasePrice = maxPrice ?? finalPrice ?? minPrice;
-  const stockHtml = html.match(/<[^>]*class=["'][^"']*stock[^"']*["'][^>]*>[\s\S]*?<\/[^>]+>/i)?.[0] ?? "";
-  const stock = stripHtml(stockHtml);
-  const availability =
-    /no est[aá] disponible|agotad/i.test(stock) ? "unavailable" :
-    /pre\s*reserva/i.test(stock) ? "preorder" :
-    /disponible/i.test(stock) ? "available" : "unknown";
+  const stock = parseAvailability(html);
   return {
     sku,
     name,
     url,
     purchasePrice,
-    availability,
-    availabilityLabel: stock || null,
+    availability: stock.availability,
+    availabilityLabel: stock.label,
     releaseDate: releaseDate(html),
     imageUrls: imageUrls(html, url),
   };
@@ -1009,7 +1104,9 @@ async function processProducts(config: ConfigRow, cycleId: string): Promise<{ do
       const product = parseProduct(html, job.url);
       if (!product) throw new Error("Ficha sin SKU reconocible");
       const signature = await sha256(product.imageUrls.join("\n"));
+      const grouping = groupingInfo(product);
       const synced = await syncProductToSpree(config, product, categories, defs);
+      const now = new Date().toISOString();
       const { error: catalogError } = await supabase.from("devir_sync_catalog").upsert({
         supplier_sku: product.sku,
         source_url: product.url,
@@ -1019,11 +1116,20 @@ async function processProducts(config: ConfigRow, cycleId: string): Promise<{ do
         image_signature: signature,
         spree_product_id: synced.productId,
         spree_variant_id: synced.variantId,
+        supplier_status: product.availability,
+        missing_cycles: 0,
+        item_kind: grouping.itemKind,
+        group_key: grouping.groupKey,
+        group_name: grouping.groupName,
+        variant_label: grouping.variantLabel,
+        variant_position: grouping.variantPosition,
+        grouping_confidence: grouping.confidence,
+        ...(product.availability === "available" ? { last_confirmed_available_at: now } : {}),
         last_seen_cycle_id: cycleId,
-        last_seen_at: new Date().toISOString(),
-        last_synced_at: new Date().toISOString(),
+        last_seen_at: now,
+        last_synced_at: now,
         last_error: null,
-        updated_at: new Date().toISOString(),
+        updated_at: now,
       }, { onConflict: "supplier_sku" });
       if (catalogError) throw catalogError;
       await supabase.from("devir_sync_jobs").update({
@@ -1042,6 +1148,34 @@ async function processProducts(config: ConfigRow, cycleId: string): Promise<{ do
 }
 
 async function finishCycle(config: ConfigRow, cycleId: string): Promise<void> {
+  // A completed full crawl is the only safe moment to infer that a supplier SKU
+  // disappeared. Missing once is recorded; it is not treated as deletion.
+  const nowIso = new Date().toISOString();
+  const { error: seenResetError } = await supabase
+    .from("devir_sync_catalog")
+    .update({ missing_cycles: 0 })
+    .eq("last_seen_cycle_id", cycleId);
+  if (seenResetError) throw seenResetError;
+
+  const { data: missingRows, error: missingReadError } = await supabase
+    .from("devir_sync_catalog")
+    .select("supplier_sku,missing_cycles")
+    .or(`last_seen_cycle_id.is.null,last_seen_cycle_id.neq.${cycleId}`);
+  if (missingReadError) throw missingReadError;
+
+  for (const row of missingRows ?? []) {
+    const missingCycles = Number(row.missing_cycles ?? 0) + 1;
+    const { error } = await supabase
+      .from("devir_sync_catalog")
+      .update({
+        missing_cycles: missingCycles,
+        supplier_status: missingCycles >= 2 ? "missing" : "unknown",
+        updated_at: nowIso,
+      })
+      .eq("supplier_sku", row.supplier_sku);
+    if (error) throw error;
+  }
+
   const { count: products } = await supabase
     .from("devir_sync_jobs")
     .select("*", { head: true, count: "exact" })
