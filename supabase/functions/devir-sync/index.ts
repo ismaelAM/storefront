@@ -40,6 +40,19 @@ interface SpreeVariant {
   cost_price?: string | number | null;
   price?: { amount?: string | number | null; currency?: string | null } | string | number | null;
   prices?: Array<{ amount?: string | number | null; currency?: string | null }>;
+  purchasable?: boolean;
+  in_stock?: boolean;
+  backorderable?: boolean;
+  preorder?: boolean;
+  preorderable?: boolean;
+  total_on_hand?: number;
+}
+
+interface SpreeStockLocation {
+  id: string;
+  name?: string;
+  active?: boolean;
+  default?: boolean;
 }
 
 interface SpreeCategory {
@@ -111,6 +124,25 @@ function decodeHtml(value: string): string {
 
 function stripHtml(value: string): string {
   return decodeHtml(value.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim());
+}
+
+function cleanDevirTitle(value: string): string {
+  return value
+    .replace(/^m[aá]s\s+vistas\s+/i, "")
+    .replace(
+      /\s*\((?:fecha\s+de\s+(?:venta(?:\s+en\s+tiendas)?|salida|puesta\s+a\s+la\s+venta)|a\s+la\s+venta(?:\s+el)?)\s*\d{1,2}[\/.-]\d{1,2}[\/.-]\d{4}\)\s*/gi,
+      " ",
+    )
+    .replace(
+      /\s*[-–—]?\s*(?:fecha\s+de\s+(?:venta(?:\s+en\s+tiendas)?|salida|puesta\s+a\s+la\s+venta)|a\s+la\s+venta(?:\s+el)?)\s*\d{1,2}[\/.-]\d{1,2}[\/.-]\d{4}\b/gi,
+      " ",
+    )
+    .replace(/\s+\d{1,2}[\/-]\d{1,2}[\/-]\d{4}\s*$/g, "")
+    .replace(/\s+-\s+(?=(?:ingl[eé]s|español|castellano|japon[eé]s)\b)/gi, " - ")
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([,.;:])/g, "$1")
+    .replace(/[\s\-–—,:;]+$/g, "")
+    .trim();
 }
 
 function absoluteUrl(value: string, sourceUrl: string): string | null {
@@ -502,7 +534,7 @@ function parseProduct(html: string, url: string): DevirProduct | null {
   const sku = stripHtml(skuHtml);
   if (!sku) return null;
   const titleHtml = html.match(/<h1\b[^>]*class=["'][^"']*page-title[^"']*["'][^>]*>[\s\S]*?<\/h1>/i)?.[0] ?? "";
-  const name = stripHtml(titleHtml) || sku;
+  const name = cleanDevirTitle(stripHtml(titleHtml) || sku);
   const maxPrice = parsePriceTag(html, /maxPrice/i);
   const finalPrice = parsePriceTag(html, /finalPrice/i);
   const minPrice = parsePriceTag(html, /minPrice/i);
@@ -532,30 +564,20 @@ function isPack(product: DevirProduct): boolean {
 }
 
 function categoryKey(product: DevirProduct): string {
-  const value = (product.name + " " + product.url).toLowerCase();
+  const name = product.name.toLowerCase();
+  const url = product.url.toLowerCase();
+  const value = name + " " + url;
 
-  // Accessories must be resolved before product-family rules.
   if (/accesorio|sleeves|fundas|deck\s*box|tapete|playmat|carpeta|album/.test(value)) {
     return "accesorios";
   }
 
-  // Serial manga/comic naming in Devir is very regular. "Tomo" on its own
-  // stays out because it is also used by RPG campaigns.
   if (/(?:n[uú]m\.?|num\.?|vol\.?|volumen)\s*0*\d{1,3}/i.test(product.name)) {
     return "manga-comic";
   }
 
-  if (
-    /yugioh|yu-gi-oh|yu gi oh|quarter century|duelist|battles of legend|dueling (?:heroes|mirrors)/.test(value)
-  ) {
-    return "tcg/yugioh";
-  }
-  if (
-    /\bmtg\b|magic[:\s-].*(?:booster|commander|bundle|display|collector|starter|deck)|aetherdrift|tarkir|bloomburrow|duskmourn|innistrad|zendikar|modern horizons|foundations/.test(value)
-  ) {
-    return "tcg/mtg";
-  }
-
+  // RPG brands are resolved before card-game keywords. A title containing
+  // "magia"/"magic items" must never become MTG just because of that word.
   if (/pathfinder/.test(value)) return "rol-pathfinder";
   if (/d&d|dungeons\s*&?\s*dragons|forgotten realms|dragonlance/.test(value)) {
     return "rol-dungeons-dragons";
@@ -567,6 +589,22 @@ function categoryKey(product: DevirProduct): string {
     return "rol-otros";
   }
 
+  if (
+    /yugioh|yu-gi-oh|yu gi oh|quarter century|duelist|battles of legend|dueling (?:heroes|mirrors)/.test(value)
+  ) {
+    return "tcg/yugioh";
+  }
+
+  const explicitMagicBrand =
+    /^\s*magic\b/i.test(product.name) ||
+    /\/magic(?:-|$)/.test(url) ||
+    /\bmtg\b/.test(value);
+  const knownMagicSet =
+    /aetherdrift|tarkir|bloomburrow|duskmourn|innistrad|zendikar|modern horizons|foundations|strixhaven/.test(value);
+  if (explicitMagicBrand || knownMagicSet) {
+    return "tcg/mtg";
+  }
+
   if (/expansi[oó]n|expansion|\bexp\.|ampliaci[oó]n|big\s*box/.test(value)) {
     return "juegos-expansiones";
   }
@@ -575,7 +613,6 @@ function categoryKey(product: DevirProduct): string {
   }
   return "juegos-general";
 }
-
 
 function isFixedPriceCandidate(product: DevirProduct, key: string): boolean {
   const digits = product.sku.replace(/\D/g, "");
