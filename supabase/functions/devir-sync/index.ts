@@ -1969,7 +1969,7 @@ async function preparePublishBatch(
   let humanReview = 0;
   let variantsUpdated = 0;
 
-  for (const productId of selected) {
+  const processProduct = async (productId: string) => {
     const rows = groups.get(productId) ?? [];
     let spreeProduct: SpreeProduct;
     try {
@@ -2190,6 +2190,11 @@ async function preparePublishBatch(
     }
 
     await new Promise((resolve) => setTimeout(resolve, 80));
+  };
+
+  for (let index = 0; index < selected.length; index += 4) {
+    await Promise.all(selected.slice(index, index + 4).map(processProduct));
+    await new Promise((resolve) => setTimeout(resolve, 120));
   }
 
   return {
