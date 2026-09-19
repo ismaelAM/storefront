@@ -1543,6 +1543,593 @@ async function categorizeDraftBatch(
 }
 
 
+interface CatalogAuditRow {
+  supplier_sku: string;
+  source_url: string;
+  name: string;
+  snapshot: Json | null;
+  image_urls: unknown;
+  spree_product_id: string | null;
+  spree_variant_id: string | null;
+  supplier_status: string | null;
+  item_kind: string | null;
+  grouping_confidence: string | null;
+  last_error: string | null;
+}
+
+interface SpreeChannel {
+  id: string;
+  name: string;
+  code?: string;
+  active?: boolean;
+  default?: boolean;
+}
+
+function productFromCatalogRow(row: CatalogAuditRow): DevirProduct {
+  const snapshot = row.snapshot ?? {};
+  const cost = Number(snapshot.purchasePrice);
+  const reference = Number(snapshot.referencePriceNet);
+  const imageUrls = Array.isArray(snapshot.imageUrls)
+    ? snapshot.imageUrls.filter((value): value is string => typeof value === "string")
+    : Array.isArray(row.image_urls)
+      ? (row.image_urls as unknown[]).filter((value): value is string => typeof value === "string")
+      : [];
+  const availability =
+    row.supplier_status === "available" ||
+    row.supplier_status === "preorder" ||
+    row.supplier_status === "unavailable"
+      ? row.supplier_status
+      : "unknown";
+
+  return {
+    sku: row.supplier_sku,
+    name: row.name,
+    url: row.source_url,
+    purchasePrice: Number.isFinite(cost) ? cost : null,
+    referencePriceNet: Number.isFinite(reference) && reference > 0 ? reference : null,
+    availability,
+    availabilityLabel:
+      typeof snapshot.availabilityLabel === "string" ? snapshot.availabilityLabel : null,
+    releaseDate: typeof snapshot.releaseDate === "string" ? snapshot.releaseDate : null,
+    imageUrls,
+  };
+}
+
+async function verifyDevirBatch(
+  config: ConfigRow,
+  offset: number,
+  limit: number,
+): Promise<{
+  processed: number;
+  confirmed: number;
+  available: number;
+  unavailable: number;
+  preorder: number;
+  unknown: number;
+  failed: number;
+  next_offset: number | null;
+}> {
+  const { data, error } = await supabase
+    .from("devir_sync_catalog")
+    .select("supplier_sku,source_url,name,snapshot,image_urls,spree_product_id,spree_variant_id,supplier_status,item_kind,grouping_confidence,last_error")
+    .order("supplier_sku")
+    .range(offset, offset + limit - 1);
+  if (error) throw error;
+
+  const rows = (data ?? []) as CatalogAuditRow[];
+  let confirmed = 0;
+  let available = 0;
+  let unavailable = 0;
+  let preorder = 0;
+  let unknown = 0;
+  let failed = 0;
+
+  const verifyOne = async (row: CatalogAuditRow) => {
+    const now = new Date().toISOString();
+    try {
+      const html = await devirFetch(config, row.source_url);
+      const current = parseProduct(html, row.source_url);
+      if (!current) throw new Error("source_page_without_sku");
+      if (current.sku.trim() !== row.supplier_sku.trim()) {
+        throw new Error("source_sku_mismatch:" + current.sku);
+      }
+
+      const signature = await sha256(current.imageUrls.join("\n"));
+      const enrichedSnapshot = {
+        ...current,
+        sourceVerifiedAt: now,
+        sourceVerified: true,
+      };
+      const update: Record<string, unknown> = {
+        name: current.name,
+        source_url: current.url,
+        snapshot: enrichedSnapshot,
+        image_urls: current.imageUrls,
+        image_signature: signature,
+        supplier_status: current.availability,
+        last_seen_at: now,
+        last_synced_at: now,
+        missing_cycles: 0,
+        last_error: null,
+        updated_at: now,
+      };
+      if (current.availability === "available") {
+        update.last_confirmed_available_at = now;
+        available += 1;
+      } else if (current.availability === "unavailable") {
+        unavailable += 1;
+      } else if (current.availability === "preorder") {
+        preorder += 1;
+      } else {
+        unknown += 1;
+      }
+      const { error: updateError } = await supabase
+        .from("devir_sync_catalog")
+        .update(update)
+        .eq("supplier_sku", row.supplier_sku);
+      if (updateError) throw updateError;
+      confirmed += 1;
+    } catch (sourceError) {
+      failed += 1;
+      const message = sourceError instanceof Error ? sourceError.message : String(sourceError);
+      const previous = row.snapshot ?? {};
+      await supabase
+        .from("devir_sync_catalog")
+        .update({
+          supplier_status: "unknown",
+          snapshot: {
+            ...previous,
+            sourceVerifiedAt: now,
+            sourceVerified: false,
+          },
+          last_error: "SOURCE-VERIFY: " + message,
+          updated_at: now,
+        })
+        .eq("supplier_sku", row.supplier_sku);
+    }
+  };
+
+  for (let index = 0; index < rows.length; index += 8) {
+    await Promise.all(rows.slice(index, index + 8).map(verifyOne));
+    await new Promise((resolve) => setTimeout(resolve, 120));
+  }
+
+  return {
+    processed: rows.length,
+    confirmed,
+    available,
+    unavailable,
+    preorder,
+    unknown,
+    failed,
+    next_offset: rows.length < limit ? null : offset + limit,
+  };
+}
+
+async function repairCategoryTreeAndMembership(
+  config: ConfigRow,
+): Promise<{
+  categories: Array<{ id: string; name: string; permalink?: string }>;
+  products_assigned: number;
+  conflicts: number;
+}> {
+  const categories = await spreeCategories(config);
+  const juegos = await ensureCategory(config, categories, "Juegos de mesa", "juegos-de-mesa");
+  const warhammer = await ensureCategory(config, categories, "Warhammer", "warhammer");
+  const tcg = await ensureCategory(config, categories, "TCG", "tcg");
+  const mtg = await ensureCategory(config, categories, "MTG", "tcg/mtg");
+  const yugioh = await ensureCategory(config, categories, "Yugioh", "tcg/yugioh");
+  const rol = await ensureCategory(config, categories, "Rol", "rol");
+  const manga = await ensureCategory(config, categories, "Manga y cómic", "manga-comic");
+  const accesorios = await ensureCategory(config, categories, "Accesorios", "accesorios");
+
+  // Reposition sequentially: this forces the nested-set tree to rebuild even
+  // if earlier concurrent category creates collided on lft/rgt.
+  const roots = [juegos, warhammer, tcg, rol, manga, accesorios];
+  for (let position = 0; position < roots.length; position += 1) {
+    await spreeRequest(
+      config,
+      "PATCH",
+      "/categories/" + encodeURIComponent(roots[position].id) + "/reposition",
+      { new_parent_id: null, new_position: position },
+    );
+  }
+  for (const [position, child] of [mtg, yugioh].entries()) {
+    await spreeRequest(
+      config,
+      "PATCH",
+      "/categories/" + encodeURIComponent(child.id) + "/reposition",
+      { new_parent_id: tcg.id, new_position: position },
+    );
+  }
+
+  for (const [permalink, margin] of Object.entries(DEFAULT_CATEGORY_MARGINS)) {
+    const category = categories.find((item) => item.permalink === permalink);
+    if (category) await setCategoryMargin(config, category, margin);
+  }
+
+  const { data, error } = await supabase
+    .from("devir_sync_catalog")
+    .select("supplier_sku,name,source_url,spree_product_id")
+    .not("spree_product_id", "is", null);
+  if (error) throw error;
+
+  const allProductIds = Array.from(
+    new Set((data ?? []).map((row) => String(row.spree_product_id ?? "")).filter(Boolean)),
+  );
+  const leafCategories = [juegos, warhammer, mtg, yugioh, rol, manga, accesorios];
+
+  // Remove only Devir-managed product memberships, then rebuild deterministically.
+  for (const category of leafCategories) {
+    for (let index = 0; index < allProductIds.length; index += 80) {
+      await spreeRequest(
+        config,
+        "DELETE",
+        "/categories/" + encodeURIComponent(category.id) + "/products",
+        { product_ids: allProductIds.slice(index, index + 80) },
+      );
+    }
+  }
+
+  const productKeys = new Map<string, Set<string>>();
+  for (const row of data ?? []) {
+    const productId = String(row.spree_product_id ?? "");
+    if (!productId) continue;
+    const product: DevirProduct = {
+      sku: String(row.supplier_sku),
+      name: String(row.name),
+      url: String(row.source_url),
+      purchasePrice: null,
+      referencePriceNet: null,
+      availability: "unknown",
+      availabilityLabel: null,
+      releaseDate: null,
+      imageUrls: [],
+    };
+    const set = productKeys.get(productId) ?? new Set<string>();
+    set.add(categoryKey(product));
+    productKeys.set(productId, set);
+  }
+
+  const byPermalink = new Map(leafCategories.map((category) => [category.permalink, category]));
+  const memberships = new Map<string, string[]>();
+  let conflicts = 0;
+
+  for (const [productId, keys] of productKeys) {
+    if (keys.size !== 1) {
+      conflicts += 1;
+      await supabase
+        .from("devir_sync_catalog")
+        .update({
+          last_error: "CATEGORY-CONFLICT: " + Array.from(keys).join(","),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("spree_product_id", productId);
+      continue;
+    }
+    const key = Array.from(keys)[0];
+    const category = byPermalink.get(key);
+    if (!category) continue;
+    const list = memberships.get(category.id) ?? [];
+    list.push(productId);
+    memberships.set(category.id, list);
+  }
+
+  let productsAssigned = 0;
+  for (const [categoryId, productIds] of memberships) {
+    for (let index = 0; index < productIds.length; index += 80) {
+      const chunk = productIds.slice(index, index + 80);
+      await spreeRequest(
+        config,
+        "POST",
+        "/categories/" + encodeURIComponent(categoryId) + "/products",
+        { product_ids: chunk },
+      );
+      productsAssigned += chunk.length;
+    }
+  }
+
+  return {
+    categories: leafCategories.map((item) => ({
+      id: item.id,
+      name: item.name,
+      permalink: item.permalink,
+    })),
+    products_assigned: productsAssigned,
+    conflicts,
+  };
+}
+
+async function updateReviewFieldLabels(config: ConfigRow): Promise<void> {
+  const defs = await spreeList<SpreeFieldDefinition>(config, "/custom_field_definitions");
+  const status = defs.find(
+    (item) => item.resource_type === "Spree::Product" && item.namespace === "devir" && item.key === "review_status",
+  );
+  const reasons = defs.find(
+    (item) => item.resource_type === "Spree::Product" && item.namespace === "devir" && item.key === "review_reasons",
+  );
+  if (status) {
+    await spreeRequest(config, "PATCH", "/custom_field_definitions/" + status.id, {
+      label: "⚠ Devir · Intervención humana",
+    });
+  }
+  if (reasons) {
+    await spreeRequest(config, "PATCH", "/custom_field_definitions/" + reasons.id, {
+      label: "⚠ Devir · Motivo de revisión",
+    });
+  }
+}
+
+async function preparePublishBatch(
+  config: ConfigRow,
+  offset: number,
+  limit: number,
+): Promise<{
+  processed_products: number;
+  published: number;
+  waiting_supplier: number;
+  human_review: number;
+  variants_updated: number;
+  next_offset: number | null;
+}> {
+  const { data, error } = await supabase
+    .from("devir_sync_catalog")
+    .select("supplier_sku,source_url,name,snapshot,image_urls,spree_product_id,spree_variant_id,supplier_status,item_kind,grouping_confidence,last_error")
+    .not("spree_product_id", "is", null)
+    .order("spree_product_id")
+    .order("supplier_sku");
+  if (error) throw error;
+
+  const allRows = (data ?? []) as CatalogAuditRow[];
+  const groups = new Map<string, CatalogAuditRow[]>();
+  for (const row of allRows) {
+    const productId = String(row.spree_product_id ?? "");
+    if (!productId) continue;
+    const rows = groups.get(productId) ?? [];
+    rows.push(row);
+    groups.set(productId, rows);
+  }
+  const productIds = Array.from(groups.keys()).sort();
+  const selected = productIds.slice(offset, offset + limit);
+  const defs = await definitions(config);
+  const categories = await spreeCategories(config);
+  const channels = await spreeList<SpreeChannel>(config, "/channels");
+  const channel = channels.find((item) => item.active && item.default) ??
+    channels.find((item) => item.active) ??
+    channels[0];
+  if (!channel) throw new Error("No hay canal de venta activo en Spree");
+
+  let published = 0;
+  let waitingSupplier = 0;
+  let humanReview = 0;
+  let variantsUpdated = 0;
+
+  for (const productId of selected) {
+    const rows = groups.get(productId) ?? [];
+    let spreeProduct: SpreeProduct;
+    try {
+      spreeProduct = await spreeRequest<SpreeProduct>(
+        config,
+        "GET",
+        "/products/" + encodeURIComponent(productId),
+      );
+    } catch (productError) {
+      await supabase
+        .from("devir_sync_catalog")
+        .update({
+          last_error: "SPREE-PRODUCT: " + (productError instanceof Error ? productError.message : String(productError)),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("spree_product_id", productId);
+      humanReview += 1;
+      continue;
+    }
+
+    const originalTags = spreeProduct.tags ?? [];
+    if (!originalTags.includes("devir")) {
+      humanReview += 1;
+      continue;
+    }
+
+    const variants = await spreeList<SpreeVariant>(
+      config,
+      "/products/" + encodeURIComponent(productId) + "/variants",
+    );
+    const productReasons = new Set<string>();
+    const categoryKeys = new Set<string>();
+    let anySellable = false;
+    let anyWaiting = false;
+    let updatedForProduct = 0;
+
+    for (const row of rows) {
+      const product = productFromCatalogRow(row);
+      const snapshot = row.snapshot ?? {};
+      const sourceVerified = snapshot.sourceVerified === true;
+      const sourceVerifiedAt =
+        typeof snapshot.sourceVerifiedAt === "string" ? snapshot.sourceVerifiedAt : null;
+      const key = categoryKey(product);
+      categoryKeys.add(key);
+
+      if (!sourceVerified || !sourceVerifiedAt) {
+        productReasons.add("supplier_source_not_verified");
+        continue;
+      }
+      if (!product.purchasePrice || product.purchasePrice <= 0) {
+        productReasons.add("supplier_cost_missing");
+        continue;
+      }
+      if (!product.imageUrls.length) {
+        productReasons.add("product_image_missing");
+      }
+      if (isPack(product)) productReasons.add("pack_requires_operator_split");
+      if (row.grouping_confidence === "ambiguous") {
+        productReasons.add("grouping_requires_operator_review");
+      }
+
+      const targetMargin = DEFAULT_CATEGORY_MARGINS[key] ?? 0.05;
+      const pricing = competitivePricing(product, key, targetMargin);
+      if (pricing.reviewReason) productReasons.add(pricing.reviewReason);
+
+      let variant = variants.find((item) => item.sku?.trim() === product.sku);
+      if (!variant && row.spree_variant_id) {
+        variant = variants.find((item) => item.id === row.spree_variant_id);
+      }
+      if (!variant) {
+        productReasons.add("variant_not_found_for_sku:" + product.sku);
+        continue;
+      }
+
+      if (variant.id !== row.spree_variant_id) {
+        await supabase
+          .from("devir_sync_catalog")
+          .update({ spree_variant_id: variant.id, updated_at: new Date().toISOString() })
+          .eq("supplier_sku", product.sku);
+      }
+
+      const shipping = shippingDefaults(key, product);
+      const isSellableAtSupplier =
+        row.supplier_status === "available" || row.supplier_status === "preorder";
+
+      await spreeRequest(
+        config,
+        "PATCH",
+        "/products/" + encodeURIComponent(productId) +
+          "/variants/" + encodeURIComponent(variant.id),
+        {
+          sku: product.sku,
+          cost_price: product.purchasePrice,
+          cost_currency: "EUR",
+          ...shipping,
+          track_inventory: true,
+          preorderable: row.supplier_status === "preorder",
+          preorder_ships_at:
+            row.supplier_status === "preorder" ? product.releaseDate : null,
+          backorder_limit: null,
+          prices: [{ currency: "EUR", amount: pricing.retail }],
+        },
+      );
+      await syncBackorderability(
+        config,
+        variant.id,
+        isSellableAtSupplier ? "available" : "unavailable",
+      );
+      await supabase
+        .from("devir_sync_catalog")
+        .update({
+          last_auto_price: pricing.retail,
+          last_error: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("supplier_sku", product.sku);
+
+      variantsUpdated += 1;
+      updatedForProduct += 1;
+      if (isSellableAtSupplier) anySellable = true;
+      else if (row.supplier_status === "unavailable") anyWaiting = true;
+      else productReasons.add("supplier_availability_unknown");
+    }
+
+    if (categoryKeys.size !== 1) {
+      productReasons.add("product_category_conflict:" + Array.from(categoryKeys).join(","));
+    }
+
+    const human = productReasons.size > 0;
+    const publish = !human && anySellable;
+    const waiting = !human && !anySellable && anyWaiting;
+
+    let tags = Array.from(new Set([
+      ...originalTags,
+      "devir",
+      ...(publish ? ["devir-ready", "devir-published"] : []),
+      ...(waiting ? ["devir-waiting-stock"] : []),
+      ...(human ? ["devir-review", "REVISION-HUMANA"] : []),
+    ]));
+    if (publish) {
+      tags = tags.filter((tag) =>
+        tag !== "devir-review" &&
+        tag !== "REVISION-HUMANA" &&
+        tag !== "devir-waiting-stock"
+      );
+    } else if (waiting) {
+      tags = tags.filter((tag) =>
+        tag !== "devir-ready" &&
+        tag !== "devir-published" &&
+        tag !== "devir-review" &&
+        tag !== "REVISION-HUMANA"
+      );
+    } else {
+      tags = tags.filter((tag) => tag !== "devir-ready" && tag !== "devir-published");
+    }
+
+    await spreeRequest(
+      config,
+      "PATCH",
+      "/products/" + encodeURIComponent(productId),
+      { status: publish ? "active" : "draft", tags },
+    );
+
+    if (publish) {
+      await spreeRequest(
+        config,
+        "POST",
+        "/channels/" + encodeURIComponent(channel.id) + "/add_products",
+        { product_ids: [productId] },
+      );
+      published += 1;
+    } else {
+      try {
+        await spreeRequest(
+          config,
+          "POST",
+          "/channels/" + encodeURIComponent(channel.id) + "/remove_products",
+          { product_ids: [productId] },
+        );
+      } catch {
+        // Keeping a draft is the primary safety control if channel removal is
+        // unavailable on a particular Spree patch level.
+      }
+      if (human) humanReview += 1;
+      else waitingSupplier += 1;
+    }
+
+    await upsertProductFields(config, productId, defs, {
+      "devir.review_status": human
+        ? "⚠ REVISIÓN HUMANA"
+        : publish
+          ? "PUBLICADO"
+          : "ESPERANDO STOCK DEVIR",
+      "devir.review_reasons": human
+        ? Array.from(productReasons).join(", ")
+        : waiting
+          ? "supplier_unavailable"
+          : "none",
+      "devir.last_sync_at": new Date().toISOString(),
+    });
+
+    if (!human && updatedForProduct === 0 && rows.length > 0) {
+      await supabase
+        .from("devir_sync_catalog")
+        .update({
+          last_error: "PREPARE: no variants updated",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("spree_product_id", productId);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 80));
+  }
+
+  return {
+    processed_products: selected.length,
+    published,
+    waiting_supplier: waitingSupplier,
+    human_review: humanReview,
+    variants_updated: variantsUpdated,
+    next_offset: selected.length < limit ? null : offset + limit,
+  };
+}
+
+
 interface SpecialPricingProgram {
   code: string;
   name: string;
