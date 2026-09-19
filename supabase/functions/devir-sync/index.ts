@@ -810,7 +810,7 @@ async function syncProductToSpree(
   product: DevirProduct,
   categories: SpreeCategory[],
   defs: Map<string, SpreeFieldDefinition>,
-): Promise<{ productId: string; variantId: string | null; images: number; review: boolean; backorderItems: number }> {
+): Promise<{ productId: string; variantId: string | null; images: number; review: boolean; backorderItems: number; lastAutoPrice: number | null }> {
   if (!product.purchasePrice || product.purchasePrice <= 0) throw new Error("Producto sin coste Devir: " + product.sku);
   const key = categoryKey(product);
   const category = key ? categories.find((c) => c.permalink === key) ?? null : null;
@@ -870,12 +870,19 @@ async function syncProductToSpree(
     productId = existing.product.id;
     variantId = existing.variant.id;
     const fields = await productFields(config, productId);
-    const lastAuto = Number(fields.find((f) => f.key === "pricing.last_synced_price")?.value);
+    const { data: catalogPricing } = await supabase
+      .from("devir_sync_catalog")
+      .select("last_auto_price")
+      .eq("supplier_sku", product.sku)
+      .maybeSingle();
+    const catalogLastAuto = Number(catalogPricing?.last_auto_price);
+    const legacyLastAuto = Number(fields.find((f) => f.key === "pricing.last_synced_price")?.value);
+    const lastAuto = Number.isFinite(catalogLastAuto) ? catalogLastAuto : legacyLastAuto;
     const currentPrice = variantPrice(existing.variant);
     const managed = (existing.product.tags ?? []).includes("devir");
     const active = existing.product.status === "active";
     const autoPrice = Number.isFinite(lastAuto) && currentPrice !== null && Math.abs(lastAuto - currentPrice) < 0.005;
-    const canWritePrice = managed && !active && !grouped && autoPrice;
+    const canWritePrice = managed && !active && autoPrice;
     manualPrice = currentPrice !== null && !canWritePrice;
     const tags = Array.from(new Set([...(existing.product.tags ?? []), "devir", review ? "devir-review" : "devir-ready"]))
       .filter((tag) => review ? tag !== "devir-ready" : tag !== "devir-review");
@@ -915,7 +922,14 @@ async function syncProductToSpree(
 
   const backorderItems = await syncBackorderability(config, variantId, product.availability);
   const images = await syncImages(config, productId, product);
-  return { productId, variantId, images, review, backorderItems };
+  return {
+    productId,
+    variantId,
+    images,
+    review,
+    backorderItems,
+    lastAutoPrice: manualPrice ? null : pricing.retail,
+  };
 }
 
 
@@ -1168,11 +1182,11 @@ async function categorizeDraftBatch(
   config: ConfigRow,
   offset: number,
   limit: number,
-): Promise<{ processed: number; updated: number; next_offset: number | null }> {
+): Promise<{ processed: number; updated: number; repriced: number; next_offset: number | null }> {
   const categories = await spreeCategories(config);
   const { data, error } = await supabase
     .from("devir_sync_catalog")
-    .select("supplier_sku,name,source_url,spree_product_id")
+    .select("supplier_sku,name,source_url,snapshot,spree_product_id,spree_variant_id")
     .not("spree_product_id", "is", null)
     .order("supplier_sku")
     .range(offset, offset + limit - 1);
@@ -1180,30 +1194,36 @@ async function categorizeDraftBatch(
 
   const rows = data ?? [];
   let updated = 0;
-  const seen = new Set<string>();
+  let repriced = 0;
+  const productCache = new Map<string, SpreeProduct | null>();
 
   for (const row of rows) {
     const productId = String(row.spree_product_id ?? "");
-    if (!productId || seen.has(productId)) continue;
-    seen.add(productId);
+    const variantId = String(row.spree_variant_id ?? "");
+    if (!productId || !variantId) continue;
 
-    let spreeProduct: SpreeProduct;
-    try {
-      spreeProduct = await spreeRequest<SpreeProduct>(
-        config,
-        "GET",
-        "/products/" + encodeURIComponent(productId),
-      );
-    } catch {
-      continue;
+    let spreeProduct = productCache.get(productId);
+    if (spreeProduct === undefined) {
+      try {
+        spreeProduct = await spreeRequest<SpreeProduct>(
+          config,
+          "GET",
+          "/products/" + encodeURIComponent(productId),
+        );
+      } catch {
+        spreeProduct = null;
+      }
+      productCache.set(productId, spreeProduct);
     }
+    if (!spreeProduct) continue;
     if (spreeProduct.status !== "draft" || !(spreeProduct.tags ?? []).includes("devir")) continue;
 
+    const cost = Number((row.snapshot as Json | null)?.purchasePrice);
     const product: DevirProduct = {
       sku: String(row.supplier_sku),
       name: String(row.name),
       url: String(row.source_url),
-      purchasePrice: null,
+      purchasePrice: Number.isFinite(cost) ? cost : null,
       availability: "unknown",
       availabilityLabel: null,
       releaseDate: null,
@@ -1211,20 +1231,47 @@ async function categorizeDraftBatch(
     };
     const key = categoryKey(product);
     const category = categories.find((item) => item.permalink === key);
-    if (!category) continue;
+    const margin = DEFAULT_CATEGORY_MARGINS[key];
+    if (!category || !Number.isFinite(margin) || !product.purchasePrice || product.purchasePrice <= 0) continue;
+
+    const pricing = priceFor(
+      product.purchasePrice,
+      margin,
+      key === "manga-comic" ? 0.95 : 0.99,
+    );
 
     await spreeRequest(config, "PATCH", "/products/" + encodeURIComponent(productId), {
       category_ids: [category.id],
+      variants: [{
+        id: variantId,
+        sku: product.sku,
+        cost_price: product.purchasePrice,
+        cost_currency: "EUR",
+        prices: [{ currency: "EUR", amount: pricing.retail }],
+      }],
     });
+
+    const { error: catalogUpdateError } = await supabase
+      .from("devir_sync_catalog")
+      .update({
+        last_auto_price: pricing.retail,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("supplier_sku", product.sku);
+    if (catalogUpdateError) throw catalogUpdateError;
+
     updated += 1;
+    repriced += 1;
   }
 
   return {
     processed: rows.length,
     updated,
+    repriced,
     next_offset: rows.length < limit ? null : offset + limit,
   };
 }
+
 
 async function validateSpreeAdminKey(spreeApiUrl: string, key: string): Promise<void> {
   if (!key.startsWith("sk_")) throw new Error("La clave de Spree no es una Secret API Key válida.");
@@ -1448,7 +1495,7 @@ async function operatorAction(
 
   if (action === "categorize-drafts") {
     const offset = Math.max(0, Number(body.offset ?? 0) || 0);
-    const limit = Math.min(40, Math.max(1, Number(body.limit ?? 25) || 25));
+    const limit = Math.min(100, Math.max(1, Number(body.limit ?? 50) || 50));
     return json({
       ok: true,
       ...(await categorizeDraftBatch(config, offset, limit)),
@@ -1607,6 +1654,7 @@ async function processProducts(config: ConfigRow, cycleId: string): Promise<{ do
         image_signature: signature,
         spree_product_id: synced.productId,
         spree_variant_id: synced.variantId,
+        ...(synced.lastAutoPrice !== null ? { last_auto_price: synced.lastAutoPrice } : {}),
         supplier_status: product.availability,
         missing_cycles: 0,
         item_kind: grouping.itemKind,
