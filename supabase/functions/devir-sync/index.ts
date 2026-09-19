@@ -1470,7 +1470,20 @@ async function setupCatalogCategoriesAndMargins(config: ConfigRow): Promise<Arra
   const rol = await ensureCategory(config, categories, "Rol", "rol");
   const rolDd = await ensureCategory(config, categories, "Dungeons & Dragons", "rol/dungeons-dragons");
   const rolPf = await ensureCategory(config, categories, "Pathfinder", "rol/pathfinder");
-  const rolWh = await ensureCategory(config, categories, "Warhammer", "rol/warhammer");
+  let rolWh = categories.find((item) => item.permalink === "rol/warhammer") ??
+    categories.find((item) => item.permalink === "warhammer");
+  if (!rolWh) {
+    rolWh = await ensureCategory(config, categories, "Warhammer", "rol/warhammer");
+  } else if (rolWh.permalink !== "rol/warhammer") {
+    rolWh = await spreeRequest<SpreeCategory>(
+      config,
+      "PATCH",
+      "/categories/" + encodeURIComponent(rolWh.id),
+      { name: "Warhammer", permalink: "rol/warhammer" },
+    );
+    const index = categories.findIndex((item) => item.id === rolWh!.id);
+    if (index >= 0) categories[index] = rolWh;
+  }
   const rolOtros = await ensureCategory(config, categories, "Otros juegos de rol", "rol/otros");
 
   const tcg = await ensureCategory(config, categories, "TCG", "tcg");
