@@ -824,11 +824,14 @@ async function migrateCatalogGroup(
     .from("devir_sync_catalog")
     .select("supplier_sku,name,spree_product_id,spree_variant_id,group_key,group_name,variant_label,variant_position,grouping_confidence")
     .eq("group_key", groupKey)
-    .eq("grouping_confidence", "high")
+    .eq("item_kind", "variant_candidate")
     .order("variant_position", { ascending: true });
   if (error) throw error;
   const rows = (data ?? []) as CatalogGroupRow[];
-  if (rows.length < 2) return { ok: true, group_key: groupKey, skipped: "needs_at_least_two_variants" };
+  const highConfidence = rows.filter((row) => row.grouping_confidence === "high");
+  if (highConfidence.length < 2) {
+    return { ok: true, group_key: groupKey, skipped: "needs_at_least_two_high_confidence_variants" };
+  }
 
   const groupName = rows.find((row) => row.group_name)?.group_name ?? groupKey;
   const uniqueProducts = Array.from(new Set(rows.map((row) => row.spree_product_id).filter(Boolean))) as string[];
@@ -855,6 +858,19 @@ async function migrateCatalogGroup(
   const hasEditionDimension =
     rows.some((row) => Boolean(variantEdition(row.variant_label))) ||
     Array.from(positions.values()).some((count) => count > 1);
+
+  if (hasEditionDimension) {
+    const optionKeys = new Set<string>();
+    for (const row of rows) {
+      const position = Number(row.variant_position ?? 0);
+      const edition = variantEdition(row.variant_label) ?? "Estándar";
+      const key = String(position).padStart(2, "0") + "|" + edition.toLowerCase();
+      if (optionKeys.has(key)) {
+        return { ok: true, group_key: groupKey, skipped: "duplicate_variant_options_need_review" };
+      }
+      optionKeys.add(key);
+    }
+  }
 
   const variants = rows.map((row) => {
     const source = sourceVariants.get(row.supplier_sku);
