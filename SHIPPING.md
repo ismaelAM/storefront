@@ -1,6 +1,6 @@
 # Envíos BisonTCG
 
-Rama de trabajo: `puck_editor`
+Rama de trabajo: `next_changes`
 
 ## Objetivo
 
@@ -49,7 +49,7 @@ Para el reparto local no hace falta una API externa. Podemos trabajar sin númer
 
 Para envíos fuera del reparto local, la opción preferida pasa a ser **Correos**. Correos ofrece APIs oficiales para prerregistro, generación de etiquetas, solicitudes de recogida y tracking. La integración requiere contrato de transporte y acceso al Portal de Desarrolladores con OAuth 2.0.
 
-Hasta disponer de ese contrato, se puede operar manualmente desde Mi Oficina de Correos y guardar el código de seguimiento en el Shipment de Spree. El storefront no necesita saber si la etiqueta se creó por API o manualmente: sigue leyendo estado y tracking desde Spree.
+El acceso a `Preregister`, `Labels` y `Trackpub` ya está aprobado. Se ha preparado el cliente OAuth server-only, pero la activación necesita los endpoints y esquemas exactos del portal, los secretos configurados en Vercel y la confirmación del contrato de transporte. Mientras tanto, se puede operar manualmente desde Mi Oficina de Correos y guardar el código de seguimiento en el Shipment de Spree. El storefront no necesita saber si la etiqueta se creó por API o manualmente: sigue leyendo estado y tracking desde Spree.
 
 ## Configuración en Spree Sandbox / producción
 
@@ -70,11 +70,13 @@ Spree indica que los métodos de envío se filtran por Zone y que el cliente sol
 
 No añadir lógica en Next.js del tipo `if city === Madrid` para decidir el precio o la disponibilidad. Esa regla debe pertenecer a Spree para que checkout, admin y futuras integraciones compartan la misma verdad.
 
-No integrar Correos por API hasta que exista contrato y credenciales oficiales. Si no se obtienen, mantener la operativa manual con Mi Oficina y tracking en Spree.
+No activar llamadas reales a Correos hasta confirmar el contrato, configurar credenciales oficiales en Vercel y validar los esquemas privados de las APIs aprobadas. Si falta alguno de esos requisitos, mantener la operativa manual con Mi Oficina y tracking en Spree.
 
 No mezclar la futura integración de Correos con Stripe. El pago y el fulfillment son procesos distintos: Spree coordina ambos y cada proveedor se integra en su capa correspondiente.
 
 ## Futuro Correos
+
+Estado actual: transporte OAuth 2.0 server-only implementado y probado. Próximo paso: descargar OpenAPI/Swagger de las tres APIs aprobadas, configurar los secretos `CORREOS_*` en Vercel y mapear sus respuestas al Shipment de Spree. También se recomienda solicitar `Requests` para automatizar recogidas.
 
 Arquitectura objetivo:
 

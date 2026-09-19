@@ -1,6 +1,6 @@
 # Pendientes del storefront
 
-Rama de trabajo: `puck_editor`
+Rama de trabajo: `next_changes`
 
 Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras. Tras cada edición relevante del proyecto, actualizaré este documento con lo hecho y cualquier comprobación nueva que haya quedado pendiente.
 
@@ -23,8 +23,13 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 
 - [x] UPS descartado tras respuesta negativa del proveedor.
 - [x] Investigada alternativa oficial de Correos: APIs de prerregistro, etiquetas, recogidas y tracking con OAuth 2.0.
-- [ ] Solicitar/firmar contrato de transporte con Correos y acceso al Portal de Desarrolladores.
-- [ ] Si Correos aprueba el acceso, obtener credenciales API sin compartir secretos por chat e integrar prerregistro/etiqueta/tracking sobre Shipments de Spree.
+- [x] Acceso aprobado en el Portal de Desarrolladores para `Preregister`, `Labels` y `Trackpub`.
+- [ ] Confirmar que el contrato de transporte de Correos está firmado y vinculado al mismo Correos ID.
+- [ ] Solicitar `Requests` para automatizar recogidas; no bloquea prerregistro, etiquetas ni tracking.
+- [x] Añadido cliente server-only de Correos con OAuth 2.0, caché/renovación de token, reintento único tras 401, endpoints HTTPS configurables y errores sin secretos ni payloads de clientes.
+- [ ] Descargar del portal la especificación OpenAPI/Swagger de `Preregister`, `Labels` y `Trackpub` para implementar sus payloads exactos sin inventar contratos.
+- [ ] Configurar las variables `CORREOS_*` como secretos de Vercel, sin compartir valores por chat.
+- [ ] Conectar prerregistro, etiqueta y tracking con los Shipments nativos de Spree y añadir protección persistente contra duplicados.
 - [ ] Si Correos no aprueba el acceso o el volumen no compensa, usar Mi Oficina de Correos como operativa manual y guardar tracking/estado en Spree; no crear una base logística paralela.
 
 ## Idiomas y traducciones
@@ -187,7 +192,7 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [ ] Corregir en Spree la Zone/método para que Madrid no aparezca en Lugo.
 - [ ] Probar checkout, Shipment y estado de entrega con una dirección de Madrid.
 - [ ] Probar que una dirección fuera de Madrid no recibe la opción local.
-- [ ] Integrar Correos API después de estabilizar el método local y obtener contrato/credenciales.
+- [ ] Completar la integración Correos sobre Shipments cuando estén disponibles las especificaciones privadas y los secretos en Vercel.
 
 ## Regla de mantenimiento
 
