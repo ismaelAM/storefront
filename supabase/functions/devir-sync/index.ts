@@ -732,6 +732,25 @@ async function ensureProductsInCategories(
   });
 }
 
+async function ensureProductsInDefaultChannel(
+  config: ConfigRow,
+  productIds: string[],
+): Promise<void> {
+  if (productIds.length === 0) return;
+  const channels = await spreeList<SpreeChannel>(config, "/channels");
+  const channel =
+    channels.find((item) => item.active && item.default) ??
+    channels.find((item) => item.active) ??
+    channels[0];
+  if (!channel) throw new Error("No hay canal de venta activo en Spree");
+  await spreeRequest(
+    config,
+    "POST",
+    "/channels/" + encodeURIComponent(channel.id) + "/add_products",
+    { product_ids: productIds },
+  );
+}
+
 async function spreeList<T>(config: ConfigRow, path: string): Promise<T[]> {
   const sep = path.includes("?") ? "&" : "?";
   const payload = await spreeRequest<{ data?: T[] }>(config, "GET", path + sep + "limit=100");
@@ -1658,6 +1677,9 @@ async function rebuildMangaGroup(
     ],
   });
   await ensureProductsInCategories(config, [created.id], [category.id]);
+  if (anySellable) {
+    await ensureProductsInDefaultChannel(config, [created.id]);
+  }
 
   const imageSource = rows.map(catalogRowProduct).find((product) => product.imageUrls.length);
   if (imageSource) {
@@ -1829,6 +1851,9 @@ async function migrateLanguageGroup(
     ],
   });
   await ensureProductsInCategories(config, [created.id], [category.id]);
+  if (anySellable) {
+    await ensureProductsInDefaultChannel(config, [created.id]);
+  }
 
   const imageSource = products.find((product) => product.imageUrls.length);
   if (imageSource) await syncImages(config, created.id, imageSource);
