@@ -81,8 +81,8 @@ const policies: Record<string, () => LocalLegalPolicy> = {
       <p>Aquí explicamos cómo preparamos y enviamos los pedidos de ${legalIdentity().tradeName}. Si en el checkout aparece un plazo o una condición más concreta para tu pedido, esa es la referencia que debes tener en cuenta.</p>
 
       <h2>Preparación del pedido</h2>
-      <p>No todo lo que puede comprarse está necesariamente en nuestro almacén. Cuando un artículo aparezca como disponible bajo pedido, puede depender de stock de distribuidor y necesitar algo más de tiempo antes de salir.</p>
-      <p>En preventas y reservas mostramos la mejor fecha disponible en ese momento. Las fechas de lanzamiento pueden cambiar por decisión del fabricante o distribuidor. Si el cambio es importante, te avisaremos para que puedas decidir si mantienes o cancelas la parte afectada del pedido.</p>
+      <p>El plazo de preparación puede variar según el producto. Cuando un artículo necesite más tiempo, mostraremos la información disponible en su ficha, durante la compra o en la confirmación del pedido.</p>
+      <p>En preventas y reservas mostramos la mejor fecha disponible en ese momento. Las fechas de lanzamiento pueden cambiar. Si el cambio es importante, te avisaremos para que puedas decidir si mantienes o cancelas la parte afectada del pedido.</p>
 
       <h2>Entrega</h2>
       <p>Salvo que se indique otra cosa antes de comprar —por ejemplo, en una preventa—, los pedidos se entregarán sin demora indebida y dentro del plazo legal máximo aplicable.</p>
@@ -193,9 +193,9 @@ const policies: Record<string, () => LocalLegalPolicy> = {
       <h2>Precios</h2>
       <p>Los precios mostrados al consumidor incluyen los impuestos que correspondan. Los gastos de envío y cualquier otro coste aplicable se muestran antes de pagar. No añadimos servicios opcionales mediante casillas premarcadas.</p>
 
-      <h2>Stock y disponibilidad</h2>
-      <p>Distinguimos entre producto que tenemos físicamente en stock y producto disponible para pedir a distribuidor. La ficha o el proceso de compra puede indicar esa diferencia.</p>
-      <p>Si después de comprar descubrimos que no podemos servir un artículo, te avisaremos y devolveremos las cantidades correspondientes cuando proceda. No sustituiremos un producto por otro sin tu consentimiento.</p>
+      <h2>Disponibilidad</h2>
+      <p>La disponibilidad que aparece en la tienda es la referencia para saber si un producto puede comprarse en ese momento. Algunos artículos pueden tener un plazo de preparación distinto, que se indicará cuando sea relevante.</p>
+      <p>Si después de comprar se produce una incidencia de disponibilidad y no podemos servir un artículo, te avisaremos y devolveremos las cantidades correspondientes cuando proceda. No sustituiremos un producto por otro sin tu consentimiento.</p>
 
       <h2>Errores evidentes</h2>
       <p>Si hay un error técnico manifiesto en un precio, una descripción o una disponibilidad, lo revisaremos antes de enviar una prestación distinta de la razonablemente contratada. Si el error afecta al pedido, contactaremos contigo y respetaremos los derechos que te correspondan como consumidor.</p>
