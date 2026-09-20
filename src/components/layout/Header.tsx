@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import Image from "next/image";
 import Link from "next/link";
 import { getTranslations } from "next-intl/server";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { CartButton } from "@/components/layout/CartButton";
 import { SearchToggle } from "@/components/layout/SearchToggle";
 import { Button } from "@/components/ui/button";
@@ -64,7 +64,14 @@ export async function Header({ basePath, locale, mobileNavigation, appearance }:
   const colors = appearance ?? (await getSiteAppearance());
 
   return (
-    <div style={{ backgroundColor: colors.headerBackground, color: colors.headerText, borderBottom: `1px solid ${colors.headerBorder}` }}>
+    <div
+      style={{
+        backgroundColor: colors.headerBackground,
+        color: colors.headerText,
+        borderBottom: `1px solid ${colors.headerBorder}`,
+        "--header-background": colors.headerBackground,
+      } as CSSProperties}
+    >
       <SearchToggle
         basePath={basePath}
         left={mobileNavigation}
