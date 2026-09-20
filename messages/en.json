@@ -66,7 +66,7 @@
     "rightsReserved": "All rights reserved."
   },
   "home": {
-    "welcome": "{storeName} Storefront",
+    "welcome": "{storeName}",
     "heroDescription": "TCGs, board games, manga and collectibles for your next game night, collection or read.",
     "shopNow": "Shop All",
     "forkOnGithub": "View catalog",
@@ -263,7 +263,7 @@
     "failedToCreatePayment": "Failed to create payment. Please try again.",
     "placeOrder": "Place Order",
     "noPaymentRequired": "No payment required — your order is fully covered.",
-    "unsupportedGateway": "This payment method is not yet supported in the storefront.",
+    "unsupportedGateway": "This payment method is not yet available.",
     "paypalApproveFirst": "Please approve the PayPal payment before continuing.",
     "paypalApproved": "PayPal payment approved. Completing your order...",
     "paypalCancelled": "PayPal payment was cancelled.",
