@@ -53,10 +53,7 @@
     "updatePreferencesFailed": "Nie udało się zaktualizować preferencji regionalnych. Spróbuj ponownie."
   },
   "footer": {
-    "description": "Sklep e-commerce open source oparty na Spree REST API, TypeScript SDK i Next.js. Hostuj samodzielnie. Twoje dane. Zero opłat platformowych.",
-    "forkOnGithub": "Forkuj ten sklep na GitHubie",
-    "quickstartGuide": "Przewodnik szybkiego startu",
-    "learnMore": "Dowiedz się więcej o Spree Commerce",
+    "description": "TCG, gry planszowe, manga i kolekcjonalia starannie wybrane. Proste zakupy, pomocna obsługa i starannie przygotowane zamówienia.",
     "shop": "Sklep",
     "allProducts": "Wszystkie produkty",
     "categories": "Kategorie",
@@ -65,16 +62,15 @@
     "orderHistory": "Historia zamówień",
     "cart": "Koszyk",
     "policies": "Regulaminy",
-    "poweredBy": "Zasilany przez",
-    "copyright": "© {year} {storeName}. Zasilany przez Spree Commerce.",
-    "wholesale": "Handel i sprzedaż hurtowa"
+    "wholesale": "Handel i sprzedaż hurtowa",
+    "rightsReserved": "Wszelkie prawa zastrzeżone."
   },
   "home": {
     "welcome": "{storeName} Storefront",
-    "heroDescription": "Gotowy do produkcji, otwartoźródłowy storefront zbudowany z Next.js, React i Spree TypeScript SDK. Hostuj samodzielnie. Twój stack. Brak vendor lock-in. Zero opłat platformowych.",
+    "heroDescription": "TCG, gry planszowe, manga i kolekcjonalia na kolejną rozgrywkę, do kolekcji lub do czytania.",
     "shopNow": "Wszystkie produkty",
-    "forkOnGithub": "Forkuj na GitHubie",
-    "quickstartGuide": "Przewodnik szybkiego startu",
+    "forkOnGithub": "Zobacz katalog",
+    "quickstartGuide": "Przeglądaj produkty",
     "featuredProducts": "Polecane produkty",
     "viewAll": "Zobacz wszystkie",
     "qualityProducts": "Produkty wysokiej jakości",
