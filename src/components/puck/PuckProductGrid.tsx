@@ -3,7 +3,13 @@
 import type { Product } from "@spree/sdk";
 import { ProductCard } from "@/components/puck/ProductCard";
 import { usePuckProducts } from "@/components/puck/PuckProductsContext";
-import { getPuckAspectClass, getPuckGridColumnsClass, getPuckRadiusClass } from "@/puck/utils";
+import {
+  getPuckAspectClass,
+  getPuckGridColumnsClass,
+  getPuckRadiusClass,
+  getPuckSectionPaddingClass,
+  type PuckDensity,
+} from "@/puck/utils";
 
 export type ProductGridFilter = "all" | "available" | "sale";
 export interface PuckProductGridProps {
@@ -23,6 +29,7 @@ export interface PuckProductGridProps {
   titleColor?: string;
   textColor?: string;
   priceColor?: string;
+  spacing?: PuckDensity;
   basePath?: string;
 }
 
@@ -79,7 +86,7 @@ function matchesVariantText(product: ProductWithRelations, query: string): boole
   return (product.variants ?? []).some((variant) => `${variant.sku ?? ""} ${variant.options_text ?? ""}`.toLocaleLowerCase().includes(normalized));
 }
 
-export function PuckProductGrid({ title = "Nuestros productos", subtitle = "Descubre nuestra selección.", productCount = "8", productFilter = "all", selectedProductIds = [], selectedCategoryIds = [], selectedVariantIds = [], variantFilter = "", columns = "4", imageAspect = "square", cardRadius = "medium", backgroundColor = "#ffffff", cardBackgroundColor = "#ffffff", titleColor = "#111827", textColor = "#6b7280", priceColor = "#111827" }: PuckProductGridProps) {
+export function PuckProductGrid({ title = "Nuestros productos", subtitle = "Descubre nuestra selección.", productCount = "8", productFilter = "all", selectedProductIds = [], selectedCategoryIds = [], selectedVariantIds = [], variantFilter = "", columns = "4", imageAspect = "square", cardRadius = "medium", backgroundColor = "var(--background)", cardBackgroundColor = "var(--surface)", titleColor = "var(--text)", textColor = "var(--text-muted)", priceColor = "var(--text)", spacing = "normal" }: PuckProductGridProps) {
   const { products, basePath } = usePuckProducts();
   const filteredProducts = (products as ProductWithRelations[]).filter((product) => {
     if (selectedProductIds.length > 0 && !selectedProductIds.includes(product.id)) return false;
@@ -94,6 +101,7 @@ export function PuckProductGrid({ title = "Nuestros productos", subtitle = "Desc
   const gridClass = getPuckGridColumnsClass(columns);
   const aspectClass = getPuckAspectClass(imageAspect);
   const radiusClass = getPuckRadiusClass(cardRadius);
+  const spacingClass = getPuckSectionPaddingClass(spacing);
 
-  return <section className="py-10 sm:py-14 lg:py-16" style={{ backgroundColor }}><div className="container mx-auto px-4 sm:px-6 lg:px-8">{(title || subtitle) && <div className="mx-auto mb-8 max-w-3xl text-center sm:mb-10">{title && <h2 className="text-2xl font-bold tracking-tight sm:text-3xl md:text-4xl" style={{ color: titleColor }}>{title}</h2>}{subtitle && <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 sm:mt-4 sm:text-base md:text-lg" style={{ color: textColor }}>{subtitle}</p>}</div>}{visibleProducts.length === 0 ? <div className="py-10 text-center sm:py-12"><p className="text-sm sm:text-base" style={{ color: textColor }}>No hay productos para esta selección.</p></div> : <div className={`grid gap-3 sm:gap-5 lg:gap-6 ${gridClass}`}>{visibleProducts.map((product) => { const price = product.price?.display_amount ?? ""; const comparePrice = getComparePrice(product); const productUrl = product.slug ? `${basePath}/products/${product.slug}` : `${basePath}/products`; return <ProductCard key={product.id} name={product.name} image={product.thumbnail_url || ""} price={price} comparePrice={comparePrice} url={productUrl} badge={getMerchandisingBadge(product)} cardBackgroundColor={cardBackgroundColor} titleColor={titleColor} textColor={textColor} priceColor={priceColor} radiusClass={radiusClass} aspectClass={aspectClass} />; })}</div>}</div></section>;
+  return <section className={spacingClass} style={{ backgroundColor }}><div className="container mx-auto px-4 sm:px-6 lg:px-8">{(title || subtitle) && <div className="mx-auto mb-6 max-w-3xl text-center sm:mb-8">{title && <h2 className="text-2xl font-bold tracking-[-0.025em] sm:text-3xl md:text-[2rem]" style={{ color: titleColor }}>{title}</h2>}{subtitle && <p className="mx-auto mt-2.5 max-w-2xl text-sm leading-6 sm:mt-3 sm:text-base" style={{ color: textColor }}>{subtitle}</p>}</div>}{visibleProducts.length === 0 ? <div className="py-10 text-center sm:py-12"><p className="text-sm sm:text-base" style={{ color: textColor }}>No hay productos para esta selección.</p></div> : <div className={`grid gap-3 sm:gap-5 lg:gap-6 ${gridClass}`}>{visibleProducts.map((product) => { const price = product.price?.display_amount ?? ""; const comparePrice = getComparePrice(product); const productUrl = product.slug ? `${basePath}/products/${product.slug}` : `${basePath}/products`; return <ProductCard key={product.id} name={product.name} image={product.thumbnail_url || ""} price={price} comparePrice={comparePrice} url={productUrl} badge={getMerchandisingBadge(product)} cardBackgroundColor={cardBackgroundColor} titleColor={titleColor} textColor={textColor} priceColor={priceColor} radiusClass={radiusClass} aspectClass={aspectClass} />; })}</div>}</div></section>;
 }
