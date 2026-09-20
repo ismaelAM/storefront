@@ -21,7 +21,10 @@ const TECHNICAL_ISBN_VALUE = /^ISBN\s+(?:97[89]\d{10}|\d{9}[\dX])$/i;
 
 function normalizeOptionValue(value: string): string {
   const trimmed = value.trim();
-  if (TECHNICAL_ISBN_VALUE.test(trimmed) || /^est[aá]ndar$/i.test(trimmed)) {
+  if (
+    TECHNICAL_ISBN_VALUE.test(trimmed) ||
+    /^est[aá]ndar(?:\s*[·-]\s*reimpresi[oó]n(?:\s+\d+)?)?$/i.test(trimmed)
+  ) {
     return TECHNICAL_STANDARD_VALUE;
   }
   return trimmed;
