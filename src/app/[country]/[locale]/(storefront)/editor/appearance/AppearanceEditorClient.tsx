@@ -6,9 +6,11 @@ import { EditorSectionNav } from "@/components/puck/EditorSectionNav";
 import { saveSitePageData } from "@/lib/puck/save-site-page-data";
 
 const defaults = {
-  accentColor: "#111827",
-  accentText: "#ffffff",
-  secondaryColor: "#f3f4f6",
+  accentColor: "#6b4423",
+  accentText: "#fff8ea",
+  highlightColor: "#6f8c95",
+  highlightText: "#fffdf8",
+  secondaryColor: "#eadfc9",
   secondaryText: "#111827",
   pageBackground: "#ffffff",
   surfaceColor: "#ffffff",
@@ -98,6 +100,8 @@ export function AppearanceEditorClient({
   const paletteFields = [
     ["accentColor", "Principal"],
     ["accentText", "Texto sobre principal"],
+    ["highlightColor", "Acento puntual"],
+    ["highlightText", "Texto sobre acento puntual"],
     ["secondaryColor", "Secundario"],
     ["secondaryText", "Texto sobre secundario"],
     ["pageBackground", "Fondo general"],
@@ -156,6 +160,7 @@ export function AppearanceEditorClient({
             {renderFields(paletteFields)}
             <div className="grid gap-2 sm:grid-cols-2">
               <ContrastCheck label="Principal" foreground={colors.accentText} background={colors.accentColor} />
+              <ContrastCheck label="Acento puntual" foreground={colors.highlightText} background={colors.highlightColor} />
               <ContrastCheck label="Secundario" foreground={colors.secondaryText} background={colors.secondaryColor} />
               <ContrastCheck label="Texto / fondo" foreground={colors.textColor} background={colors.pageBackground} />
               <ContrastCheck label="Texto secundario / superficie" foreground={colors.mutedTextColor} background={colors.surfaceColor} />
