@@ -202,22 +202,10 @@ export function ProductDetails({ product, basePath }: ProductDetailsProps) {
                 )}
               </div>
             ) : isPurchasable ? (
-              inStock ? (
-                <span className="inline-flex items-center gap-1.5 text-green-600">
-                  <CircleCheckBig className="w-5 h-5" />
-                  {t("inStock")}
-                </span>
-              ) : (
-                <div className="space-y-1">
-                  <span className="inline-flex items-center gap-1.5 text-green-600">
-                    <CircleCheckBig className="w-5 h-5" />
-                    {t("availableToOrder")}
-                  </span>
-                  <p className="text-sm text-gray-500">
-                    {t("extendedFulfillment")}
-                  </p>
-                </div>
-              )
+              <span className="inline-flex items-center gap-1.5 text-green-600">
+                <CircleCheckBig className="w-5 h-5" />
+                {t("availableToOrder")}
+              </span>
             ) : (
               <span className="inline-flex items-center gap-1.5 text-red-600">
                 <CircleX className="w-5 h-5" />
