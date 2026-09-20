@@ -800,18 +800,12 @@ function variantPrice(variant: SpreeVariant): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-async function upsertBasePrices(
-  config: ConfigRow,
-  prices: Array<{ variant_id: string; amount: number }>,
-): Promise<void> {
-  if (!prices.length) return;
-  await spreeRequest(config, "POST", "/prices/bulk_upsert", {
-    prices: prices.map((price) => ({
-      variant_id: price.variant_id,
-      currency: "EUR",
-      amount: price.amount.toFixed(2),
-    })),
-  });
+interface SpreePrice {
+  id: string;
+  amount?: string | number | null;
+  currency?: string | null;
+  price_list_id?: string | null;
+  variant_id?: string | null;
 }
 
 async function upsertBasePrice(
@@ -819,7 +813,50 @@ async function upsertBasePrice(
   variantId: string,
   amount: number,
 ): Promise<void> {
-  await upsertBasePrices(config, [{ variant_id: variantId, amount }]);
+  const prices = await spreeList<SpreePrice>(
+    config,
+    "/prices?q[variant_id_eq]=" + encodeURIComponent(variantId) +
+      "&q[currency_eq]=EUR",
+  );
+  const basePrice =
+    prices.find(
+      (price) =>
+        !price.price_list_id &&
+        (price.currency ?? "EUR").toUpperCase() === "EUR",
+    ) ??
+    prices.find((price) => !price.price_list_id);
+
+  if (basePrice) {
+    await spreeRequest(
+      config,
+      "PATCH",
+      "/prices/" + encodeURIComponent(basePrice.id),
+      { amount: amount.toFixed(2) },
+    );
+    return;
+  }
+
+  await spreeRequest(config, "POST", "/prices", {
+    variant_id: variantId,
+    currency: "EUR",
+    amount: amount.toFixed(2),
+  });
+}
+
+async function upsertBasePrices(
+  config: ConfigRow,
+  prices: Array<{ variant_id: string; amount: number }>,
+): Promise<void> {
+  for (let index = 0; index < prices.length; index += 8) {
+    await Promise.all(
+      prices
+        .slice(index, index + 8)
+        .map((price) =>
+          upsertBasePrice(config, price.variant_id, price.amount),
+        ),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
 }
 
 async function findSpreeProduct(config: ConfigRow, sku: string): Promise<{ product: SpreeProduct; variant: SpreeVariant } | null> {
