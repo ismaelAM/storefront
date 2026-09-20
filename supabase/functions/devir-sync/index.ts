@@ -831,9 +831,9 @@ async function upsertBasePrice(
       config,
       "PATCH",
       "/prices/" + encodeURIComponent(basePrice.id),
-      // The Admin Price endpoint accepts the amount in the smallest currency
-      // unit even though responses expose both decimal amount and amount_in_cents.
-      { amount: Math.round(amount * 100) },
+      // Older Spree 5.x builds accept Price updates through the Rails-style
+      // nested payload even when the newer OpenAPI documents a flat body.
+      { price: { amount: amount.toFixed(2) } },
     );
     return;
   }
@@ -841,7 +841,7 @@ async function upsertBasePrice(
   await spreeRequest(config, "POST", "/prices", {
     variant_id: variantId,
     currency: "EUR",
-    amount: Math.round(amount * 100),
+    amount: amount.toFixed(2),
   });
 }
 
