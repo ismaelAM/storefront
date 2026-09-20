@@ -11,6 +11,8 @@ export type SiteAppearance = {
   pageBackground: string;
   accentColor: string;
   accentText: string;
+  highlightColor: string;
+  highlightText: string;
   secondaryColor: string;
   secondaryText: string;
   surfaceColor: string;
@@ -28,9 +30,11 @@ const fallbackAppearance: SiteAppearance = {
   footerText: "#d1d5db",
   footerHeading: "#f3f4f6",
   pageBackground: "#ffffff",
-  accentColor: "#111827",
-  accentText: "#ffffff",
-  secondaryColor: "#f3f4f6",
+  accentColor: "#6b4423",
+  accentText: "#fff8ea",
+  highlightColor: "#6f8c95",
+  highlightText: "#fffdf8",
+  secondaryColor: "#eadfc9",
   secondaryText: "#111827",
   surfaceColor: "#ffffff",
   surfaceAltColor: "#f3f4f6",
@@ -58,6 +62,8 @@ export const getSiteAppearance = cache(async (): Promise<SiteAppearance> => {
     pageBackground: props?.pageBackground ?? fallbackAppearance.pageBackground,
     accentColor: props?.accentColor ?? fallbackAppearance.accentColor,
     accentText: props?.accentText ?? fallbackAppearance.accentText,
+    highlightColor: props?.highlightColor ?? fallbackAppearance.highlightColor,
+    highlightText: props?.highlightText ?? fallbackAppearance.highlightText,
     secondaryColor: props?.secondaryColor ?? fallbackAppearance.secondaryColor,
     secondaryText: props?.secondaryText ?? fallbackAppearance.secondaryText,
     surfaceColor: props?.surfaceColor ?? fallbackAppearance.surfaceColor,
