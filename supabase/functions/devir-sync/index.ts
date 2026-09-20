@@ -861,6 +861,21 @@ async function upsertBasePrices(
   }
 }
 
+async function updateVariantRetailPrice(
+  config: ConfigRow,
+  productId: string,
+  variantId: string,
+  amount: number,
+): Promise<SpreeVariant> {
+  return await spreeRequest<SpreeVariant>(
+    config,
+    "PATCH",
+    "/products/" + encodeURIComponent(productId) +
+      "/variants/" + encodeURIComponent(variantId),
+    { price: amount },
+  );
+}
+
 async function findSpreeProduct(config: ConfigRow, sku: string): Promise<{ product: SpreeProduct; variant: SpreeVariant } | null> {
   const products = await spreeList<SpreeProduct>(config, "/products?q[search]=" + encodeURIComponent(sku));
   for (const product of products) {
@@ -2497,12 +2512,13 @@ async function repriceCommercialBooksBatch(
   if (error) throw error;
 
   const rows = data ?? [];
-  const priceRows: Array<{ sku: string; variantId: string; retail: number }> = [];
+  const priceRows: Array<{ sku: string; productId: string; variantId: string; retail: number }> = [];
   let unchanged = 0;
   let failed = 0;
 
   for (const row of rows) {
     const sku = String(row.supplier_sku ?? "");
+    const productId = String(row.spree_product_id ?? "");
     const variantId = String(row.spree_variant_id ?? "");
     const snapshot =
       row.snapshot && typeof row.snapshot === "object"
@@ -2511,7 +2527,7 @@ async function repriceCommercialBooksBatch(
     const purchasePrice = Number(snapshot.purchasePrice);
     const referencePriceNet = Number(snapshot.referencePriceNet);
 
-    if (!sku || !variantId || !Number.isFinite(purchasePrice) || purchasePrice <= 0) {
+    if (!sku || !productId || !variantId || !Number.isFinite(purchasePrice) || purchasePrice <= 0) {
       unchanged += 1;
       continue;
     }
@@ -2538,7 +2554,7 @@ async function repriceCommercialBooksBatch(
         key,
         DEFAULT_CATEGORY_MARGINS[key] ?? 0.05,
       );
-      priceRows.push({ sku, variantId, retail: pricing.retail });
+      priceRows.push({ sku, productId, variantId, retail: pricing.retail });
     } catch (rowError) {
       failed += 1;
       await supabase
@@ -2554,13 +2570,19 @@ async function repriceCommercialBooksBatch(
   }
 
   if (priceRows.length) {
-    await upsertBasePrices(
-      config,
-      priceRows.map((row) => ({
-        variant_id: row.variantId,
-        amount: row.retail,
-      })),
-    );
+    for (let index = 0; index < priceRows.length; index += 8) {
+      await Promise.all(
+        priceRows.slice(index, index + 8).map((row) =>
+          updateVariantRetailPrice(
+            config,
+            row.productId,
+            row.variantId,
+            row.retail,
+          ),
+        ),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
 
     const now = new Date().toISOString();
     for (const row of priceRows) {
