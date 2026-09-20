@@ -800,6 +800,28 @@ function variantPrice(variant: SpreeVariant): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+async function upsertBasePrices(
+  config: ConfigRow,
+  prices: Array<{ variant_id: string; amount: number }>,
+): Promise<void> {
+  if (!prices.length) return;
+  await spreeRequest(config, "POST", "/prices/bulk_upsert", {
+    prices: prices.map((price) => ({
+      variant_id: price.variant_id,
+      currency: "EUR",
+      amount: price.amount.toFixed(2),
+    })),
+  });
+}
+
+async function upsertBasePrice(
+  config: ConfigRow,
+  variantId: string,
+  amount: number,
+): Promise<void> {
+  await upsertBasePrices(config, [{ variant_id: variantId, amount }]);
+}
+
 async function findSpreeProduct(config: ConfigRow, sku: string): Promise<{ product: SpreeProduct; variant: SpreeVariant } | null> {
   const products = await spreeList<SpreeProduct>(config, "/products?q[search]=" + encodeURIComponent(sku));
   for (const product of products) {
@@ -1336,9 +1358,11 @@ async function syncProductToSpree(
         ...shipping,
         track_inventory: true,
         backorder_limit: null,
-        ...(canWritePrice ? { prices: [{ currency: "EUR", amount: pricing.retail }] } : {}),
       },
     );
+    if (canWritePrice) {
+      await upsertBasePrice(config, existing.variant.id, pricing.retail);
+    }
   }
 
   const effectivePrice = existing && manualPrice ? variantPrice(existing.variant) ?? pricing.retail : pricing.retail;
@@ -2342,9 +2366,9 @@ async function categorizeDraftBatch(
           sku: product.sku,
           cost_price: product.purchasePrice,
           cost_currency: "EUR",
-          prices: [{ currency: "EUR", amount: pricing.retail }],
         },
       );
+      await upsertBasePrice(config, variantId, pricing.retail);
     };
 
     try {
@@ -2434,13 +2458,12 @@ async function repriceCommercialBooksBatch(
   if (error) throw error;
 
   const rows = data ?? [];
-  let repriced = 0;
+  const priceRows: Array<{ sku: string; variantId: string; retail: number }> = [];
   let unchanged = 0;
   let failed = 0;
 
-  const processRow = async (row: (typeof rows)[number]) => {
+  for (const row of rows) {
     const sku = String(row.supplier_sku ?? "");
-    const productId = String(row.spree_product_id ?? "");
     const variantId = String(row.spree_variant_id ?? "");
     const snapshot =
       row.snapshot && typeof row.snapshot === "object"
@@ -2449,9 +2472,9 @@ async function repriceCommercialBooksBatch(
     const purchasePrice = Number(snapshot.purchasePrice);
     const referencePriceNet = Number(snapshot.referencePriceNet);
 
-    if (!sku || !productId || !variantId || !Number.isFinite(purchasePrice) || purchasePrice <= 0) {
+    if (!sku || !variantId || !Number.isFinite(purchasePrice) || purchasePrice <= 0) {
       unchanged += 1;
-      return;
+      continue;
     }
 
     const product: DevirProduct = {
@@ -2476,34 +2499,7 @@ async function repriceCommercialBooksBatch(
         key,
         DEFAULT_CATEGORY_MARGINS[key] ?? 0.05,
       );
-
-      const previous = Number(row.last_auto_price);
-      if (Number.isFinite(previous) && Math.abs(previous - pricing.retail) < 0.005) {
-        unchanged += 1;
-        return;
-      }
-
-      await spreeRequest(
-        config,
-        "PATCH",
-        "/products/" + encodeURIComponent(productId) +
-          "/variants/" + encodeURIComponent(variantId),
-        {
-          prices: [{ currency: "EUR", amount: pricing.retail }],
-        },
-      );
-
-      const { error: updateError } = await supabase
-        .from("devir_sync_catalog")
-        .update({
-          last_auto_price: pricing.retail,
-          last_error: null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("supplier_sku", sku);
-      if (updateError) throw updateError;
-
-      repriced += 1;
+      priceRows.push({ sku, variantId, retail: pricing.retail });
     } catch (rowError) {
       failed += 1;
       await supabase
@@ -2516,22 +2512,39 @@ async function repriceCommercialBooksBatch(
         })
         .eq("supplier_sku", sku);
     }
-  };
+  }
 
-  for (let index = 0; index < rows.length; index += 5) {
-    await Promise.all(rows.slice(index, index + 5).map(processRow));
-    await new Promise((resolve) => setTimeout(resolve, 50));
+  if (priceRows.length) {
+    await upsertBasePrices(
+      config,
+      priceRows.map((row) => ({
+        variant_id: row.variantId,
+        amount: row.retail,
+      })),
+    );
+
+    const now = new Date().toISOString();
+    for (const row of priceRows) {
+      const { error: updateError } = await supabase
+        .from("devir_sync_catalog")
+        .update({
+          last_auto_price: row.retail,
+          last_error: null,
+          updated_at: now,
+        })
+        .eq("supplier_sku", row.sku);
+      if (updateError) throw updateError;
+    }
   }
 
   return {
     processed: rows.length,
-    repriced,
+    repriced: priceRows.length,
     unchanged,
     failed,
     next_offset: rows.length < limit ? null : offset + limit,
   };
 }
-
 
 interface CatalogAuditRow {
   supplier_sku: string;
@@ -3028,9 +3041,9 @@ async function preparePublishBatch(
           preorder_ships_at:
             row.supplier_status === "preorder" ? product.releaseDate : null,
           backorder_limit: null,
-          prices: [{ currency: "EUR", amount: pricing.retail }],
         },
       );
+      await upsertBasePrice(config, variant.id, pricing.retail);
       const desiredBackorderable = isSellableAtSupplier;
       for (const item of stockByVariant.get(variant.id) ?? []) {
         if (item.backorderable === desiredBackorderable) continue;
