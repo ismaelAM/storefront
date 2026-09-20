@@ -37,7 +37,7 @@ export function getStoreUrl(): string | undefined {
  * Get the store name from environment variables.
  */
 export function getStoreName(): string {
-  return process.env.NEXT_PUBLIC_STORE_NAME || "Spree Store";
+  return process.env.NEXT_PUBLIC_STORE_NAME || "BisonTCG";
 }
 
 /**
@@ -46,7 +46,7 @@ export function getStoreName(): string {
 export function getStoreDescription(): string {
   return (
     process.env.NEXT_PUBLIC_STORE_DESCRIPTION ||
-    "A modern e-commerce storefront powered by Spree Commerce and Next.js."
+    "TCG, juegos de mesa, manga y coleccionables seleccionados con cuidado."
   );
 }
 
