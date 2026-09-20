@@ -59,3 +59,45 @@ export function getPuckRadiusClass(
       return "rounded-lg";
   }
 }
+
+
+export type PuckDensity = "compact" | "normal" | "airy";
+
+export function getPuckSectionPaddingClass(
+  density: PuckDensity = "normal",
+): string {
+  switch (density) {
+    case "compact":
+      return "py-6 sm:py-8 lg:py-10";
+    case "airy":
+      return "py-10 sm:py-14 lg:py-16";
+    default:
+      return "py-8 sm:py-10 lg:py-12";
+  }
+}
+
+export function getPuckHeroHeightClass(
+  density: PuckDensity = "normal",
+): string {
+  switch (density) {
+    case "compact":
+      return "min-h-[340px] sm:min-h-[380px] lg:min-h-[420px]";
+    case "airy":
+      return "min-h-[500px] sm:min-h-[560px] lg:min-h-[640px]";
+    default:
+      return "min-h-[420px] sm:min-h-[470px] lg:min-h-[520px]";
+  }
+}
+
+export function getPuckCategoryHeightClass(
+  size: "small" | "medium" | "large" = "medium",
+): string {
+  switch (size) {
+    case "small":
+      return "min-h-[180px] sm:min-h-[220px]";
+    case "large":
+      return "min-h-[280px] sm:min-h-[340px] lg:min-h-[390px]";
+    default:
+      return "min-h-[220px] sm:min-h-[260px] lg:min-h-[300px]";
+  }
+}
