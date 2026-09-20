@@ -54,11 +54,12 @@ export const enhancedConfig: Config = {
         },
         productFilter: {
           type: "select",
-          label: "Disponibilidad",
+          label: "Selección",
           options: [
             { label: "Todos", value: "all" },
             { label: "Disponibles", value: "available" },
             { label: "En oferta", value: "sale" },
+            { label: "Prereservas", value: "preorder" },
           ],
         },
         variantFilter: { type: "text", label: "Texto de variante" },
