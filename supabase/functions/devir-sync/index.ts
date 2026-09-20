@@ -835,15 +835,13 @@ async function upsertBasePrice(
       // Older Spree 5.x builds accept Price updates through the Rails-style
       // nested payload even when the newer OpenAPI documents a flat body.
       {
-        price: {
-          amount: amount.toFixed(2),
-          ...(compareAtAmount !== undefined
-            ? {
-                compare_at_amount:
-                  compareAtAmount === null ? null : compareAtAmount.toFixed(2),
-              }
-            : {}),
-        },
+        amount: amount.toFixed(2),
+        ...(compareAtAmount !== undefined
+          ? {
+              compare_at_amount:
+                compareAtAmount === null ? null : compareAtAmount.toFixed(2),
+            }
+          : {}),
       },
     );
     return;
@@ -3995,21 +3993,11 @@ async function applyMerchandisingOffers(
       );
     }
 
-    await spreeRequest<SpreeProduct>(
+    await upsertBasePrice(
       config,
-      "PATCH",
-      "/products/" + encodeURIComponent(product.id),
-      {
-        variants: [{
-          id: variant.id,
-          prices: [{
-            currency: "EUR",
-            amount: offer.amount.toFixed(2),
-            compare_at_amount:
-              compareAtAmount === null ? null : compareAtAmount.toFixed(2),
-          }],
-        }],
-      },
+      variant.id,
+      offer.amount,
+      compareAtAmount,
     );
 
     const tags = Array.from(
