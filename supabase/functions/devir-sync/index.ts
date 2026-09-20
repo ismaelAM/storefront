@@ -886,7 +886,7 @@ async function updateVariantRetailPrice(
     {
       variants: [{
         id: variantId,
-        prices: [{ currency: "EUR", amount: amount.toFixed(2) }],
+        prices: [{ currency: "EUR", amount }],
       }],
     },
   );
