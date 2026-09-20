@@ -2525,6 +2525,7 @@ async function repriceCommercialBooksBatch(
   const priceRows: Array<{ sku: string; productId: string; variantId: string; retail: number }> = [];
   let unchanged = 0;
   let failed = 0;
+  const variantsByProduct = new Map<string, SpreeVariant[]>();
 
   for (const row of rows) {
     const sku = String(row.supplier_sku ?? "");
@@ -2564,7 +2565,56 @@ async function repriceCommercialBooksBatch(
         key,
         DEFAULT_CATEGORY_MARGINS[key] ?? 0.05,
       );
-      priceRows.push({ sku, productId, variantId, retail: pricing.retail });
+
+      let resolvedProductId = productId;
+      let resolvedVariantId = variantId;
+      let productVariants = variantsByProduct.get(productId);
+
+      if (!productVariants) {
+        try {
+          productVariants = await spreeList<SpreeVariant>(
+            config,
+            "/products/" + encodeURIComponent(productId) + "/variants",
+          );
+          variantsByProduct.set(productId, productVariants);
+        } catch {
+          productVariants = [];
+        }
+      }
+
+      const currentVariant = productVariants.find(
+        (variant) => variant.sku?.trim() === sku,
+      );
+
+      if (currentVariant) {
+        resolvedVariantId = currentVariant.id;
+      } else {
+        const repaired = await findSpreeProduct(config, sku);
+        if (!repaired) {
+          throw new Error("No se encontró la variante actual para SKU " + sku);
+        }
+        resolvedProductId = repaired.product.id;
+        resolvedVariantId = repaired.variant.id;
+      }
+
+      if (resolvedProductId !== productId || resolvedVariantId !== variantId) {
+        const { error: repairError } = await supabase
+          .from("devir_sync_catalog")
+          .update({
+            spree_product_id: resolvedProductId,
+            spree_variant_id: resolvedVariantId,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("supplier_sku", sku);
+        if (repairError) throw repairError;
+      }
+
+      priceRows.push({
+        sku,
+        productId: resolvedProductId,
+        variantId: resolvedVariantId,
+        retail: pricing.retail,
+      });
     } catch (rowError) {
       failed += 1;
       await supabase
@@ -2580,37 +2630,50 @@ async function repriceCommercialBooksBatch(
   }
 
   if (priceRows.length) {
-    for (let index = 0; index < priceRows.length; index += 8) {
-      await Promise.all(
-        priceRows.slice(index, index + 8).map((row) =>
-          updateVariantRetailPrice(
-            config,
-            row.productId,
-            row.variantId,
-            row.retail,
-          ),
-        ),
-      );
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    }
-
     const now = new Date().toISOString();
-    for (const row of priceRows) {
-      const { error: updateError } = await supabase
-        .from("devir_sync_catalog")
-        .update({
-          last_auto_price: row.retail,
-          last_error: null,
-          updated_at: now,
-        })
-        .eq("supplier_sku", row.sku);
-      if (updateError) throw updateError;
+
+    for (let index = 0; index < priceRows.length; index += 6) {
+      await Promise.all(
+        priceRows.slice(index, index + 6).map(async (row) => {
+          try {
+            await updateVariantRetailPrice(
+              config,
+              row.productId,
+              row.variantId,
+              row.retail,
+            );
+            const { error: updateError } = await supabase
+              .from("devir_sync_catalog")
+              .update({
+                last_auto_price: row.retail,
+                last_error: null,
+                updated_at: now,
+              })
+              .eq("supplier_sku", row.sku);
+            if (updateError) throw updateError;
+          } catch (priceError) {
+            failed += 1;
+            await supabase
+              .from("devir_sync_catalog")
+              .update({
+                last_error:
+                  "COMMERCIAL-PRICE: " +
+                  (priceError instanceof Error
+                    ? priceError.message
+                    : String(priceError)),
+                updated_at: new Date().toISOString(),
+              })
+              .eq("supplier_sku", row.sku);
+          }
+        }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 80));
     }
   }
 
   return {
     processed: rows.length,
-    repriced: priceRows.length,
+    repriced: Math.max(0, priceRows.length - failed),
     unchanged,
     failed,
     next_offset: rows.length < limit ? null : offset + limit,
