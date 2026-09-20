@@ -38,7 +38,20 @@ export default async function HomePage({ params }: HomePageProps) {
       "dtc",
       userToken,
     );
-    products = response.data ?? [];
+    products = [...(response.data ?? [])].sort((left, right) => {
+      const stockRank =
+        Number(Boolean(right.in_stock)) - Number(Boolean(left.in_stock));
+      if (stockRank !== 0) return stockRank;
+
+      const leftSale =
+        (left.price?.compare_at_amount_in_cents ?? 0) >
+        (left.price?.amount_in_cents ?? Number.MAX_SAFE_INTEGER);
+      const rightSale =
+        (right.price?.compare_at_amount_in_cents ?? 0) >
+        (right.price?.amount_in_cents ?? Number.MAX_SAFE_INTEGER);
+
+      return Number(rightSale) - Number(leftSale);
+    });
   } catch (error) {
     console.error("HomePuckRenderer: failed to load products", error);
   }
