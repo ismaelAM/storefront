@@ -831,7 +831,9 @@ async function upsertBasePrice(
       config,
       "PATCH",
       "/prices/" + encodeURIComponent(basePrice.id),
-      { amount: amount.toFixed(2) },
+      // The Admin Price endpoint accepts the amount in the smallest currency
+      // unit even though responses expose both decimal amount and amount_in_cents.
+      { amount: Math.round(amount * 100) },
     );
     return;
   }
@@ -839,7 +841,7 @@ async function upsertBasePrice(
   await spreeRequest(config, "POST", "/prices", {
     variant_id: variantId,
     currency: "EUR",
-    amount: amount.toFixed(2),
+    amount: Math.round(amount * 100),
   });
 }
 
