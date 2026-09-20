@@ -23,24 +23,24 @@ export type SiteAppearance = {
 };
 
 const fallbackAppearance: SiteAppearance = {
-  headerBackground: "#ffffff",
-  headerText: "#111827",
-  headerBorder: "#e5e7eb",
-  footerBackground: "#111827",
-  footerText: "#d1d5db",
-  footerHeading: "#f3f4f6",
-  pageBackground: "#ffffff",
+  headerBackground: "#f6f0e3",
+  headerText: "#4a3422",
+  headerBorder: "#d8c8ae",
+  footerBackground: "#5a3822",
+  footerText: "#eadfcb",
+  footerHeading: "#fff8ea",
+  pageBackground: "#f6f0e3",
   accentColor: "#6b4423",
   accentText: "#fff8ea",
   highlightColor: "#6f8c95",
   highlightText: "#fffdf8",
   secondaryColor: "#eadfc9",
-  secondaryText: "#111827",
-  surfaceColor: "#ffffff",
-  surfaceAltColor: "#f3f4f6",
-  textColor: "#111827",
-  mutedTextColor: "#6b7280",
-  borderColor: "#e5e7eb",
+  secondaryText: "#4a3422",
+  surfaceColor: "#fffdf8",
+  surfaceAltColor: "#efe2cb",
+  textColor: "#3b2a1e",
+  mutedTextColor: "#6f6258",
+  borderColor: "#d8c8ae",
 };
 
 export const getSiteAppearance = cache(async (): Promise<SiteAppearance> => {
