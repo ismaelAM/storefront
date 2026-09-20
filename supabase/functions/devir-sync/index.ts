@@ -872,7 +872,7 @@ async function updateVariantRetailPrice(
     "PATCH",
     "/products/" + encodeURIComponent(productId) +
       "/variants/" + encodeURIComponent(variantId),
-    { price: amount },
+    { prices: [{ currency: "EUR", amount: amount.toFixed(2) }] },
   );
 }
 
