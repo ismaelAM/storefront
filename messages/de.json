@@ -66,7 +66,7 @@
     "rightsReserved": "Alle Rechte vorbehalten."
   },
   "home": {
-    "welcome": "{storeName} Storefront",
+    "welcome": "{storeName}",
     "heroDescription": "TCGs, Brettspiele, Manga und Sammlerstücke für den nächsten Spieleabend, die Sammlung oder die nächste Lektüre.",
     "shopNow": "Alle Produkte",
     "forkOnGithub": "Katalog ansehen",
