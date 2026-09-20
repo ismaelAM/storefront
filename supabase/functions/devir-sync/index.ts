@@ -2451,7 +2451,7 @@ async function repriceCommercialBooksBatch(
 
     if (!sku || !productId || !variantId || !Number.isFinite(purchasePrice) || purchasePrice <= 0) {
       unchanged += 1;
-      continue;
+      return;
     }
 
     const product: DevirProduct = {
@@ -2480,7 +2480,7 @@ async function repriceCommercialBooksBatch(
       const previous = Number(row.last_auto_price);
       if (Number.isFinite(previous) && Math.abs(previous - pricing.retail) < 0.005) {
         unchanged += 1;
-        continue;
+        return;
       }
 
       await spreeRequest(
