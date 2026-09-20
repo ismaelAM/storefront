@@ -2438,7 +2438,7 @@ async function repriceCommercialBooksBatch(
   let unchanged = 0;
   let failed = 0;
 
-  for (const row of rows) {
+  const processRow = async (row: (typeof rows)[number]) => {
     const sku = String(row.supplier_sku ?? "");
     const productId = String(row.spree_product_id ?? "");
     const variantId = String(row.spree_variant_id ?? "");
@@ -2516,6 +2516,11 @@ async function repriceCommercialBooksBatch(
         })
         .eq("supplier_sku", sku);
     }
+  };
+
+  for (let index = 0; index < rows.length; index += 5) {
+    await Promise.all(rows.slice(index, index + 5).map(processRow));
+    await new Promise((resolve) => setTimeout(resolve, 50));
   }
 
   return {
