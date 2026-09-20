@@ -1093,7 +1093,14 @@ async function appendToExistingGroupedProduct(
       Boolean(variantEdition(grouping.variantLabel));
 
     const position = Number(grouping.variantPosition ?? 0);
-    const edition = variantEdition(grouping.variantLabel) ?? "Estándar";
+    const standardCopiesAtPosition = existingRows.filter(
+      (row) =>
+        Number(row.variant_position) === position &&
+        !variantEdition(row.variant_label),
+    ).length;
+    const edition =
+      variantEdition(grouping.variantLabel) ??
+      standardEditionStorageValue(standardCopiesAtPosition);
     const options = [
       { name: "tomo", value: String(position).padStart(2, "0") },
       ...(hasEditionDimension ? [{ name: "edicion", value: edition }] : []),
@@ -1405,6 +1412,12 @@ function variantEdition(label: string | null): string | null {
   return parts.length > 1 ? parts.slice(1).join(" · ").trim() || null : null;
 }
 
+function standardEditionStorageValue(copyIndex: number): string {
+  if (copyIndex <= 0) return "Estándar";
+  if (copyIndex === 1) return "Estándar · reimpresión";
+  return "Estándar · reimpresión " + String(copyIndex);
+}
+
 function languageGroupingInfo(product: DevirProduct): LanguageGroupingInfo | null {
   const patterns: Array<[string, RegExp]> = [
     ["Español", /\b(?:español|castellano)\b/i],
@@ -1628,12 +1641,20 @@ async function rebuildMangaGroup(
       a.supplier_sku.localeCompare(b.supplier_sku)
     );
   });
+  const standardEditionCounts = new Map<number, number>();
   for (const row of creationRows) {
     const position = Number(row.variant_position ?? 0);
     const duplicated = (positions.get(position) ?? 0) > 1;
+    const explicitEdition = variantEdition(row.variant_label);
+    const standardCopyIndex = standardEditionCounts.get(position) ?? 0;
     const edition =
-      variantEdition(row.variant_label) ??
-      (duplicated ? "ISBN " + row.supplier_sku : "Estándar");
+      explicitEdition ??
+      (duplicated
+        ? standardEditionStorageValue(standardCopyIndex)
+        : "Estándar");
+    if (!explicitEdition) {
+      standardEditionCounts.set(position, standardCopyIndex + 1);
+    }
     const variant = await createGroupedVariant(
       config,
       created.id,
@@ -2014,9 +2035,12 @@ function competitivePricing(
 
   let retail: number;
   if (book && referenceGross !== null) {
-    retail = Math.ceil(raw * 100 - 1e-9) / 100;
-    // Never exceed the fixed PVP automatically. If the safety floor would,
-    // reviewReason above keeps the product in draft.
+    // Books keep the legal fixed-price ceiling, but customer-facing prices
+    // should still look like normal retail prices (9.50, 9.90, 9.95, 9.99…)
+    // instead of calculation artefacts such as 9.46 or 10.41.
+    retail = roundUpToProfessionalPrice(raw);
+    // Never exceed the publisher/reference PVP automatically. If the next
+    // commercial ending is above it, the PVP itself is the safe ceiling.
     retail = Math.min(retail, Math.round(referenceGross * 100) / 100);
   } else {
     retail = roundUpToProfessionalPrice(raw);
@@ -2303,11 +2327,7 @@ async function categorizeDraftBatch(
     const margin = DEFAULT_CATEGORY_MARGINS[key];
     if (!category || !Number.isFinite(margin) || !product.purchasePrice || product.purchasePrice <= 0) return;
 
-    const pricing = priceFor(
-      product.purchasePrice,
-      margin,
-      key === "manga-comic" ? 0.95 : 0.99,
-    );
+    const pricing = competitivePricing(product, key, margin);
 
     const patch = async () => {
       await spreeRequest(config, "PATCH", "/products/" + encodeURIComponent(productId), {
@@ -2386,6 +2406,122 @@ async function categorizeDraftBatch(
     processed: rows.length,
     updated,
     repriced,
+    failed,
+    next_offset: rows.length < limit ? null : offset + limit,
+  };
+}
+
+
+async function repriceCommercialBooksBatch(
+  config: ConfigRow,
+  offset: number,
+  limit: number,
+): Promise<{
+  processed: number;
+  repriced: number;
+  unchanged: number;
+  failed: number;
+  next_offset: number | null;
+}> {
+  const { data, error } = await supabase
+    .from("devir_sync_catalog")
+    .select("supplier_sku,name,source_url,snapshot,spree_product_id,spree_variant_id,last_auto_price")
+    .or("supplier_sku.like.978%,supplier_sku.like.979%")
+    .not("spree_product_id", "is", null)
+    .not("spree_variant_id", "is", null)
+    .order("supplier_sku")
+    .range(offset, offset + limit - 1);
+  if (error) throw error;
+
+  const rows = data ?? [];
+  let repriced = 0;
+  let unchanged = 0;
+  let failed = 0;
+
+  for (const row of rows) {
+    const sku = String(row.supplier_sku ?? "");
+    const productId = String(row.spree_product_id ?? "");
+    const variantId = String(row.spree_variant_id ?? "");
+    const snapshot =
+      row.snapshot && typeof row.snapshot === "object"
+        ? row.snapshot as Json
+        : {};
+    const purchasePrice = Number(snapshot.purchasePrice);
+    const referencePriceNet = Number(snapshot.referencePriceNet);
+
+    if (!sku || !productId || !variantId || !Number.isFinite(purchasePrice) || purchasePrice <= 0) {
+      unchanged += 1;
+      continue;
+    }
+
+    const product: DevirProduct = {
+      sku,
+      name: String(row.name ?? sku),
+      url: String(row.source_url ?? ""),
+      purchasePrice,
+      referencePriceNet:
+        Number.isFinite(referencePriceNet) && referencePriceNet > 0
+          ? referencePriceNet
+          : null,
+      availability: "unknown",
+      availabilityLabel: null,
+      releaseDate: null,
+      imageUrls: [],
+    };
+
+    try {
+      const key = categoryKey(product);
+      const pricing = competitivePricing(
+        product,
+        key,
+        DEFAULT_CATEGORY_MARGINS[key] ?? 0.05,
+      );
+
+      const previous = Number(row.last_auto_price);
+      if (Number.isFinite(previous) && Math.abs(previous - pricing.retail) < 0.005) {
+        unchanged += 1;
+        continue;
+      }
+
+      await spreeRequest(
+        config,
+        "PATCH",
+        "/products/" + encodeURIComponent(productId) +
+          "/variants/" + encodeURIComponent(variantId),
+        {
+          prices: [{ currency: "EUR", amount: pricing.retail }],
+        },
+      );
+
+      const { error: updateError } = await supabase
+        .from("devir_sync_catalog")
+        .update({
+          last_auto_price: pricing.retail,
+          last_error: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("supplier_sku", sku);
+      if (updateError) throw updateError;
+
+      repriced += 1;
+    } catch (rowError) {
+      failed += 1;
+      await supabase
+        .from("devir_sync_catalog")
+        .update({
+          last_error:
+            "COMMERCIAL-PRICE: " +
+            (rowError instanceof Error ? rowError.message : String(rowError)),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("supplier_sku", sku);
+    }
+  }
+
+  return {
+    processed: rows.length,
+    repriced,
+    unchanged,
     failed,
     next_offset: rows.length < limit ? null : offset + limit,
   };
@@ -3871,6 +4007,15 @@ async function operatorAction(
     return json({
       ok: true,
       ...(await categorizeDraftBatch(config, offset, limit)),
+    });
+  }
+
+  if (action === "reprice-commercial-books") {
+    const offset = Math.max(0, Number(body.offset ?? 0) || 0);
+    const limit = Math.min(100, Math.max(1, Number(body.limit ?? 50) || 50));
+    return json({
+      ok: true,
+      ...(await repriceCommercialBooksBatch(config, offset, limit)),
     });
   }
 
