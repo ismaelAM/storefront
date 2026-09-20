@@ -66,7 +66,7 @@
     "rightsReserved": "Todos os direitos reservados."
   },
   "home": {
-    "welcome": "{storeName} Storefront",
+    "welcome": "{storeName}",
     "heroDescription": "TCG, jogos de tabuleiro, manga e colecionáveis para a próxima partida, coleção ou leitura.",
     "shopNow": "Ver tudo",
     "forkOnGithub": "Ver catálogo",
@@ -260,7 +260,7 @@
     "failedToCreatePayment": "Não foi possível criar o pagamento. Tente novamente.",
     "placeOrder": "Encomendar",
     "noPaymentRequired": "Não é necessário pagamento — a sua encomenda está totalmente coberta.",
-    "unsupportedGateway": "Este método de pagamento ainda não é suportado no storefront.",
+    "unsupportedGateway": "Este método de pagamento ainda não está disponível.",
     "paypalApproveFirst": "Aprove o pagamento PayPal antes de continuar.",
     "paypalApproved": "Pagamento PayPal aprovado. A concluir a encomenda...",
     "paypalCancelled": "O pagamento PayPal foi cancelado.",
