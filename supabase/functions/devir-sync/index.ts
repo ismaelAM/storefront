@@ -835,16 +835,12 @@ async function upsertBasePrice(
       // Older Spree 5.x builds accept Price updates through the Rails-style
       // nested payload even when the newer OpenAPI documents a flat body.
       {
-        // This Spree deployment's Price endpoint expects minor units on PATCH
-        // (integer cents), even though responses expose decimal amounts.
-        amount: Math.round(amount * 100),
+        // Send JSON numbers, not locale-sensitive decimal strings. This store
+        // parses strings using the Spanish locale, where "." is a thousands
+        // separator ("126.90" would otherwise become 12690).
+        amount,
         ...(compareAtAmount !== undefined
-          ? {
-              compare_at_amount:
-                compareAtAmount === null
-                  ? null
-                  : Math.round(compareAtAmount * 100),
-            }
+          ? { compare_at_amount: compareAtAmount }
           : {}),
       },
     );
@@ -854,14 +850,9 @@ async function upsertBasePrice(
   await spreeRequest(config, "POST", "/prices", {
     variant_id: variantId,
     currency: "EUR",
-    amount: Math.round(amount * 100),
+    amount,
     ...(compareAtAmount !== undefined
-      ? {
-          compare_at_amount:
-            compareAtAmount === null
-              ? null
-              : Math.round(compareAtAmount * 100),
-        }
+      ? { compare_at_amount: compareAtAmount }
       : {}),
   });
 }
