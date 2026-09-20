@@ -119,10 +119,6 @@ export function ProductDetails({ product, basePath }: ProductDetailsProps) {
     ? (selectedVariant?.purchasable ?? false)
     : (product.purchasable ?? false);
 
-  const inStock = hasVariants
-    ? (selectedVariant?.in_stock ?? false)
-    : (product.in_stock ?? false);
-
   const isPreorder = hasVariants
     ? (selectedVariant?.preorder ?? false)
     : (product.preorder ?? false);
