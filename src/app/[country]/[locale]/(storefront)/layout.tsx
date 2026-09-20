@@ -108,6 +108,8 @@ export default async function StorefrontLayout({ children, params }: StorefrontL
     "--popover-foreground": appearance.textColor,
     "--primary": appearance.accentColor,
     "--primary-foreground": appearance.accentText,
+    "--highlight": appearance.highlightColor,
+    "--highlight-foreground": appearance.highlightText,
     "--secondary": appearance.secondaryColor,
     "--secondary-foreground": appearance.secondaryText,
     "--muted": appearance.surfaceAltColor,
