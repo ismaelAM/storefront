@@ -39,10 +39,31 @@ function parseDisplayPrice(value: string | null | undefined): number {
   if (lastComma >= 0) return Number(cleaned.replace(/\./g, "").replace(",", "."));
   return Number(cleaned);
 }
+function getComparePrice(product: ProductWithRelations): string {
+  const price = product.price?.display_amount ?? "";
+  const compareAt = product.price?.display_compare_at_amount;
+  if (compareAt && compareAt !== price) return compareAt;
+  const original = product.original_price?.display_amount;
+  return original && original !== price ? original : "";
+}
+
 function isSaleProduct(product: ProductWithRelations): boolean {
   const price = parseDisplayPrice(product.price?.display_amount);
-  const originalPrice = parseDisplayPrice(product.original_price?.display_amount);
-  return Number.isFinite(price) && Number.isFinite(originalPrice) && originalPrice > price;
+  const comparePrice = parseDisplayPrice(getComparePrice(product));
+  return (
+    Number.isFinite(price) &&
+    Number.isFinite(comparePrice) &&
+    comparePrice > price
+  );
+}
+
+function getMerchandisingBadge(product: ProductWithRelations): string {
+  if (product.preorder) return "Prereserva";
+  const onSale = isSaleProduct(product);
+  if (product.in_stock && onSale) return "En stock · Oferta";
+  if (product.in_stock) return "En stock";
+  if (onSale) return "Oferta";
+  return "";
 }
 function matchesVariantIds(product: ProductWithRelations, ids: string[]): boolean {
   if (ids.length === 0) return true;
@@ -74,5 +95,5 @@ export function PuckProductGrid({ title = "Nuestros productos", subtitle = "Desc
   const aspectClass = getPuckAspectClass(imageAspect);
   const radiusClass = getPuckRadiusClass(cardRadius);
 
-  return <section className="py-10 sm:py-14 lg:py-16" style={{ backgroundColor }}><div className="container mx-auto px-4 sm:px-6 lg:px-8">{(title || subtitle) && <div className="mx-auto mb-8 max-w-3xl text-center sm:mb-10">{title && <h2 className="text-2xl font-bold tracking-tight sm:text-3xl md:text-4xl" style={{ color: titleColor }}>{title}</h2>}{subtitle && <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 sm:mt-4 sm:text-base md:text-lg" style={{ color: textColor }}>{subtitle}</p>}</div>}{visibleProducts.length === 0 ? <div className="py-10 text-center sm:py-12"><p className="text-sm sm:text-base" style={{ color: textColor }}>No hay productos para esta selección.</p></div> : <div className={`grid gap-3 sm:gap-5 lg:gap-6 ${gridClass}`}>{visibleProducts.map((product) => { const price = product.price?.display_amount ?? ""; const comparePrice = product.original_price?.display_amount && product.original_price.display_amount !== price ? product.original_price.display_amount : ""; const productUrl = product.slug ? `${basePath}/products/${product.slug}` : `${basePath}/products`; return <ProductCard key={product.id} name={product.name} image={product.thumbnail_url || ""} price={price} comparePrice={comparePrice} url={productUrl} badge={product.preorder ? "Prereserva" : ""} cardBackgroundColor={cardBackgroundColor} titleColor={titleColor} textColor={textColor} priceColor={priceColor} radiusClass={radiusClass} aspectClass={aspectClass} />; })}</div>}</div></section>;
+  return <section className="py-10 sm:py-14 lg:py-16" style={{ backgroundColor }}><div className="container mx-auto px-4 sm:px-6 lg:px-8">{(title || subtitle) && <div className="mx-auto mb-8 max-w-3xl text-center sm:mb-10">{title && <h2 className="text-2xl font-bold tracking-tight sm:text-3xl md:text-4xl" style={{ color: titleColor }}>{title}</h2>}{subtitle && <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 sm:mt-4 sm:text-base md:text-lg" style={{ color: textColor }}>{subtitle}</p>}</div>}{visibleProducts.length === 0 ? <div className="py-10 text-center sm:py-12"><p className="text-sm sm:text-base" style={{ color: textColor }}>No hay productos para esta selección.</p></div> : <div className={`grid gap-3 sm:gap-5 lg:gap-6 ${gridClass}`}>{visibleProducts.map((product) => { const price = product.price?.display_amount ?? ""; const comparePrice = getComparePrice(product); const productUrl = product.slug ? `${basePath}/products/${product.slug}` : `${basePath}/products`; return <ProductCard key={product.id} name={product.name} image={product.thumbnail_url || ""} price={price} comparePrice={comparePrice} url={productUrl} badge={getMerchandisingBadge(product)} cardBackgroundColor={cardBackgroundColor} titleColor={titleColor} textColor={textColor} priceColor={priceColor} radiusClass={radiusClass} aspectClass={aspectClass} />; })}</div>}</div></section>;
 }
