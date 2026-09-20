@@ -2,7 +2,7 @@
 
 import type { ProductListParams } from "@spree/sdk";
 
-const CATALOG_CACHE_VERSION = "2026-09-19-manga-groups-v1";
+const CATALOG_CACHE_VERSION = "2026-09-21-home-merchandising-v1";
 import { cacheLife, cacheTag } from "next/cache";
 import {
   cacheTagSuffix,
