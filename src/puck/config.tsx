@@ -125,7 +125,6 @@ type SectionProps = {
 type SpacerProps = {
   height: "small" | "medium" | "large";
   backgroundColor: string;
-  density: PuckDensity;
 };
 
 type Components = {
@@ -154,6 +153,7 @@ type HeroHomeProps = {
   titleColor: string;
   textColor: string;
   backgroundColor: string;
+  density: PuckDensity;
 };
 
 type FeaturedProductsHomeProps = {
