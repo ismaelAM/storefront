@@ -812,6 +812,7 @@ async function upsertBasePrice(
   config: ConfigRow,
   variantId: string,
   amount: number,
+  compareAtAmount?: number | null,
 ): Promise<void> {
   const prices = await spreeList<SpreePrice>(
     config,
@@ -833,7 +834,17 @@ async function upsertBasePrice(
       "/prices/" + encodeURIComponent(basePrice.id),
       // Older Spree 5.x builds accept Price updates through the Rails-style
       // nested payload even when the newer OpenAPI documents a flat body.
-      { price: { amount: amount.toFixed(2) } },
+      {
+        price: {
+          amount: amount.toFixed(2),
+          ...(compareAtAmount !== undefined
+            ? {
+                compare_at_amount:
+                  compareAtAmount === null ? null : compareAtAmount.toFixed(2),
+              }
+            : {}),
+        },
+      },
     );
     return;
   }
@@ -842,6 +853,12 @@ async function upsertBasePrice(
     variant_id: variantId,
     currency: "EUR",
     amount: amount.toFixed(2),
+    ...(compareAtAmount !== undefined
+      ? {
+          compare_at_amount:
+            compareAtAmount === null ? null : compareAtAmount.toFixed(2),
+        }
+      : {}),
   });
 }
 
@@ -3821,6 +3838,196 @@ async function operatorAuthorized(config: ConfigRow, provided: string): Promise<
   return (await sha256(provided)) === (await sha256(config.spree_admin_api_key));
 }
 
+interface MerchandisingOfferInput {
+  productId: string;
+  sku: string;
+  amount: number;
+  compareAtAmount?: number | null;
+  featured?: boolean;
+  sale?: boolean;
+}
+
+async function applyMerchandisingOffers(
+  config: ConfigRow,
+  rawOffers: unknown[],
+): Promise<{
+  updated: number;
+  offers: Array<{
+    productId: string;
+    sku: string;
+    previousAmount: number;
+    amount: number;
+    compareAtAmount: number | null;
+  }>;
+}> {
+  const offers: MerchandisingOfferInput[] = rawOffers.map((raw) => {
+    const value = raw && typeof raw === "object"
+      ? raw as Record<string, unknown>
+      : {};
+    return {
+      productId: String(value.productId ?? "").trim(),
+      sku: String(value.sku ?? "").trim(),
+      amount: Number(value.amount),
+      compareAtAmount:
+        value.compareAtAmount === null
+          ? null
+          : value.compareAtAmount === undefined
+            ? undefined
+            : Number(value.compareAtAmount),
+      featured: value.featured !== false,
+      sale: value.sale !== false,
+    };
+  });
+
+  if (offers.length === 0) {
+    throw new Error("Se requiere al menos una oferta");
+  }
+
+  const results: Array<{
+    productId: string;
+    sku: string;
+    previousAmount: number;
+    amount: number;
+    compareAtAmount: number | null;
+  }> = [];
+
+  for (const offer of offers) {
+    if (
+      !offer.productId ||
+      !offer.sku ||
+      !Number.isFinite(offer.amount) ||
+      offer.amount <= 0
+    ) {
+      throw new Error("Oferta de merchandising inválida");
+    }
+
+    const product = await spreeRequest<SpreeProduct>(
+      config,
+      "GET",
+      "/products/" + encodeURIComponent(offer.productId),
+    );
+    const variants = await spreeList<SpreeVariant>(
+      config,
+      "/products/" + encodeURIComponent(offer.productId) + "/variants",
+    );
+    const variant = variants.find((item) => item.sku?.trim() === offer.sku);
+    if (!variant) {
+      throw new Error(
+        "No se encontró SKU " + offer.sku + " en " + offer.productId,
+      );
+    }
+
+    const previousAmount = variantPrice(variant);
+    if (previousAmount === null) {
+      throw new Error("La variante " + offer.sku + " no tiene precio EUR");
+    }
+
+    const { data: catalogRow, error: catalogError } = await supabase
+      .from("devir_sync_catalog")
+      .select("supplier_sku,name,source_url,snapshot")
+      .eq("supplier_sku", offer.sku)
+      .maybeSingle();
+    if (catalogError) throw catalogError;
+
+    if (catalogRow) {
+      const snapshot =
+        catalogRow.snapshot && typeof catalogRow.snapshot === "object"
+          ? catalogRow.snapshot as Json
+          : {};
+      const purchasePrice = Number(snapshot.purchasePrice);
+      if (Number.isFinite(purchasePrice) && purchasePrice > 0) {
+        const merchandisingProduct: DevirProduct = {
+          sku: offer.sku,
+          name: String(catalogRow.name ?? offer.sku),
+          url: String(catalogRow.source_url ?? ""),
+          purchasePrice,
+          referencePriceNet: Number.isFinite(Number(snapshot.referencePriceNet))
+            ? Number(snapshot.referencePriceNet)
+            : null,
+          availability: "available",
+          availabilityLabel: null,
+          releaseDate: null,
+          imageUrls: [],
+        };
+        const key = categoryKey(merchandisingProduct);
+        const book = isBookProduct(merchandisingProduct, key);
+        const vatRate = book ? 0.04 : 0.21;
+        const safetyFloor = paymentAwareFloor(
+          purchasePrice,
+          vatRate,
+          book ? 0.02 : 0.01,
+        );
+
+        if (offer.amount + 0.005 < safetyFloor) {
+          throw new Error(
+            "Oferta " + offer.sku +
+              " por debajo del suelo de contribución (" +
+              safetyFloor.toFixed(2) + " EUR)",
+          );
+        }
+
+        if (
+          book &&
+          merchandisingProduct.referencePriceNet &&
+          offer.amount + 0.005 <
+            merchandisingProduct.referencePriceNet * 1.04 * 0.95
+        ) {
+          throw new Error(
+            "Oferta " + offer.sku +
+              " supera el descuento ordinario permitido para libros",
+          );
+        }
+      }
+    }
+
+    const compareAtAmount =
+      offer.compareAtAmount === undefined
+        ? previousAmount
+        : offer.compareAtAmount;
+
+    if (
+      compareAtAmount !== null &&
+      (!Number.isFinite(compareAtAmount) || compareAtAmount <= offer.amount)
+    ) {
+      throw new Error(
+        "El precio anterior debe ser superior al precio de oferta para " +
+          offer.sku,
+      );
+    }
+
+    await upsertBasePrice(
+      config,
+      variant.id,
+      offer.amount,
+      compareAtAmount,
+    );
+
+    const tags = Array.from(
+      new Set([
+        ...(product.tags ?? []),
+        ...(offer.featured ? ["featured"] : []),
+        ...(offer.sale ? ["sale"] : []),
+      ]),
+    );
+    await spreeRequest(
+      config,
+      "PATCH",
+      "/products/" + encodeURIComponent(product.id),
+      { tags },
+    );
+
+    results.push({
+      productId: product.id,
+      sku: offer.sku,
+      previousAmount,
+      amount: offer.amount,
+      compareAtAmount,
+    });
+  }
+
+  return { updated: results.length, offers: results };
+}
+
 async function operatorAction(
   action: string,
   req: Request,
@@ -4171,6 +4378,14 @@ async function operatorAction(
   if (action === "catalog-pricing-setup") {
     const categories = await setupCatalogCategoriesAndMargins(config);
     return json({ ok: true, categories });
+  }
+
+  if (action === "merchandising-offers") {
+    const offers = Array.isArray(body.offers) ? body.offers : [];
+    return json({
+      ok: true,
+      ...(await applyMerchandisingOffers(config, offers)),
+    });
   }
 
   if (action === "categorize-drafts") {
