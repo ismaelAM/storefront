@@ -53,10 +53,7 @@
     "updatePreferencesFailed": "We couldn't update your region preferences. Please try again."
   },
   "footer": {
-    "description": "Open-source ecommerce powered by Spree REST API, TypeScript SDK, and Next.js. Self-host it. Own your data. Zero platform fees.",
-    "forkOnGithub": "Fork this storefront on GitHub",
-    "quickstartGuide": "Quickstart guide",
-    "learnMore": "Learn more about Spree Commerce",
+    "description": "TCGs, board games, manga and collectibles selected with care. Straightforward shopping, helpful support and carefully prepared orders.",
     "shop": "Shop",
     "allProducts": "All Products",
     "categories": "Categories",
@@ -65,16 +62,15 @@
     "orderHistory": "Order History",
     "cart": "Cart",
     "policies": "Policies",
-    "poweredBy": "Powered by",
-    "copyright": "© {year} {storeName}. Powered by Spree Commerce.",
-    "wholesale": "Trade & Wholesale"
+    "wholesale": "Trade & Wholesale",
+    "rightsReserved": "All rights reserved."
   },
   "home": {
     "welcome": "{storeName} Storefront",
-    "heroDescription": "A production-ready, open-source storefront built with Next.js, React, and the Spree TypeScript SDK. Self-host it. Own your stack. No vendor lock-in. Zero platform fees.",
+    "heroDescription": "TCGs, board games, manga and collectibles for your next game night, collection or read.",
     "shopNow": "Shop All",
-    "forkOnGithub": "Fork on GitHub",
-    "quickstartGuide": "Quickstart Guide",
+    "forkOnGithub": "View catalog",
+    "quickstartGuide": "Explore products",
     "featuredProducts": "Featured Products",
     "viewAll": "View all",
     "qualityProducts": "Quality Products",
