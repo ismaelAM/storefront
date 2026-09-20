@@ -48,7 +48,7 @@ export function SearchToggle({
   }, []);
 
   return (
-    <header className="sticky top-0 z-50 relative h-14 bg-transparent sm:h-16">
+    <header className="sticky top-0 z-50 relative h-14 bg-[var(--header-background)] sm:h-16">
       {/* Normal header content */}
       <div
         className={`absolute inset-0 transition-all duration-300 ease-in-out ${
