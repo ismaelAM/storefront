@@ -22,6 +22,7 @@ export const PRODUCT_CARD_FIELDS = [
   "purchasable",
   "in_stock",
   "preorder",
+  "preorder_ships_at",
   "tags",
   "default_variant_id",
   "price",
