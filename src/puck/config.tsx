@@ -8,6 +8,7 @@ import { HomeHeroBlock } from "@/puck/HomeHeroBlock";
 import { HomeWholesaleBlock } from "@/puck/HomeWholesaleBlock";
 import { colorField } from "@/puck/fields";
 import { DEFAULT_PALETTE_VALUES } from "@/puck/palette";
+import { getPuckSectionPaddingClass, type PuckDensity } from "@/puck/utils";
 
 /* =========================================================
    TYPES
@@ -77,6 +78,7 @@ type BannerProps = {
   buttonColor: string;
   buttonTextColor: string;
   alignment: "left" | "center" | "right";
+  spacing: PuckDensity;
 };
 
 type ProductGridProps = {
@@ -90,6 +92,7 @@ type ProductGridProps = {
   titleColor: string;
   textColor: string;
   priceColor: string;
+  spacing: PuckDensity;
 };
 
 type ProductShowcaseProps = {
@@ -122,6 +125,7 @@ type SectionProps = {
 type SpacerProps = {
   height: "small" | "medium" | "large";
   backgroundColor: string;
+  density: PuckDensity;
 };
 
 type Components = {
@@ -409,6 +413,16 @@ export const config: Config<Components> = {
         textColor: colorField("Color del texto"),
 
         backgroundColor: colorField("Color de fondo"),
+
+        density: {
+          type: "select",
+          label: "Densidad vertical",
+          options: [
+            { label: "Compacta", value: "compact" },
+            { label: "Normal", value: "normal" },
+            { label: "Amplia", value: "airy" },
+          ],
+        },
       },
 
       defaultProps: {
@@ -423,6 +437,7 @@ export const config: Config<Components> = {
         titleColor: DEFAULT_PALETTE_VALUES.text,
         textColor: DEFAULT_PALETTE_VALUES.textMuted,
         backgroundColor: DEFAULT_PALETTE_VALUES.background,
+        density: "compact",
       },
 
       render: (props) => {
@@ -1144,6 +1159,16 @@ export const config: Config<Components> = {
             },
           ],
         },
+
+        spacing: {
+          type: "select",
+          label: "Densidad vertical",
+          options: [
+            { label: "Compacta", value: "compact" },
+            { label: "Normal", value: "normal" },
+            { label: "Amplia", value: "airy" },
+          ],
+        },
       },
 
       defaultProps: {
@@ -1156,6 +1181,7 @@ export const config: Config<Components> = {
         buttonColor: DEFAULT_PALETTE_VALUES.surface,
         buttonTextColor: DEFAULT_PALETTE_VALUES.text,
         alignment: "center",
+        spacing: "compact",
       },
 
       render: ({
@@ -1168,6 +1194,7 @@ export const config: Config<Components> = {
         buttonColor,
         buttonTextColor,
         alignment,
+        spacing,
       }) => {
         const alignmentClass =
           alignment === "left"
@@ -1176,16 +1203,18 @@ export const config: Config<Components> = {
               ? "text-right"
               : "text-center";
 
+        const spacingClass = getPuckSectionPaddingClass(spacing);
+
         return (
           <section
-            className="py-16"
+            className={spacingClass}
             style={{
               backgroundColor,
             }}
           >
             <div className={`container mx-auto px-4 ${alignmentClass}`}>
               <h2
-                className="text-3xl font-bold md:text-4xl"
+                className="text-2xl font-bold tracking-[-0.02em] sm:text-3xl md:text-4xl"
                 style={{
                   color: textColor,
                 }}
@@ -1194,7 +1223,7 @@ export const config: Config<Components> = {
               </h2>
 
               <p
-                className="mx-auto mt-4 max-w-2xl text-lg"
+                className="mx-auto mt-2.5 max-w-2xl text-sm leading-6 sm:mt-3 sm:text-base"
                 style={{
                   color: textColor,
                 }}
@@ -1205,7 +1234,7 @@ export const config: Config<Components> = {
               {buttonText && (
                 <a
                   href={buttonUrl || "#"}
-                  className="mt-8 inline-flex rounded-md px-6 py-3 font-semibold transition-opacity hover:opacity-80"
+                  className="mt-5 inline-flex rounded-md px-5 py-2.5 text-sm font-semibold transition-opacity hover:opacity-80 sm:mt-6"
                   style={{
                     backgroundColor: buttonColor,
                     color: buttonTextColor,
@@ -1323,6 +1352,16 @@ export const config: Config<Components> = {
           type: "text",
           label: "Color del precio",
         },
+
+        spacing: {
+          type: "select",
+          label: "Densidad vertical",
+          options: [
+            { label: "Compacta", value: "compact" },
+            { label: "Normal", value: "normal" },
+            { label: "Amplia", value: "airy" },
+          ],
+        },
       },
 
       defaultProps: {
@@ -1335,7 +1374,8 @@ export const config: Config<Components> = {
         cardBackgroundColor: "#ffffff",
         titleColor: "#111827",
         textColor: "#6b7280",
-        priceColor: "#111827",
+        priceColor: DEFAULT_PALETTE_VALUES.text,
+        spacing: "normal",
       },
 
       render: (props) => {
