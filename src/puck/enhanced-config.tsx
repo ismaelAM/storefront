@@ -91,6 +91,15 @@ export const enhancedConfig: Config = {
         titleColor: colorField("Color del título"),
         textColor: colorField("Color del texto"),
         priceColor: colorField("Color del precio"),
+        spacing: {
+          type: "select",
+          label: "Densidad vertical",
+          options: [
+            { label: "Compacta", value: "compact" },
+            { label: "Normal", value: "normal" },
+            { label: "Amplia", value: "airy" },
+          ],
+        },
       },
       defaultProps: {
         title: "Nuestros productos",
@@ -109,6 +118,7 @@ export const enhancedConfig: Config = {
         titleColor: DEFAULT_PALETTE_VALUES.text,
         textColor: DEFAULT_PALETTE_VALUES.textMuted,
         priceColor: DEFAULT_PALETTE_VALUES.text,
+        spacing: "normal",
       } satisfies PuckProductGridProps,
       render: (props) => (
         <PuckProductGrid {...(props as unknown as PuckProductGridProps)} />
