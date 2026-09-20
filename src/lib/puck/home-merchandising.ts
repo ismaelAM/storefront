@@ -74,7 +74,7 @@ function dedupe(products: HomeProduct[]): HomeProduct[] {
 }
 
 function currentPreorders(products: HomeProduct[], now: Date): HomeProduct[] {
-  const minDate = now.getTime() - 24 * 60 * 60 * 1000;
+  const minDate = now.getTime();
   const maxDate = now.getTime() + PREORDER_LOOKAHEAD_MS;
 
   return products.filter((product) => {
@@ -82,7 +82,7 @@ function currentPreorders(products: HomeProduct[], now: Date): HomeProduct[] {
     if (!product.preorder_ships_at) return true;
 
     const shipsAt = new Date(product.preorder_ships_at).getTime();
-    return !Number.isFinite(shipsAt) || (shipsAt >= minDate && shipsAt <= maxDate);
+    return !Number.isFinite(shipsAt) || (shipsAt > minDate && shipsAt <= maxDate);
   });
 }
 
@@ -91,9 +91,11 @@ function currentPreorders(products: HomeProduct[], now: Date): HomeProduct[] {
  *
  * The first item is intentionally the strongest physical-stock offer when one
  * exists, so a RealProductShowcase at position 1 stays useful. Remaining
- * positions mix real offers with upcoming preorders. The order changes every
- * six hours, but remains stable during each window so SSR and client rendering
- * never disagree.
+ * positions contain two independent rotating lanes: genuine offers and
+ * genuinely upcoming preorders. A product never becomes a "new release" just
+ * because it is featured or discounted. The order changes every six hours,
+ * but remains stable during each window so SSR and client rendering never
+ * disagree.
  */
 export function buildHomeMerchandisingProducts(
   saleProducts: Product[],
@@ -104,7 +106,10 @@ export function buildHomeMerchandisingProducts(
 
   const sales = dedupe(
     (saleProducts as HomeProduct[]).filter(
-      (product) => isLandingSafe(product) && isActualSale(product),
+      (product) =>
+        isLandingSafe(product) &&
+        isActualSale(product) &&
+        !product.preorder,
     ),
   );
   const preorders = dedupe(
