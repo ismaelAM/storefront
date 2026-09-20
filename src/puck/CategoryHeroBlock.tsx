@@ -1,5 +1,7 @@
 "use client";
 
+import { getPuckCategoryHeightClass } from "@/puck/utils";
+
 interface CategoryHeroBlockProps {
   title: string;
   description: string;
@@ -19,16 +21,11 @@ export function CategoryHeroBlock({
   textColor,
   minHeight,
 }: CategoryHeroBlockProps) {
-  const heightClass =
-    minHeight === "small"
-      ? "min-h-[250px]"
-      : minHeight === "large"
-        ? "min-h-[450px]"
-        : "min-h-[350px]";
+  const heightClass = getPuckCategoryHeightClass(minHeight);
 
   return (
     <section
-      className={`flex w-full flex-col justify-end bg-cover bg-center ${heightClass}`}
+      className={`flex w-full flex-col justify-end border-b border-border/60 bg-cover bg-center ${heightClass}`}
       style={{
         backgroundColor,
         backgroundImage: backgroundImage
@@ -36,9 +33,9 @@ export function CategoryHeroBlock({
           : undefined,
       }}
     >
-      <div className="container mx-auto px-4 pb-8 sm:px-6 lg:px-8">
+      <div className="container mx-auto px-4 pb-6 pt-8 sm:px-6 sm:pb-8 lg:px-8">
         <h1
-          className="text-4xl font-bold md:text-5xl"
+          className="text-3xl font-bold tracking-[-0.03em] sm:text-4xl md:text-5xl"
           style={{ color: titleColor }}
         >
           {title}
@@ -46,7 +43,7 @@ export function CategoryHeroBlock({
 
         {description && (
           <p
-            className="mt-3 max-w-3xl text-base md:text-lg"
+            className="mt-2.5 max-w-3xl text-sm leading-6 sm:text-base md:text-lg"
             style={{ color: textColor }}
           >
             {description}
