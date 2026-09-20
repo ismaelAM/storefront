@@ -66,7 +66,7 @@
     "rightsReserved": "Todos los derechos reservados."
   },
   "home": {
-    "welcome": "{storeName} Storefront",
+    "welcome": "{storeName}",
     "heroDescription": "TCG, juegos de mesa, manga y coleccionables para encontrar tu próxima partida, colección o lectura.",
     "shopNow": "Ver todo",
     "forkOnGithub": "Ver catálogo",
