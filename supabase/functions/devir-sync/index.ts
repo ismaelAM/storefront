@@ -3995,11 +3995,21 @@ async function applyMerchandisingOffers(
       );
     }
 
-    await upsertBasePrice(
+    await spreeRequest<SpreeProduct>(
       config,
-      variant.id,
-      offer.amount,
-      compareAtAmount,
+      "PATCH",
+      "/products/" + encodeURIComponent(product.id),
+      {
+        variants: [{
+          id: variant.id,
+          prices: [{
+            currency: "EUR",
+            amount: offer.amount.toFixed(2),
+            compare_at_amount:
+              compareAtAmount === null ? null : compareAtAmount.toFixed(2),
+          }],
+        }],
+      },
     );
 
     const tags = Array.from(
