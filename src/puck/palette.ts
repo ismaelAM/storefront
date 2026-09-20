@@ -2,6 +2,8 @@ export const PALETTE_COLOR_OPTIONS = [
   { label: "Transparente", value: "transparent" },
   { label: "Principal", value: "var(--primary)" },
   { label: "Texto sobre principal", value: "var(--primary-foreground)" },
+  { label: "Acento puntual", value: "var(--highlight)" },
+  { label: "Texto sobre acento", value: "var(--highlight-foreground)" },
   { label: "Secundario", value: "var(--secondary)" },
   { label: "Texto sobre secundario", value: "var(--secondary-foreground)" },
   { label: "Fondo general", value: "var(--background)" },
@@ -15,6 +17,8 @@ export const PALETTE_COLOR_OPTIONS = [
 export const DEFAULT_PALETTE_VALUES = {
   primary: "var(--primary)",
   primaryText: "var(--primary-foreground)",
+  highlight: "var(--highlight)",
+  highlightText: "var(--highlight-foreground)",
   secondary: "var(--secondary)",
   secondaryText: "var(--secondary-foreground)",
   background: "var(--background)",
