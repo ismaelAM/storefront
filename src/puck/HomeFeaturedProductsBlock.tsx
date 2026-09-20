@@ -24,9 +24,23 @@ export function HomeFeaturedProductsBlock({ title, columns }: HomeFeaturedProduc
         <div className={`grid gap-3 sm:gap-5 lg:gap-6 ${gridClass}`}>
           {products.map((product) => {
             const price = product.price?.display_amount ?? "";
-            const comparePrice = product.original_price?.display_amount && product.original_price.display_amount !== price ? product.original_price.display_amount : "";
+            const comparePrice =
+              product.price?.display_compare_at_amount ||
+              (product.original_price?.display_amount &&
+              product.original_price.display_amount !== price
+                ? product.original_price.display_amount
+                : "");
             const productUrl = product.slug ? `${basePath}/products/${product.slug}` : `${basePath}/products`;
-            return <ProductCard key={product.id} name={product.name} image={product.thumbnail_url || ""} price={price} comparePrice={comparePrice} url={productUrl} badge={product.preorder ? "Prereserva" : ""} radiusClass={getPuckRadiusClass("medium")} aspectClass="aspect-square" />;
+            const badge = product.preorder
+              ? "Prereserva"
+              : product.in_stock && comparePrice
+                ? "En stock · Oferta"
+                : product.in_stock
+                  ? "En stock"
+                  : comparePrice
+                    ? "Oferta"
+                    : "";
+            return <ProductCard key={product.id} name={product.name} image={product.thumbnail_url || ""} price={price} comparePrice={comparePrice} url={productUrl} badge={badge} radiusClass={getPuckRadiusClass("medium")} aspectClass="aspect-square" />;
           })}
         </div>
       )}
