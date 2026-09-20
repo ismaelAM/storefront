@@ -3883,6 +3883,26 @@ async function operatorAction(
     }
   }
 
+  if (action === "set-default-product-price") {
+    const productId =
+      typeof body.productId === "string" ? body.productId.trim() : "";
+    const amount = Number(body.amount);
+    if (!productId || !Number.isFinite(amount) || amount <= 0) {
+      return json({ error: "product_id_and_amount_required" }, 400);
+    }
+    const product = await spreeRequest<SpreeProduct>(
+      config,
+      "PATCH",
+      "/products/" + encodeURIComponent(productId),
+      { price: amount },
+    );
+    return json({
+      ok: true,
+      product_id: productId,
+      price: product,
+    });
+  }
+
   if (action === "status") {
     const { data: cycles, error: cyclesError } = await supabase
       .from("devir_sync_cycles")
