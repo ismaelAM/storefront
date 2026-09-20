@@ -11,7 +11,7 @@ import {
   type PuckDensity,
 } from "@/puck/utils";
 
-export type ProductGridFilter = "all" | "available" | "sale";
+export type ProductGridFilter = "all" | "available" | "sale" | "preorder";
 export interface PuckProductGridProps {
   title?: string;
   subtitle?: string;
@@ -94,6 +94,7 @@ export function PuckProductGrid({ title = "Nuestros productos", subtitle = "Desc
     if (!matchesVariantIds(product, selectedVariantIds)) return false;
     if (productFilter === "available" && product.purchasable === false) return false;
     if (productFilter === "sale" && !isSaleProduct(product)) return false;
+    if (productFilter === "preorder" && !product.preorder) return false;
     if (!matchesVariantText(product, variantFilter)) return false;
     return true;
   });
