@@ -867,12 +867,22 @@ async function updateVariantRetailPrice(
   variantId: string,
   amount: number,
 ): Promise<SpreeVariant> {
-  return await spreeRequest<SpreeVariant>(
+  await spreeRequest<SpreeProduct>(
     config,
     "PATCH",
+    "/products/" + encodeURIComponent(productId),
+    {
+      variants: [{
+        id: variantId,
+        prices: [{ currency: "EUR", amount: amount.toFixed(2) }],
+      }],
+    },
+  );
+  return await spreeRequest<SpreeVariant>(
+    config,
+    "GET",
     "/products/" + encodeURIComponent(productId) +
       "/variants/" + encodeURIComponent(variantId),
-    { prices: [{ currency: "EUR", amount: amount.toFixed(2) }] },
   );
 }
 
