@@ -73,16 +73,32 @@ function dedupe(products: HomeProduct[]): HomeProduct[] {
   });
 }
 
+function madridDateKey(date: Date): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Madrid",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
 function currentPreorders(products: HomeProduct[], now: Date): HomeProduct[] {
-  const minDate = now.getTime();
+  const today = madridDateKey(now);
   const maxDate = now.getTime() + PREORDER_LOOKAHEAD_MS;
 
   return products.filter((product) => {
     if (!product.preorder || !isLandingSafe(product)) return false;
     if (!product.preorder_ships_at) return true;
 
-    const shipsAt = new Date(product.preorder_ships_at).getTime();
-    return !Number.isFinite(shipsAt) || (shipsAt > minDate && shipsAt <= maxDate);
+    const shipsAtDate = new Date(product.preorder_ships_at);
+    const shipsAt = shipsAtDate.getTime();
+    if (!Number.isFinite(shipsAt)) return true;
+
+    const releaseDay =
+      /^\d{4}-\d{2}-\d{2}/.exec(product.preorder_ships_at)?.[0] ??
+      madridDateKey(shipsAtDate);
+
+    return releaseDay > today && shipsAt <= maxDate;
   });
 }
 
