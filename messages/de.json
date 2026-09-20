@@ -53,10 +53,7 @@
     "updatePreferencesFailed": "Die regionalen Einstellungen konnten nicht aktualisiert werden. Bitte versuchen Sie es erneut."
   },
   "footer": {
-    "description": "Open-Source-E-Commerce basierend auf Spree REST API, TypeScript SDK und Next.js. Selbst hosten. Eigene Daten. Keine Plattformgebühren.",
-    "forkOnGithub": "Diese Storefront auf GitHub forken",
-    "quickstartGuide": "Schnellstartanleitung",
-    "learnMore": "Mehr über Spree Commerce erfahren",
+    "description": "TCGs, Brettspiele, Manga und Sammlerstücke, sorgfältig ausgewählt. Einfach einkaufen, persönliche Hilfe und sorgfältig verpackte Bestellungen.",
     "shop": "Shop",
     "allProducts": "Alle Produkte",
     "categories": "Kategorien",
@@ -65,16 +62,15 @@
     "orderHistory": "Bestellverlauf",
     "cart": "Warenkorb",
     "policies": "Richtlinien",
-    "poweredBy": "Betrieben von",
-    "copyright": "© {year} {storeName}. Unterstützt durch Spree Commerce.",
-    "wholesale": "Handel & Großhandel"
+    "wholesale": "Handel & Großhandel",
+    "rightsReserved": "Alle Rechte vorbehalten."
   },
   "home": {
     "welcome": "{storeName} Storefront",
-    "heroDescription": "Eine produktionsreife, quelloffene Storefront mit Next.js, React und dem Spree TypeScript SDK. Selbst hosten. Eigener Stack. Kein Vendor Lock-in. Keine Plattformgebühren.",
+    "heroDescription": "TCGs, Brettspiele, Manga und Sammlerstücke für den nächsten Spieleabend, die Sammlung oder die nächste Lektüre.",
     "shopNow": "Alle Produkte",
-    "forkOnGithub": "Auf GitHub forken",
-    "quickstartGuide": "Schnellstartanleitung",
+    "forkOnGithub": "Katalog ansehen",
+    "quickstartGuide": "Produkte entdecken",
     "featuredProducts": "Ausgewählte Produkte",
     "viewAll": "Alle ansehen",
     "qualityProducts": "Qualitätsprodukte",
