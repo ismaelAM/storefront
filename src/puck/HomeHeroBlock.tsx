@@ -2,7 +2,13 @@
 
 import Link from "next/link";
 import { usePuckProducts } from "@/components/puck/PuckProductsContext";
-import { isExternalPuckUrl, resolvePuckUrl } from "@/puck/utils";
+import {
+  getPuckHeroHeightClass,
+  getPuckSectionPaddingClass,
+  isExternalPuckUrl,
+  type PuckDensity,
+  resolvePuckUrl,
+} from "@/puck/utils";
 
 interface HomeHeroBlockProps {
   title: string;
@@ -16,6 +22,7 @@ interface HomeHeroBlockProps {
   titleColor: string;
   textColor: string;
   backgroundColor: string;
+  density?: PuckDensity;
   basePath?: string;
 }
 
@@ -31,22 +38,25 @@ export function HomeHeroBlock({
   titleColor,
   textColor,
   backgroundColor,
+  density = "compact",
 }: HomeHeroBlockProps) {
   const { basePath } = usePuckProducts();
   const primaryUrl = resolvePuckUrl(primaryButtonUrl, basePath);
   const secondaryUrl = resolvePuckUrl(secondaryButtonUrl, basePath);
   const tertiaryUrl = resolvePuckUrl(tertiaryButtonUrl, basePath);
+  const heightClass = getPuckHeroHeightClass(density);
+  const paddingClass = getPuckSectionPaddingClass(density);
 
   return (
     <section
-      className="flex min-h-[560px] items-center border-b border-gray-200 sm:min-h-[620px] md:min-h-[680px] lg:min-h-[720px]"
+      className={`flex items-center border-b border-border/70 ${heightClass}`}
       style={{ backgroundColor }}
     >
-      <div className="container mx-auto px-4 py-10 sm:px-6 sm:py-16 lg:px-8 lg:py-24">
+      <div className={`container mx-auto px-4 sm:px-6 lg:px-8 ${paddingClass}`}>
         <div className="mx-auto max-w-4xl text-center">
           {title && (
             <h1
-              className="text-3xl font-bold leading-tight tracking-tight sm:text-4xl md:text-5xl lg:text-6xl"
+              className="text-3xl font-bold leading-[1.05] tracking-[-0.035em] sm:text-4xl md:text-5xl lg:text-[3.5rem]"
               style={{ color: titleColor }}
             >
               {title}
@@ -55,14 +65,14 @@ export function HomeHeroBlock({
 
           {text && (
             <p
-              className="mx-auto mt-4 max-w-2xl text-base leading-7 sm:mt-5 sm:text-lg md:text-xl md:leading-8"
+              className="mx-auto mt-4 max-w-2xl whitespace-pre-line text-[15px] leading-7 sm:text-base md:text-lg md:leading-8"
               style={{ color: textColor }}
             >
               {text}
             </p>
           )}
 
-          <div className="mt-7 flex flex-col items-stretch justify-center gap-3 sm:mt-8 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
+          <div className="mt-6 flex flex-col items-stretch justify-center gap-2.5 sm:mt-7 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
             {primaryButtonText && (
               <Link
                 href={primaryUrl}
