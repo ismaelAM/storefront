@@ -9,7 +9,7 @@ export interface LocalLegalPolicy {
   local: true;
 }
 
-const LAST_UPDATED = "19 de septiembre de 2026";
+const LAST_UPDATED = "21 de septiembre de 2026";
 
 function escapeHtml(value: string): string {
   return value
@@ -35,12 +35,6 @@ function legalIdentity() {
   const email =
     configured("LEGAL_CONTACT_EMAIL") ?? configured("STORE_SUPPORT_EMAIL");
 
-  const missing = [
-    !taxId ? "NIF/CIF" : null,
-    !address ? "domicilio" : null,
-    !email ? "correo de contacto" : null,
-  ].filter(Boolean);
-
   return {
     tradeName,
     businessName,
@@ -49,29 +43,24 @@ function legalIdentity() {
     register,
     phone,
     email,
-    missing,
   };
 }
 
 function identityHtml(): string {
   const identity = legalIdentity();
+
   return `
     <section>
-      <h2>Identificación del titular</h2>
+      <h2>Quién está detrás de la tienda</h2>
+      <p><strong>${identity.tradeName}</strong> es el nombre comercial utilizado en esta web.</p>
       <ul>
-        <li><strong>Nombre comercial:</strong> ${identity.tradeName}</li>
-        <li><strong>Titular / razón social:</strong> ${identity.businessName}</li>
+        <li><strong>Titular:</strong> ${identity.businessName}</li>
         ${identity.taxId ? `<li><strong>NIF/CIF:</strong> ${identity.taxId}</li>` : ""}
         ${identity.address ? `<li><strong>Domicilio:</strong> ${identity.address}</li>` : ""}
         ${identity.register ? `<li><strong>Datos registrales:</strong> ${identity.register}</li>` : ""}
-        ${identity.email ? `<li><strong>Correo electrónico:</strong> ${identity.email}</li>` : ""}
+        ${identity.email ? `<li><strong>Email:</strong> ${identity.email}</li>` : ""}
         ${identity.phone ? `<li><strong>Teléfono:</strong> ${identity.phone}</li>` : ""}
       </ul>
-      ${
-        identity.missing.length > 0
-          ? `<p><strong>Importante para el titular de la tienda:</strong> antes de operar comercialmente, completa en la configuración los siguientes datos obligatorios que faltan: ${identity.missing.join(", ")}.</p>`
-          : ""
-      }
     </section>
   `;
 }
@@ -83,187 +72,152 @@ function contactEmail(): string {
 const policies: Record<string, () => LocalLegalPolicy> = {
   "shipping-policy": () => ({
     id: "local-es-shipping-policy",
-    name: "Política de envíos",
+    name: "Envíos",
     slug: "shipping-policy",
     body: null,
     local: true,
     body_html: `
-      <p><strong>Última actualización:</strong> ${LAST_UPDATED}</p>
-      <p>Esta política se aplica a los pedidos realizados por consumidores a través de ${legalIdentity().tradeName}. Las condiciones concretas de transporte, precio y plazo que aparezcan en el proceso de compra y en la confirmación del pedido prevalecen cuando sean más favorables para el cliente.</p>
+      <p><strong>Actualizado el ${LAST_UPDATED}</strong></p>
+      <p>Aquí explicamos cómo preparamos y enviamos los pedidos de ${legalIdentity().tradeName}. Si en el checkout aparece un plazo o una condición más concreta para tu pedido, esa es la referencia que debes tener en cuenta.</p>
 
-      <h2>1. Preparación y disponibilidad</h2>
-      <p>Los productos se preparan según la disponibilidad indicada en su ficha. Cuando un artículo figure como disponible bajo pedido o con preparación ampliada, el plazo mostrado es una estimación de preparación y no significa que el producto esté físicamente en almacén en ese momento.</p>
-      <p>En preventas o reservas se mostrará, cuando esté disponible, una fecha estimada de lanzamiento o envío. Si el proveedor modifica de forma relevante esa fecha, informaremos al cliente y, cuando el retraso sea significativo, podrá mantener el pedido o cancelarlo y recibir el reembolso íntegro de las cantidades abonadas correspondientes a los artículos afectados.</p>
+      <h2>Preparación del pedido</h2>
+      <p>No todo lo que puede comprarse está necesariamente en nuestro almacén. Cuando un artículo aparezca como disponible bajo pedido, puede depender de stock de distribuidor y necesitar algo más de tiempo antes de salir.</p>
+      <p>En preventas y reservas mostramos la mejor fecha disponible en ese momento. Las fechas de lanzamiento pueden cambiar por decisión del fabricante o distribuidor. Si el cambio es importante, te avisaremos para que puedas decidir si mantienes o cancelas la parte afectada del pedido.</p>
 
-      <h2>2. Plazos de entrega</h2>
-      <p>La fecha o intervalo de entrega mostrado durante la compra es la referencia aplicable al pedido. Salvo que se haya acordado expresamente otro plazo —por ejemplo, en una preventa—, la entrega se realizará sin demora indebida y, en todo caso, dentro del máximo legal de 30 días naturales desde la celebración del contrato.</p>
-      <p>Si un pedido contiene artículos con disponibilidades distintas, podremos realizar envíos parciales cuando ello no suponga un coste adicional no aceptado por el cliente. También podremos esperar a disponer de todos los artículos si así se indicó antes de la compra.</p>
+      <h2>Entrega</h2>
+      <p>Salvo que se indique otra cosa antes de comprar —por ejemplo, en una preventa—, los pedidos se entregarán sin demora indebida y dentro del plazo legal máximo aplicable.</p>
+      <p>Si un pedido mezcla artículos con plazos distintos, podremos esperar a tenerlo completo o hacer envíos separados cuando tenga sentido y no suponga un coste extra no aceptado por ti.</p>
 
-      <h2>3. Gastos de envío</h2>
-      <p>Los gastos se calculan antes de confirmar el pedido en función del destino, peso, volumen, método de transporte y promociones aplicables. No se cargará ningún coste de transporte que no haya sido mostrado y aceptado antes de finalizar la compra.</p>
+      <h2>Gastos de envío</h2>
+      <p>Verás el coste antes de pagar. Depende del destino, peso, volumen y método de transporte. No añadimos después gastos que no se hayan mostrado durante la compra.</p>
 
-      <h2>4. Dirección y entrega</h2>
-      <p>El cliente debe facilitar una dirección completa y correcta. Si un envío no puede entregarse por un error imputable al cliente o por no atender los intentos de entrega, podremos solicitar el coste directo y razonable de un nuevo envío, informándolo previamente. Esto no limita ningún derecho legal del consumidor.</p>
-      <p>El riesgo de pérdida o deterioro pasa al consumidor cuando él, o un tercero indicado por él distinto del transportista, adquiere la posesión material del pedido, salvo que el consumidor haya contratado por su cuenta un transportista no ofrecido por la tienda.</p>
+      <h2>Problemas con la entrega</h2>
+      <p>Si el paquete llega golpeado, falta algo o has recibido un artículo distinto, escríbenos cuanto antes a <strong>${contactEmail()}</strong>. Si puedes, adjunta fotos del embalaje y del producto: suelen acelerar bastante la gestión.</p>
+      <p>No condicionamos tus derechos a avisar en 24 o 48 horas. Cuando el problema sea responsabilidad nuestra o exista una falta de conformidad, asumiremos los costes que legalmente correspondan.</p>
 
-      <h2>5. Incidencias de transporte</h2>
-      <p>Si el paquete llega dañado, incompleto o no corresponde con lo pedido, contacta con nosotros tan pronto como sea razonablemente posible. No exigimos una comunicación dentro de 24 o 48 horas como condición para conservar los derechos legales del consumidor. Para agilizar la gestión podremos pedir fotografías del embalaje y del producto.</p>
-      <p>Cuando la incidencia sea responsabilidad de la tienda o exista falta de conformidad, la solución legal que corresponda —reposición, reparación cuando proceda, reducción del precio o resolución— será sin coste para el consumidor.</p>
-
-      <h2>6. Contacto</h2>
-      <p>Para consultas sobre un envío puedes escribir a <strong>${contactEmail()}</strong> indicando el número de pedido.</p>
+      <h2>Dirección incorrecta o entrega fallida</h2>
+      <p>Revisa bien la dirección antes de confirmar el pedido. Si el transportista no puede entregar por una dirección incorrecta facilitada por el cliente o por no atender los intentos de entrega, podremos cobrar el coste razonable de un nuevo envío, informándolo antes.</p>
     `,
   }),
 
   "returns-policy": () => ({
     id: "local-es-returns-policy",
-    name: "Devoluciones, desistimiento y garantías",
+    name: "Devoluciones y garantía",
     slug: "returns-policy",
     body: null,
     local: true,
     body_html: `
-      <p><strong>Última actualización:</strong> ${LAST_UPDATED}</p>
-      <p>Queremos que el procedimiento sea claro y previsible. Esta política no limita los derechos irrenunciables reconocidos por la normativa española y de la Unión Europea.</p>
+      <p><strong>Actualizado el ${LAST_UPDATED}</strong></p>
+      <p>Si quieres devolver un pedido o ha llegado con algún problema, escríbenos a <strong>${contactEmail()}</strong> con el número de pedido. Intentaremos resolverlo de la forma más sencilla posible.</p>
 
-      <h2>1. Derecho de desistimiento: 14 días naturales</h2>
-      <p>En las compras a distancia, el consumidor dispone con carácter general de <strong>14 días naturales</strong> para desistir sin necesidad de justificar su decisión. En la venta de bienes, el plazo comienza cuando el consumidor, o un tercero indicado por él distinto del transportista, recibe materialmente el producto; si un pedido se entrega por separado, el cómputo se realiza conforme a las reglas legales aplicables a la última entrega.</p>
-      <p>Para ejercer el desistimiento basta una declaración inequívoca enviada antes de que venza el plazo. Puedes escribir a <strong>${contactEmail()}</strong> indicando el número de pedido y los artículos afectados. No es obligatorio usar un formulario concreto.</p>
+      <h2>Devoluciones por cambio de opinión</h2>
+      <p>En compras online, el consumidor dispone con carácter general de <strong>14 días naturales</strong> desde la recepción para comunicar que desiste de la compra, sin necesidad de dar un motivo.</p>
+      <p>Después de avisarnos, los artículos deben enviarse de vuelta sin demora indebida y dentro del plazo legal. En un desistimiento voluntario, el coste directo de la devolución corre a cargo del cliente salvo que indiquemos expresamente lo contrario.</p>
+      <p>Reembolsaremos las cantidades que correspondan por ley utilizando, salvo acuerdo distinto, el mismo medio de pago empleado en la compra. Podemos esperar a recibir los bienes o a que nos facilites una prueba de envío antes de efectuar el reembolso.</p>
 
-      <h2>2. Devolución del producto</h2>
-      <p>Tras comunicar el desistimiento, el consumidor deberá devolver los bienes sin demora indebida y, como máximo, dentro de los 14 días naturales siguientes. En un desistimiento voluntario, el consumidor asume el coste directo de la devolución, salvo que hayamos ofrecido asumirlo.</p>
-      <p>El consumidor puede manipular el producto únicamente en la medida necesaria para comprobar su naturaleza, características y funcionamiento, de forma similar a lo que razonablemente podría hacer en una tienda física. Solo podrá responder de una disminución de valor causada por una manipulación que exceda de esa comprobación.</p>
+      <h2>TCG, sobres, cajas y otros productos precintados</h2>
+      <p>En los productos coleccionables el precinto forma parte importante de su estado y de su valor. Si vas a ejercer el desistimiento, lo recomendable es devolverlos cerrados, completos y sin manipular.</p>
+      <p>Abrir una caja, un sobre, un display u otro producto sellado puede reducir de forma muy importante su valor comercial. Si la manipulación realizada va más allá de lo necesario para comprobar el producto, podremos tener en cuenta esa pérdida de valor al tramitar el desistimiento, en los términos permitidos por la normativa de consumo.</p>
+      <p>La apertura de un TCG no convierte por sí sola en defecto el contenido aleatorio del producto. No podemos garantizar cartas concretas, ratios de aparición, valor de mercado, posibilidades de reventa, una determinada nota de grading ni resultados que el fabricante no haya prometido expresamente.</p>
 
-      <h2>3. Reembolsos</h2>
-      <p>Reembolsaremos los pagos que legalmente correspondan, incluidos los gastos de entrega ordinaria iniciales, sin demora indebida y dentro de los 14 días naturales desde que se nos comunique el desistimiento. Si el cliente eligió una modalidad de entrega más cara que la ordinaria menos costosa ofrecida, no estamos obligados a devolver la diferencia adicional.</p>
-      <p>El reembolso se realizará por el mismo medio de pago utilizado en la compra, salvo acuerdo expreso distinto que no genere costes para el cliente. En ventas de bienes podremos retener el reembolso hasta recibirlos o hasta que el cliente aporte una prueba de su devolución, lo que ocurra primero.</p>
+      <h2>Producto equivocado, dañado o con un defecto real</h2>
+      <p>Si te enviamos otro producto, llega dañado por una incidencia atribuible a la preparación o al transporte que gestionamos, o existe una falta de conformidad, los gastos necesarios para resolverlo no corren por tu cuenta.</p>
+      <p>En un producto coleccionable valoraremos el problema según lo que se vendió y anunció: edición, idioma, contenido declarado, estado del precinto y demás características objetivas. Las variaciones normales de fabricación o el resultado aleatorio propio de un sobre no se consideran, por sí solos, una falta de conformidad.</p>
 
-      <h2>4. Excepciones legales al desistimiento</h2>
-      <p>El derecho de desistimiento no se aplica únicamente en los supuestos previstos legalmente, entre otros: bienes confeccionados conforme a especificaciones del consumidor o claramente personalizados; bienes que puedan deteriorarse o caducar con rapidez; bienes precintados que no sean aptos para ser devueltos por razones de protección de la salud o higiene y cuyo precinto se haya retirado tras la entrega; y grabaciones, vídeo, software o soportes precintados cuando el precinto haya sido retirado, cuando resulte aplicable la excepción legal.</p>
-      <p>Un libro, manga, juego o producto coleccionable <strong>no queda excluido del desistimiento por el mero hecho de pertenecer a esa categoría</strong>. Cualquier excepción se interpretará de forma estricta conforme a la ley.</p>
+      <h2>Garantía legal</h2>
+      <p>Los bienes nuevos vendidos a consumidores están sujetos al régimen legal de conformidad vigente en España. Con carácter general, el vendedor responde de las faltas de conformidad que ya existieran al entregar el bien y se manifiesten dentro del plazo legal de <strong>tres años desde la entrega</strong>.</p>
+      <p>Esto también se aplica a un TCG vendido como producto nuevo y sellado, pero la garantía cubre defectos o incumplimientos respecto de lo contratado; no funciona como un seguro sobre el contenido aleatorio, el valor futuro del producto o el estado que pueda adquirir después de abrirlo, usarlo, almacenarlo o manipularlo.</p>
+      <p>Salvo que se indique expresamente en la ficha de un producto, no ofrecemos una garantía comercial adicional distinta de los derechos que reconoce la ley.</p>
 
-      <h2>5. Productos defectuosos, incorrectos o dañados</h2>
-      <p>Si el producto entregado no es conforme con el contrato, es incorrecto o ha sufrido daños imputables a la preparación o transporte gestionado por nosotros, el consumidor no asumirá los gastos necesarios para poner el bien en conformidad. Contacta con <strong>${contactEmail()}</strong> y gestionaremos la solución legal adecuada.</p>
+      <h2>Excepciones al desistimiento</h2>
+      <p>Aplicaremos únicamente las excepciones previstas por la ley. Entre ellas están, por ejemplo, determinados productos personalizados, bienes que se deterioran rápidamente, productos precintados que no puedan devolverse por razones de salud o higiene después de abrirse y determinados contenidos o soportes precintados cuando la norma así lo establece.</p>
+      <p>No tratamos automáticamente un juego de mesa, un manga o un TCG como excluido del desistimiento por el simple hecho de venir precintado. Sí podremos valorar la depreciación producida por una apertura o manipulación que exceda de lo necesario para examinar el artículo.</p>
 
-      <h2>6. Garantía legal</h2>
-      <p>Para bienes nuevos vendidos a consumidores, respondemos de las faltas de conformidad que existan en el momento de la entrega y se manifiesten dentro del plazo legal, actualmente <strong>tres años desde la entrega</strong>. Las medidas correctoras y sus condiciones serán las previstas por la normativa vigente y se aplicarán sin gastos indebidos para el consumidor.</p>
-
-      <h2>7. Modelo orientativo de desistimiento</h2>
-      <blockquote>
-        A la atención de ${legalIdentity().businessName}:<br />
-        Por la presente comunico que desisto de mi contrato de venta del siguiente bien o bienes: [producto].<br />
-        Pedido: [número]. Fecha de pedido/recepción: [fecha].<br />
-        Nombre del consumidor: [nombre]. Dirección: [dirección].<br />
-        Fecha: [fecha].
-      </blockquote>
+      <h2>Cómo avisarnos</h2>
+      <p>No necesitas un formulario especial. Basta con escribir a <strong>${contactEmail()}</strong> indicando que quieres devolver el pedido o explicando la incidencia, junto con el número de pedido.</p>
     `,
   }),
 
   "privacy-policy": () => ({
     id: "local-es-privacy-policy",
-    name: "Política de privacidad",
+    name: "Privacidad",
     slug: "privacy-policy",
     body: null,
     local: true,
     body_html: `
-      <p><strong>Última actualización:</strong> ${LAST_UPDATED}</p>
+      <p><strong>Actualizado el ${LAST_UPDATED}</strong></p>
       ${identityHtml()}
 
-      <h2>1. Qué datos tratamos</h2>
-      <p>Podemos tratar los datos que facilites al comprar, crear una cuenta o contactar con nosotros: datos identificativos y de contacto, direcciones de envío y facturación, información del pedido, comunicaciones de atención al cliente y datos técnicos necesarios para seguridad y funcionamiento. Los datos completos de tarjeta son tratados por el proveedor de pagos y no deben almacenarse en nuestros sistemas cuando el flujo de pago se realiza mediante su infraestructura segura.</p>
+      <h2>Qué datos usamos</h2>
+      <p>Para poder vender y enviar pedidos necesitamos algunos datos básicos: nombre, datos de contacto, direcciones, información del pedido y las comunicaciones que mantengas con atención al cliente. También tratamos la información técnica necesaria para mantener la web segura y funcionando correctamente.</p>
+      <p>Los datos completos de tarjeta los gestiona el proveedor de pagos mediante su propia infraestructura. No necesitamos almacenarlos en la tienda para procesar un pago normal.</p>
 
-      <h2>2. Finalidades y bases jurídicas</h2>
-      <ul>
-        <li><strong>Gestionar compras, pagos, entregas, devoluciones y atención posventa:</strong> ejecución del contrato o medidas precontractuales solicitadas por el interesado.</li>
-        <li><strong>Facturación, contabilidad, obligaciones fiscales, prevención de fraude y atención de requerimientos legales:</strong> cumplimiento de obligaciones legales y, cuando proceda, interés legítimo en proteger la tienda y a sus clientes frente a operaciones fraudulentas.</li>
-        <li><strong>Gestión de cuentas de cliente y soporte:</strong> ejecución de la relación contractual y atención de solicitudes.</li>
-        <li><strong>Comunicaciones comerciales opcionales:</strong> consentimiento cuando sea exigible. Podrás retirarlo en cualquier momento sin afectar a la licitud del tratamiento previo.</li>
-        <li><strong>Analítica o publicidad mediante tecnologías no necesarias:</strong> consentimiento previo cuando la normativa lo exija.</li>
-      </ul>
-      <p>No condicionamos una compra a aceptar tratamientos opcionales que no sean necesarios para ejecutar el contrato o cumplir una obligación legal.</p>
+      <h2>Para qué los usamos</h2>
+      <p>Usamos tus datos para gestionar compras, cobros, facturas, entregas, devoluciones, cuentas de cliente y soporte. También podemos tratarlos cuando sea necesario para cumplir obligaciones fiscales o legales, prevenir fraude y defender reclamaciones.</p>
+      <p>Las comunicaciones comerciales o las cookies no necesarias se basarán en consentimiento cuando la ley lo exija. Puedes retirarlo en cualquier momento.</p>
 
-      <h2>3. Destinatarios y proveedores</h2>
-      <p>Solo comunicaremos datos cuando sea necesario para prestar el servicio, cumplir una obligación legal o exista otra base jurídica válida. Pueden acceder a los datos, en la medida necesaria, proveedores de alojamiento e infraestructura, plataforma de comercio electrónico, pasarelas y entidades de pago, empresas de transporte y logística, correo transaccional, soporte, prevención de fraude y analítica cuando haya sido habilitada legítimamente.</p>
-      <p>Si alguno de estos proveedores trata datos fuera del Espacio Económico Europeo, se utilizarán los mecanismos y garantías exigidos por la normativa aplicable, como decisiones de adecuación o cláusulas contractuales tipo cuando correspondan.</p>
+      <h2>Con quién se comparten</h2>
+      <p>Solo damos acceso a los datos cuando hace falta para prestar el servicio o cumplir una obligación: alojamiento e infraestructura, plataforma de comercio electrónico, pagos, transporte, correo transaccional, soporte, prevención de fraude y, cuando corresponda, herramientas de analítica.</p>
+      <p>Si un proveedor trata datos fuera del Espacio Económico Europeo, utilizaremos las garantías previstas por la normativa aplicable.</p>
 
-      <h2>4. Conservación</h2>
-      <p>Conservaremos los datos durante el tiempo necesario para gestionar la relación con el cliente y, posteriormente, durante los plazos exigidos por las obligaciones fiscales, contables, de consumo y para la formulación, ejercicio o defensa de reclamaciones. Los datos basados exclusivamente en consentimiento se conservarán hasta que se retire, sin perjuicio de los periodos de bloqueo o conservación que puedan resultar legalmente necesarios.</p>
+      <h2>Cuánto tiempo los guardamos</h2>
+      <p>Conservamos la información durante el tiempo necesario para gestionar la relación contigo y, después, durante los plazos que puedan exigir las obligaciones fiscales, contables, de consumo o la defensa de posibles reclamaciones.</p>
 
-      <h2>5. Derechos</h2>
-      <p>Puedes solicitar acceso, rectificación, supresión, oposición, limitación del tratamiento y portabilidad cuando resulten aplicables, así como retirar un consentimiento previamente otorgado. Para ejercerlos, escribe a <strong>${contactEmail()}</strong> indicando el derecho que deseas ejercer y la información razonablemente necesaria para identificar tu solicitud.</p>
-      <p>Si consideras que el tratamiento no se ajusta a la normativa, puedes presentar una reclamación ante la Agencia Española de Protección de Datos (AEPD), sin perjuicio de cualquier otro recurso que te corresponda.</p>
+      <h2>Tus derechos</h2>
+      <p>Puedes solicitar acceso, rectificación, supresión, oposición, limitación o portabilidad cuando correspondan, y retirar un consentimiento que hayas dado. Para hacerlo, escribe a <strong>${contactEmail()}</strong>.</p>
+      <p>Si consideras que tus datos no se están tratando correctamente, también puedes reclamar ante la Agencia Española de Protección de Datos.</p>
 
-      <h2>6. Decisiones automatizadas</h2>
-      <p>No adoptaremos decisiones basadas únicamente en un tratamiento automatizado que produzcan efectos jurídicos o te afecten significativamente de forma similar sin facilitar la información y garantías exigidas por la normativa.</p>
-
-      <h2>7. Menores</h2>
-      <p>La tienda no está diseñada para que menores sin capacidad suficiente contraten por sí solos. Los menores deberán actuar, cuando corresponda, con la intervención de sus representantes legales. No solicitamos intencionadamente a menores datos que no sean necesarios para la prestación del servicio.</p>
-
-      <h2>8. Cookies y tecnologías similares</h2>
-      <p>Las tecnologías estrictamente necesarias pueden utilizarse para funciones como mantener la sesión, conservar el carrito, seguridad o preferencias esenciales. Las cookies o tecnologías de analítica, personalización o publicidad que requieran consentimiento deberán permanecer desactivadas hasta que el usuario las acepte.</p>
-      <p>Cuando se solicite consentimiento para cookies no necesarias, aceptar y rechazar deben presentarse de forma igualmente accesible. El usuario podrá cambiar posteriormente su decisión mediante el mecanismo de preferencias habilitado en la web.</p>
-
-      <h2>9. Cambios en esta política</h2>
-      <p>Podremos actualizar esta política para reflejar cambios normativos o en los tratamientos. Cuando un cambio sea relevante, se informará de manera adecuada y se solicitará un nuevo consentimiento si fuese legalmente necesario.</p>
+      <h2>Cookies</h2>
+      <p>Utilizamos las tecnologías necesarias para funciones como sesión, carrito, seguridad o preferencias básicas. Las cookies de analítica, personalización o publicidad que necesiten consentimiento permanecerán desactivadas hasta que las aceptes.</p>
+      <p>Cuando aparezca el panel de consentimiento, podrás aceptar o rechazar las cookies no necesarias y cambiar después tu decisión desde las preferencias disponibles en la web.</p>
     `,
   }),
 
   "terms-of-service": () => ({
     id: "local-es-terms-of-service",
-    name: "Condiciones de contratación y aviso legal",
+    name: "Aviso legal y condiciones de compra",
     slug: "terms-of-service",
     body: null,
     local: true,
     body_html: `
-      <p><strong>Última actualización:</strong> ${LAST_UPDATED}</p>
+      <p><strong>Actualizado el ${LAST_UPDATED}</strong></p>
       ${identityHtml()}
 
-      <h2>1. Objeto y ámbito</h2>
-      <p>Estas condiciones regulan el acceso a la tienda y las compras realizadas por consumidores a través de ${legalIdentity().tradeName}. En todo lo no previsto aquí se aplicará la normativa imperativa de protección de consumidores, contratación electrónica y demás legislación aplicable.</p>
+      <h2>Sobre estas condiciones</h2>
+      <p>Estas condiciones se aplican a las compras realizadas en ${legalIdentity().tradeName}. Queremos que se entiendan sin necesidad de traducir lenguaje jurídico: el producto, el precio, la disponibilidad, el envío y el pago que ves antes de confirmar el pedido forman parte de la compra.</p>
 
-      <h2>2. Información antes de comprar</h2>
-      <p>Antes de finalizar el pedido se mostrarán las características esenciales del producto, su precio total y los impuestos incluidos cuando correspondan, los gastos adicionales aplicables, la disponibilidad, las opciones de entrega y pago y cualquier otra información precontractual exigida. El cliente podrá revisar y corregir los datos del carrito, dirección, envío y pago antes de confirmar.</p>
+      <h2>Cómo se hace un pedido</h2>
+      <p>Añades los productos al carrito, revisas cantidades, dirección, método de envío y forma de pago y, antes de confirmar, puedes corregir cualquier dato. El pedido se envía cuando pulsas el botón final que indica claramente que existe una obligación de pago.</p>
+      <p>Después recibirás una confirmación por correo electrónico u otro soporte duradero. Conservaremos la información del pedido durante el tiempo necesario para gestionarlo y cumplir nuestras obligaciones legales.</p>
 
-      <h2>3. Proceso de contratación</h2>
-      <ol>
-        <li>El cliente selecciona productos y cantidades.</li>
-        <li>Revisa el carrito, facilita los datos necesarios y elige entrega y pago.</li>
-        <li>Antes de confirmar, puede corregir errores y consultar estas condiciones y las demás políticas aplicables.</li>
-        <li>Al pulsar el botón final que indique de forma inequívoca la obligación de pago, envía el pedido.</li>
-        <li>La tienda remitirá una confirmación del pedido por correo electrónico u otro soporte duradero.</li>
-      </ol>
-      <p>El documento electrónico del pedido se conservará durante los periodos necesarios para gestionar la compra y cumplir las obligaciones legales. Cuando el cliente disponga de cuenta, podrá consultar la información que la plataforma mantenga accesible en su historial de pedidos.</p>
-      <p>La contratación se realiza en el idioma seleccionado en la tienda cuando esté disponible.</p>
+      <h2>Precios</h2>
+      <p>Los precios mostrados al consumidor incluyen los impuestos que correspondan. Los gastos de envío y cualquier otro coste aplicable se muestran antes de pagar. No añadimos servicios opcionales mediante casillas premarcadas.</p>
 
-      <h2>4. Precios e impuestos</h2>
-      <p>Los precios mostrados al consumidor incluirán los impuestos que deban incorporarse al precio conforme a la normativa aplicable. Los gastos de envío u otros costes adicionales se mostrarán antes de finalizar el pedido. No se añadirán servicios opcionales mediante casillas premarcadas.</p>
+      <h2>Stock y disponibilidad</h2>
+      <p>Distinguimos entre producto que tenemos físicamente en stock y producto disponible para pedir a distribuidor. La ficha o el proceso de compra puede indicar esa diferencia.</p>
+      <p>Si después de comprar descubrimos que no podemos servir un artículo, te avisaremos y devolveremos las cantidades correspondientes cuando proceda. No sustituiremos un producto por otro sin tu consentimiento.</p>
 
-      <h2>5. Disponibilidad y errores de inventario</h2>
-      <p>La aceptación y preparación del pedido están sujetas a la disponibilidad real del producto. Si después de la compra descubrimos que un artículo no puede suministrarse, informaremos al cliente sin demora y ofreceremos las soluciones que legalmente correspondan, incluida la devolución de las cantidades cobradas por el artículo no disponible cuando proceda. No sustituiremos un producto por otro distinto sin consentimiento del cliente.</p>
-      <p>Si existe un error técnico manifiesto en datos esenciales de una oferta, procuraremos corregirlo con transparencia y contactar con el cliente antes de ejecutar una prestación distinta de la razonablemente contratada, respetando en todo caso sus derechos legales y el principio de buena fe.</p>
+      <h2>Errores evidentes</h2>
+      <p>Si hay un error técnico manifiesto en un precio, una descripción o una disponibilidad, lo revisaremos antes de enviar una prestación distinta de la razonablemente contratada. Si el error afecta al pedido, contactaremos contigo y respetaremos los derechos que te correspondan como consumidor.</p>
 
-      <h2>6. Pago</h2>
-      <p>Los métodos de pago disponibles se muestran durante el proceso de compra. El cliente se compromete a utilizar un medio de pago que esté autorizado a usar. Las operaciones podrán someterse a controles razonables de seguridad y prevención del fraude. Un control de seguridad no autoriza a retener indefinidamente importes ni a privar al consumidor de sus derechos.</p>
+      <h2>Pago y seguridad</h2>
+      <p>Los métodos de pago disponibles aparecen durante el checkout. Algunas operaciones pueden pasar controles antifraude o de seguridad. Estos controles se utilizarán solo en la medida necesaria para proteger la operación.</p>
 
-      <h2>7. Envíos, desistimiento y garantía</h2>
-      <p>Los plazos de entrega, transmisión del riesgo, desistimiento, devoluciones y garantía se rigen por las políticas específicas publicadas en la tienda y, en todo caso, por los mínimos legales imperativos. Ninguna cláusula de estas condiciones pretende excluir o limitar esos derechos.</p>
+      <h2>Envíos, devoluciones y garantía</h2>
+      <p>Las condiciones prácticas están explicadas en nuestras páginas de Envíos y Devoluciones y garantía. En cualquier caso, prevalecen los derechos de consumo que sean legalmente irrenunciables.</p>
+      <p>En especial, vender un artículo coleccionable o TCG precintado no elimina la garantía legal por una falta de conformidad real. Al mismo tiempo, esa garantía no cubre resultados aleatorios, expectativas de valor, grading, desgaste o daños posteriores derivados de la apertura, uso o conservación del producto.</p>
 
-      <h2>8. Cuenta de usuario</h2>
-      <p>El cliente es responsable de facilitar datos veraces y mantener la confidencialidad de sus credenciales. Si detecta un uso no autorizado debe comunicárnoslo. Podemos bloquear temporalmente una cuenta cuando existan indicios razonables de fraude o riesgo de seguridad, limitando la medida a lo necesario y sin afectar indebidamente a pedidos o derechos ya adquiridos.</p>
+      <h2>Cuenta de cliente</h2>
+      <p>Si creas una cuenta, procura que los datos sean correctos y protege tus credenciales. Podemos bloquear temporalmente una cuenta cuando existan indicios razonables de fraude o un problema de seguridad, procurando no afectar más de lo necesario a pedidos ya realizados.</p>
 
-      <h2>9. Propiedad intelectual</h2>
-      <p>Los contenidos propios de la web —diseño, textos, fotografías propias, logotipos y software, cuando proceda— están protegidos por la normativa aplicable. Las marcas, imágenes y materiales de terceros pertenecen a sus respectivos titulares. La compra de un producto no implica la cesión de derechos de propiedad intelectual sobre dichos contenidos.</p>
+      <h2>Marcas, imágenes y contenidos</h2>
+      <p>Las marcas, ilustraciones, fotografías y materiales de fabricantes y editoriales pertenecen a sus respectivos titulares. Los contenidos propios de la web también están protegidos por la normativa de propiedad intelectual.</p>
 
-      <h2>10. Responsabilidad</h2>
-      <p>No excluimos responsabilidad cuando la ley no permite hacerlo, especialmente por dolo, negligencia grave, daños personales, falta de conformidad o derechos imperativos del consumidor. No respondemos de interrupciones inevitables o ajenas a nuestro control razonable, pero aplicaremos las medidas y remedios que legalmente correspondan cuando afecten al cumplimiento de un pedido.</p>
+      <h2>Contacto y reclamaciones</h2>
+      <p>Para cualquier consulta o reclamación puedes escribir a <strong>${contactEmail()}</strong>. Indicar el número de pedido nos ayuda a localizar el caso más rápido.</p>
 
-      <h2>11. Atención al cliente y reclamaciones</h2>
-      <p>Para consultas o reclamaciones puedes escribir a <strong>${contactEmail()}</strong>. Facilitaremos una respuesta y trazabilidad razonables de la reclamación. Si estamos adheridos en el futuro a un sistema específico de resolución alternativa de litigios, se informará expresamente de ello y de cómo acceder.</p>
-
-      <h2>12. Ley aplicable y tribunales</h2>
-      <p>Estas condiciones se interpretarán conforme a la legislación española, sin privar al consumidor de la protección imperativa que pudiera corresponderle por su lugar de residencia. Cualquier controversia con un consumidor se someterá a los juzgados y tribunales que resulten competentes conforme a las normas imperativas aplicables; no imponemos una renuncia previa al fuero legal del consumidor.</p>
-
-      <h2>13. Validez de las condiciones</h2>
-      <p>Si una cláusula fuese declarada nula o inaplicable, se tendrá por no puesta en la medida necesaria y el resto continuará vigente. La versión aplicable a cada compra será la que estuviera accesible antes de confirmar el pedido, sin perjuicio de normas posteriores que resulten obligatorias.</p>
+      <h2>Ley aplicable</h2>
+      <p>Estas condiciones se interpretan conforme a la legislación española, sin privar a un consumidor de la protección imperativa que le corresponda por su lugar de residencia. Los conflictos se resolverán ante los órganos que sean competentes conforme a la normativa aplicable.</p>
     `,
   }),
 };
