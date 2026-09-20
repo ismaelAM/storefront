@@ -5,6 +5,7 @@ import { PRODUCT_CARD_FIELDS } from "@/lib/data/cached";
 import { cachedListProducts } from "@/lib/data/products";
 import { generateHomeMetadata } from "@/lib/metadata/home";
 import { getHomePageData } from "@/lib/puck/get-home-data";
+import { buildHomeMerchandisingProducts } from "@/lib/puck/home-merchandising";
 import { getAccessToken } from "@/lib/spree";
 
 interface HomePageProps {
@@ -28,32 +29,35 @@ export default async function HomePage({ params }: HomePageProps) {
   let products: Product[] = [];
 
   try {
-    const response = await cachedListProducts(
-      {
-        limit: 8,
-        fields: PRODUCT_CARD_FIELDS,
-        tags_name_in: ["featured", "sale"],
-      },
-      { locale, country },
-      "dtc",
-      userToken,
+    const [saleResponse, preorderResponse] = await Promise.all([
+      cachedListProducts(
+        {
+          limit: 40,
+          fields: PRODUCT_CARD_FIELDS,
+          tags_name_in: ["sale"],
+        },
+        { locale, country },
+        "dtc",
+        userToken,
+      ),
+      cachedListProducts(
+        {
+          limit: 60,
+          fields: PRODUCT_CARD_FIELDS,
+          tags_name_in: ["devir-preorder"],
+        },
+        { locale, country },
+        "dtc",
+        userToken,
+      ),
+    ]);
+
+    products = buildHomeMerchandisingProducts(
+      saleResponse.data ?? [],
+      preorderResponse.data ?? [],
     );
-    products = [...(response.data ?? [])].sort((left, right) => {
-      const stockRank =
-        Number(Boolean(right.in_stock)) - Number(Boolean(left.in_stock));
-      if (stockRank !== 0) return stockRank;
-
-      const leftSale =
-        (left.price?.compare_at_amount_in_cents ?? 0) >
-        (left.price?.amount_in_cents ?? Number.MAX_SAFE_INTEGER);
-      const rightSale =
-        (right.price?.compare_at_amount_in_cents ?? 0) >
-        (right.price?.amount_in_cents ?? Number.MAX_SAFE_INTEGER);
-
-      return Number(rightSale) - Number(leftSale);
-    });
   } catch (error) {
-    console.error("HomePuckRenderer: failed to load products", error);
+    console.error("HomePuckRenderer: failed to build merchandising pool", error);
   }
 
   const data = await getHomePageData();
