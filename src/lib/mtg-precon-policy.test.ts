@@ -80,6 +80,10 @@ describe("generic supplier pack split policy", () => {
       name: "Juego ejemplo - caja de 6 unidades",
       purchasePrice: 60,
     })).toBe(true);
+    expect(requiresManualPackSplitReview({
+      name: "Juego promocional Venta en pack de 6 ud.",
+      purchasePrice: 42,
+    })).toBe(true);
   });
 
   it("does not hold single prerelease kits or sealed booster displays", () => {
