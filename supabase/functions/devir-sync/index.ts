@@ -14,6 +14,7 @@ import {
   canWriteManagedCatalogPrice,
   shouldAutoPublishCatalogProduct,
 } from "../_shared/catalog-publish-policy.ts";
+import { supplierVatRate } from "../_shared/supplier-pricing-policy.ts";
 import {
   inferDevirCategoryKey,
   normalizeDevirCatalogTitle,
@@ -2223,7 +2224,12 @@ async function syncProductToSpree(
   const category = key ? categoryForKey(categories, key) ?? null : null;
   const configuredMargin = await categoryMargin(config, category);
   const targetMargin = configuredMargin ?? DEFAULT_CATEGORY_MARGINS[key] ?? 0.05;
-  const pricing = competitivePricing(product, key, targetMargin);
+  const pricing = competitivePricing(
+    product,
+    key,
+    targetMargin,
+    catalogContext?.supplier.code,
+  );
   const shipping = shippingDefaults(key, product);
   const packRequiresSplit = isPack(product);
   const reasons: string[] = [];
@@ -2789,6 +2795,59 @@ async function createGroupedVariant(
   );
 }
 
+async function repointCanonicalCatalogSku(
+  supplierCode: string,
+  supplierSku: string,
+  spreeProductId: string,
+  spreeVariantId: string,
+): Promise<void> {
+  const { data: supplier, error: supplierError } = await supabase
+    .from("catalog_suppliers")
+    .select("id")
+    .eq("code", supplierCode)
+    .maybeSingle();
+  if (supplierError) throw supplierError;
+  if (!supplier?.id) return;
+
+  const { data: offers, error: offersError } = await supabase
+    .from("catalog_supplier_offers")
+    .select("variant_id")
+    .eq("supplier_id", supplier.id)
+    .eq("supplier_sku", supplierSku);
+  if (offersError) throw offersError;
+
+  const canonicalVariantIds = Array.from(
+    new Set((offers ?? []).map((offer) => offer.variant_id).filter(Boolean)),
+  ) as string[];
+  const now = new Date().toISOString();
+
+  for (const canonicalVariantId of canonicalVariantIds) {
+    const { data: canonicalVariant, error: variantLookupError } = await supabase
+      .from("catalog_variants")
+      .select("id,product_id")
+      .eq("id", canonicalVariantId)
+      .maybeSingle();
+    if (variantLookupError) throw variantLookupError;
+    if (!canonicalVariant?.id || !canonicalVariant.product_id) continue;
+
+    const { error: variantUpdateError } = await supabase
+      .from("catalog_variants")
+      .update({ spree_variant_id: spreeVariantId, updated_at: now })
+      .eq("id", canonicalVariant.id);
+    if (variantUpdateError) throw variantUpdateError;
+
+    const { error: productUpdateError } = await supabase
+      .from("catalog_products")
+      .update({
+        spree_product_id: spreeProductId,
+        category_key: "manga-comic",
+        updated_at: now,
+      })
+      .eq("id", canonicalVariant.product_id);
+    if (productUpdateError) throw productUpdateError;
+  }
+}
+
 async function rebuildMangaGroup(
   config: ConfigRow,
   groupKey: string,
@@ -2952,6 +3011,12 @@ async function rebuildMangaGroup(
       })
       .eq("supplier_sku", row.supplier_sku);
     if (updateError) throw updateError;
+    await repointCanonicalCatalogSku(
+      "devir",
+      row.supplier_sku,
+      created.id,
+      variant.id,
+    );
   }
 
   for (const oldId of oldProductIds) {
@@ -3123,6 +3188,12 @@ async function migrateLanguageGroup(
       })
       .eq("supplier_sku", row.supplier_sku);
     if (updateError) throw updateError;
+    await repointCanonicalCatalogSku(
+      "devir",
+      row.supplier_sku,
+      created.id,
+      variant.id,
+    );
   }
 
   for (const oldId of oldProductIds) {
@@ -3223,6 +3294,7 @@ function competitivePricing(
   product: DevirProduct,
   key: string,
   targetProfitRate = DEFAULT_CATEGORY_MARGINS[key] ?? 0.05,
+  supplierCode?: string | null,
 ): {
   retail: number;
   vatRate: number;
@@ -3237,7 +3309,7 @@ function competitivePricing(
   }
 
   const book = isBookProduct(product, key);
-  const vatRate = book ? 0.04 : 0.21;
+  const vatRate = supplierVatRate({ supplierCode, isBook: book });
   const floor = paymentAwareFloor(product.purchasePrice, vatRate, targetProfitRate);
   const referenceNet = Number(product.referencePriceNet);
   const hasReference = Number.isFinite(referenceNet) && referenceNet > product.purchasePrice;
@@ -3579,7 +3651,12 @@ async function categorizeDraftBatch(
     const margin = DEFAULT_CATEGORY_MARGINS[key];
     if (!category || !Number.isFinite(margin) || !product.purchasePrice || product.purchasePrice <= 0) return;
 
-    const pricing = competitivePricing(product, key, margin);
+    const pricing = competitivePricing(
+      product,
+      key,
+      margin,
+      selectedSupply.supplier_code,
+    );
 
     const patch = async () => {
       await spreeRequest(config, "PATCH", "/products/" + encodeURIComponent(productId), {
@@ -3757,6 +3834,7 @@ async function repriceCommercialBooksBatch(
         product,
         key,
         DEFAULT_CATEGORY_MARGINS[key] ?? 0.05,
+        selectedSupply.supplier_code,
       );
 
       let resolvedProductId = productId;
@@ -4397,7 +4475,12 @@ async function preparePublishBatch(
         availability: selectedSupply.availability ?? "unknown",
       };
       const targetMargin = DEFAULT_CATEGORY_MARGINS[key] ?? 0.05;
-      const pricing = competitivePricing(selectedProduct, key, targetMargin);
+      const pricing = competitivePricing(
+        selectedProduct,
+        key,
+        targetMargin,
+        selectedSupply.supplier_code,
+      );
       if (pricing.reviewReason) productReasons.add(pricing.reviewReason);
 
       const reconciled = await reconcileSpreeVariantFromCatalog(
@@ -6599,6 +6682,24 @@ async function operatorAction(
       ok: true,
       ...(await repriceCommercialBooksBatch(config, offset, limit)),
     });
+  }
+
+  if (action === "repair-manga-groups") {
+    const requested = Array.isArray(body.groupKeys)
+      ? body.groupKeys
+          .filter((value): value is string => typeof value === "string")
+          .map((value) => value.trim())
+          .filter(Boolean)
+          .slice(0, 10)
+      : [];
+    if (requested.length === 0) {
+      return json({ error: "groupKeys_required" }, 400);
+    }
+    const results = [];
+    for (const groupKey of requested) {
+      results.push(await migrateCatalogGroup(config, groupKey));
+    }
+    return json({ ok: true, results });
   }
 
   if (action === "regroup-preview") {
