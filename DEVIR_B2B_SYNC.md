@@ -1,5 +1,9 @@
 # Sincronizador B2B de Devir
 
+> Devir es ahora un adaptador del catálogo multidistribuidor. La identidad
+> canónica, deduplicación, selección de oferta y procedencia interna se
+> documentan en [`CATALOG_SOURCING.md`](./CATALOG_SOURCING.md).
+
 Este flujo es de **solo lectura** y prepara la importación del catálogo profesional de Devir hacia BisonTCG. La primera fase no modifica Spree: descubre productos desde las categorías de Devir y extrae SKU, precio profesional y disponibilidad para producir un JSON local.
 
 ## 1. Guardar la sesión B2B una vez

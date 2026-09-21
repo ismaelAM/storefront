@@ -153,6 +153,7 @@ interface FieldSpec {
 }
 
 export const PRODUCT_FIELDS: FieldSpec[] = [
+  { namespace: "sourcing", key: "variant_provenance", label: "Compras · Procedencia por variante", fieldType: "long_text", resourceType: "Spree::Product" },
   { namespace: "devir", key: "supplier_sku", label: "Devir · SKU proveedor", fieldType: "short_text", resourceType: "Spree::Product" },
   { namespace: "devir", key: "source_url", label: "Devir · URL origen", fieldType: "short_text", resourceType: "Spree::Product" },
   { namespace: "devir", key: "category_key", label: "Devir · Categoría detectada", fieldType: "short_text", resourceType: "Spree::Product" },
