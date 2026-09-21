@@ -9,7 +9,7 @@ import {
   type SupplierOfferCandidate,
   selectBestOffer,
 } from "../_shared/catalog-sourcing.ts";
-import { requiresMtgPreconSplitReview } from "../_shared/mtg-precon-policy.ts";
+import { requiresManualPackSplitReview } from "../_shared/mtg-precon-policy.ts";
 
 type Json = Record<string, unknown>;
 
@@ -682,7 +682,7 @@ function parseProduct(html: string, url: string): DevirProduct | null {
 }
 
 function isPack(product: DevirProduct): boolean {
-  return requiresMtgPreconSplitReview(product);
+  return requiresManualPackSplitReview(product);
 }
 
 function categoryKey(product: DevirProduct): string {

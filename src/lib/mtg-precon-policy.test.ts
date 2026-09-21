@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { requiresMtgPreconSplitReview } from "../../supabase/functions/_shared/mtg-precon-policy";
+import { requiresManualPackSplitReview, requiresMtgPreconSplitReview } from "../../supabase/functions/_shared/mtg-precon-policy";
 
 describe("MTG precon split policy", () => {
   it("holds heterogeneous commander cartons for manual split", () => {
@@ -45,5 +45,62 @@ describe("MTG precon split policy", () => {
       name: "MTG Commander Deck individual",
       purchasePrice: 44,
     })).toBe(false);
+  });
+});
+
+
+describe("generic supplier pack split policy", () => {
+  it("holds board-game presentation promos such as 5+1", () => {
+    expect(requiresManualPackSplitReview({
+      name: "Presentación: Akropolis (5+1)",
+      purchasePrice: 93,
+    })).toBe(true);
+    expect(requiresManualPackSplitReview({
+      name: "Presentación: Ethnos ( 5 + 1 )",
+      purchasePrice: 117.78,
+    })).toBe(true);
+  });
+
+  it("holds explicit multi-unit supplier packs", () => {
+    expect(requiresManualPackSplitReview({
+      name: "Aetherdrift - kit de presentación (INGLÉS) Venta en pack de 15 u.",
+      purchasePrice: 19.5,
+    })).toBe(true);
+    expect(requiresManualPackSplitReview({
+      name: "Juego ejemplo - caja de 6 unidades",
+      purchasePrice: 60,
+    })).toBe(true);
+  });
+
+  it("does not hold single prerelease kits or sealed booster displays", () => {
+    expect(requiresManualPackSplitReview({
+      name: "*MG IN.MIDNIGHT HUNT Presentación KIT SPANISH UNIT",
+      purchasePrice: 15,
+    })).toBe(false);
+    expect(requiresManualPackSplitReview({
+      name: "MTG MARVEL SUPER HEROES Play Booster ESPAÑOL Display (30)",
+      purchasePrice: 124.12,
+    })).toBe(false);
+  });
+});
+
+
+describe("additional distributor display safeguards", () => {
+  it("holds explicit multi-deck cartons", () => {
+    expect(requiresManualPackSplitReview({
+      name: "MG TORTUGAS NINJA CAJA DE BARAJAS (4 un. inglés)",
+      purchasePrice: 176,
+    })).toBe(true);
+  });
+
+  it("holds known Hero Realms and Star Realms expansion displays", () => {
+    expect(requiresManualPackSplitReview({
+      name: "Hero Realms: Odiseas Display",
+      purchasePrice: 61.98,
+    })).toBe(true);
+    expect(requiresManualPackSplitReview({
+      name: "Star Realms: Alerta Máxima (display)",
+      purchasePrice: 74.38,
+    })).toBe(true);
   });
 });
