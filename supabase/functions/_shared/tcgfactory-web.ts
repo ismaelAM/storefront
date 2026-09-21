@@ -1,4 +1,4 @@
-import { normalizeText, type SupplierAvailability } from "./catalog-sourcing";
+import { normalizeText, type SupplierAvailability } from "./catalog-sourcing.ts";
 
 export const TCGFACTORY_BASE_URL = "https://tcgfactory.com";
 export const TCGFACTORY_ACCESSORIES_URL =
