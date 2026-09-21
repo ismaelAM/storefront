@@ -1,106 +1,137 @@
 # Envíos BisonTCG
 
-Rama de trabajo: `puck_editor`
+## Fuente de verdad
 
-## Objetivo
+Spree sigue siendo la fuente de verdad para zonas, métodos de entrega, tarifas,
+pedidos, fulfillments, estados y tracking. El storefront no decide por código
+si una dirección pertenece a Madrid ni mantiene una base logística paralela.
 
-BisonTCG tendrá un método de envío propio para entregas locales en Madrid. Spree seguirá siendo la fuente de verdad para zonas, métodos, tarifas, pedidos y shipments; Next.js solo presenta la opción disponible en checkout y el estado del pedido.
+## Entrega local Madrid
 
-## Método local
+Método previsto: **Entrega local BisonTCG — Madrid**  
+Código recomendado: `BISON_LOCAL_MADRID`.
 
-Nombre visible recomendado: **Entrega local BisonTCG — Madrid**
+La Zone, la Shipping Category, la tarifa y el plazo deben configurarse en
+Spree. Si el método aparece para una dirección fuera de Madrid, se corrige la
+Zone/método de Spree; no se añade un `if city === "Madrid"` al storefront.
 
-Código recomendado: `BISON_LOCAL_MADRID`
+## Operaciones de fulfillment en el backend
 
-Tipo de precio inicial: tarifa fija. El importe definitivo se decidirá antes de activarlo en producción.
+El storefront incorpora una capa server-only en
+`src/lib/shipping/spree-fulfillment.ts` y una ruta interna protegida en
+`/api/internal/shipping`.
 
-Zona: una Zone exclusiva para Madrid. No debe mezclarse con la zona española general.
+La ruta exige:
 
-Categoría de envío: la categoría física normal de los productos de BisonTCG.
-
-Tiempo estimado: se configurará en días laborables cuando definamos la promesa comercial.
-
-## Funcionamiento esperado
-
-1. El cliente introduce su dirección de entrega.
-2. Spree comprueba la Zone de la dirección.
-3. Si la dirección pertenece a la zona de Madrid, aparece `Entrega local BisonTCG — Madrid`.
-4. El cliente selecciona esa opción y Spree añade su coste al pedido.
-5. El pedido queda asociado a un Shipment de Spree.
-6. Nosotros gestionamos el envío manualmente desde Spree.
-7. Desde el admin se actualiza el estado del Shipment y, cuando exista, el número de tracking.
-8. Next.js mostrará al cliente el estado disponible del Shipment y el tracking cuando Spree lo exponga.
-
-Spree soporta estados de shipment durante el ciclo de fulfillment y expone la información de seguimiento mediante su API. Por tanto, no necesitamos crear una base de datos paralela para inventarnos estados de envío.
-
-## Estados que queremos mostrar al cliente
-
-No se crearán estados personalizados en Next.js inicialmente. Usaremos los estados nativos de Spree y los traduciremos visualmente en el storefront a conceptos claros:
-
-- Pendiente / preparando
-- Enviado / en reparto
-- Entregado
-
-Cuando el proceso operativo esté probado, podremos estudiar estados adicionales si realmente los necesita BisonTCG.
-
-## Tracking
-
-Para el reparto local no hace falta una API externa. Podemos trabajar sin número de tracking y simplemente actualizar el Shipment desde Spree.
-
-Para envíos fuera del reparto local, la opción preferida pasa a ser **Correos**. Correos ofrece APIs oficiales para prerregistro, generación de etiquetas, solicitudes de recogida y tracking. La integración requiere contrato de transporte y acceso al Portal de Desarrolladores con OAuth 2.0.
-
-Hasta disponer de ese contrato, se puede operar manualmente desde Mi Oficina de Correos y guardar el código de seguimiento en el Shipment de Spree. El storefront no necesita saber si la etiqueta se creó por API o manualmente: sigue leyendo estado y tracking desde Spree.
-
-## Configuración en Spree Sandbox / producción
-
-La configuración real se hará en `Settings → Shipping`:
-
-1. Crear una Zone exclusiva de Madrid.
-2. Crear el método `Entrega local BisonTCG — Madrid`.
-3. Asociarlo a la Zone de Madrid.
-4. Asociarlo a la Shipping Category física.
-5. Elegir una tarifa fija y el importe comercial definitivo.
-6. Añadir el tiempo estimado de entrega.
-7. Revisar la configuración de impuestos de envío.
-8. Guardar y probar el checkout con una dirección de Madrid y otra fuera de la zona.
-
-Spree indica que los métodos de envío se filtran por Zone y que el cliente solo ve los métodos que corresponden a su dirección de entrega. También permite configurar tarifa plana y tiempo estimado directamente desde el método de envío.
-
-## No hacer todavía
-
-No añadir lógica en Next.js del tipo `if city === Madrid` para decidir el precio o la disponibilidad. Esa regla debe pertenecer a Spree para que checkout, admin y futuras integraciones compartan la misma verdad.
-
-No integrar Correos por API hasta que exista contrato y credenciales oficiales. Si no se obtienen, mantener la operativa manual con Mi Oficina y tracking en Spree.
-
-No mezclar la futura integración de Correos con Stripe. El pago y el fulfillment son procesos distintos: Spree coordina ambos y cada proveedor se integra en su capa correspondiente.
-
-## Futuro Correos
-
-Arquitectura objetivo:
-
-```text
-Spree
-├── BISON_LOCAL_MADRID
-│   └── gestión manual/local
-│
-└── CORREOS
-    ├── prerregistro
-    ├── etiqueta
-    ├── recogida
-    └── tracking
+```http
+Authorization: Bearer <SHIPPING_OPERATIONS_TOKEN>
 ```
 
-Si no hay acceso a API, el mismo método `CORREOS` puede operarse manualmente: se crea el envío en Mi Oficina, se pega la etiqueta y se guarda el tracking en el Shipment de Spree. Cuando llegue la API, automatizamos sin cambiar la experiencia del cliente.
+No expone credenciales al navegador y solo admite acciones enumeradas. Soporta:
 
-## Requisitos para darlo por terminado
+- listar fulfillments de un pedido;
+- guardar o corregir tracking y carrier;
+- marcar un fulfillment como enviado usando el workflow nativo de Spree;
+- marcarlo como entregado usando el workflow nativo de Spree.
 
-- [ ] Zone real de Madrid creada en Spree.
-- [ ] Método local creado y visible en checkout.
-- [ ] Tarifa definitiva definida.
-- [ ] Tiempo estimado definido.
-- [ ] Prueba positiva con dirección de Madrid.
-- [ ] Prueba negativa con dirección fuera de Madrid.
-- [ ] Shipment creado correctamente en un pedido real.
-- [ ] Cambio de estado del Shipment reflejado en el storefront.
-- [ ] Tracking comprobado cuando exista.
-- [ ] Prueba completa en Preview/Vercel cuando el bloqueo de builds desaparezca.
+Las escrituras usan la Admin API de Spree. La Secret API Key se obtiene de
+`SPREE_ADMIN_API_KEY` o, por compatibilidad, de
+`DEVIR_B2B_SPREE_ADMIN_API_KEY`.
+
+## Correos
+
+La integración server-only está en `src/lib/shipping/correos.ts`. Se han
+modelado las APIs cuya especificación se había validado:
+
+- **Trackpub**: consulta de tracking;
+- **Labels**: generación de etiquetas;
+- **Requests**: solicitudes de recogida;
+- **BoxEntry**: registro de cajas/pallets;
+- **Preregister**: permanece desactivada por defecto porque figura como
+  deprecada y no debe asumirse como API válida para nuevos envíos.
+
+El cliente aplica por API la combinación correspondiente de Bearer de Correos
+ID, Client ID/Client Secret y subscription key, rechaza endpoints no HTTPS,
+impide rutas que escapen del host configurado y no incluye respuestas privadas
+del proveedor en los errores.
+
+### Correos ID
+
+No se ha inventado un flujo OAuth. Mientras Correos no facilite/valide el
+mecanismo de emisión y renovación para la cuenta contratada, las operaciones
+que necesitan Bearer usan `CORREOS_ID_ACCESS_TOKEN`. Si el proveedor devuelve
+401, la operación falla de forma segura y obliga a renovar ese token; no intenta
+un grant desconocido.
+
+## Ruta interna
+
+`GET /api/internal/shipping` devuelve únicamente estado de configuración
+(no secretos).
+
+`POST /api/internal/shipping` admite:
+
+- `spree-list-fulfillments`
+- `spree-save-tracking`
+- `spree-fulfill`
+- `spree-mark-delivered`
+- `correos-track`
+- `correos-labels`
+- `correos-pickup`
+- `correos-box-entry`
+
+Esta API es de back-office. No debe llamarse directamente desde componentes
+públicos ni usar el token en código cliente.
+
+## Flujo operativo disponible ya
+
+Sin acceso completo a las APIs de Correos se puede trabajar sin cambiar el
+modelo comercial:
+
+1. El pedido y su método de entrega se crean en Spree.
+2. El envío se tramita manualmente en Mi Oficina de Correos.
+3. Se guarda el tracking en el fulfillment de Spree.
+4. Se marca el fulfillment como enviado.
+5. El storefront sigue leyendo estado/tracking de Spree.
+6. Cuando las credenciales de Correos estén activas, tracking, etiquetas y
+   recogidas se pueden ejecutar con la misma capa sin cambiar el checkout.
+
+## Lo que falta para automatización completa de Correos
+
+- contrato/acceso API de transporte activo;
+- endpoints y credenciales definitivos en Vercel;
+- mecanismo oficial de emisión/renovación del token de Correos ID;
+- confirmar con Correos la alternativa soportada a `Preregister` para crear
+  o prerregistrar envíos nuevos;
+- prueba real controlada de etiqueta, tracking y recogida.
+
+Hasta entonces no se debe fingir que un envío ha sido creado en Correos solo
+porque Spree tenga un fulfillment.
+
+## Variables privadas
+
+```text
+SHIPPING_OPERATIONS_TOKEN
+SPREE_ADMIN_API_KEY
+CORREOS_CLIENT_ID
+CORREOS_CLIENT_SECRET
+CORREOS_ID_ACCESS_TOKEN
+CORREOS_LABELS_BASE_URL
+CORREOS_TRACKPUB_BASE_URL
+CORREOS_REQUESTS_BASE_URL
+CORREOS_REQUESTS_SUBSCRIPTION_KEY
+CORREOS_BOXENTRY_BASE_URL
+CORREOS_PREREGISTER_BASE_URL
+CORREOS_ALLOW_DEPRECATED_PREREGISTER
+```
+
+Ninguna credencial de Correos o Spree debe llevar prefijo `NEXT_PUBLIC_`.
+
+## Validación pendiente en producción
+
+- [ ] Corregir/confirmar la Zone exclusiva de Madrid en Spree.
+- [ ] Probar una dirección de Madrid y otra fuera de Madrid.
+- [ ] Confirmar un fulfillment real en un pedido.
+- [ ] Guardar un tracking real y comprobarlo en Spree/storefront.
+- [ ] Marcar un envío real como enviado.
+- [ ] Cuando Correos entregue credenciales, probar Trackpub/Labels/Requests
+      contra un envío controlado.
