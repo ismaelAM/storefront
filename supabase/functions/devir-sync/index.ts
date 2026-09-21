@@ -2417,6 +2417,7 @@ async function syncProductToSpree(
     const legacyLastAuto = Number(fields.find((f) => f.key === "pricing.last_synced_price")?.value);
     const lastAuto = Number.isFinite(catalogLastAuto) ? catalogLastAuto : legacyLastAuto;
     const currentPrice = variantPrice(existing.variant);
+    const active = existing.product.status === "active";
     const managed =
       (existing.product.tags ?? []).includes("devir") ||
       (existing.product.tags ?? []).includes("catalog-managed");
