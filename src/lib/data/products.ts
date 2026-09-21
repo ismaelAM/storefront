@@ -77,8 +77,10 @@ export async function cachedGetProduct(
   options: { locale?: string; country?: string },
   surface: Surface,
   userToken?: string,
+  cacheVersion = CATALOG_CACHE_VERSION,
 ) {
   "use cache: remote";
+  void cacheVersion;
   cacheLife("catalogProducts");
   cacheTag(
     `products${cacheTagSuffix(surface)}`,
