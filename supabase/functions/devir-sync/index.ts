@@ -2223,6 +2223,71 @@ async function ingestCatalogItem(
   return { resolution, synced };
 }
 
+async function reconcileSupplierCatalogBatch(
+  config: ConfigRow,
+  supplierCode: string,
+  offset: number,
+  limit: number,
+): Promise<{
+  processed: number;
+  reconciled: number;
+  reviews: number;
+  failed: number;
+  total: number;
+  nextOffset: number | null;
+}> {
+  const normalizedCode = normalizeSupplierCode(supplierCode);
+  const { data, error, count } = await supabase
+    .from("catalog_selected_supply")
+    .select("variant_id", { count: "exact" })
+    .eq("supplier_code", normalizedCode)
+    .order("variant_id")
+    .range(offset, offset + limit - 1);
+  if (error) throw error;
+
+  const rows = data ?? [];
+  const categories = await spreeCategories(config);
+  const defs = await definitions(config);
+  let reconciled = 0;
+  let reviews = 0;
+  let failed = 0;
+
+  for (const row of rows) {
+    const variantId = String(row.variant_id ?? "");
+    if (!variantId) continue;
+    try {
+      const resolution = await loadCatalogVariant(variantId);
+      const synced = await reconcileCatalogVariant(
+        config,
+        resolution,
+        categories,
+        defs,
+      );
+      reconciled += 1;
+      if (synced.review) reviews += 1;
+    } catch (error) {
+      failed += 1;
+      console.error(
+        "Supplier catalog reconcile failed",
+        normalizedCode,
+        variantId,
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+
+  const total = count ?? rows.length;
+  const next = offset + rows.length;
+  return {
+    processed: rows.length,
+    reconciled,
+    reviews,
+    failed,
+    total,
+    nextOffset: next < total ? next : null,
+  };
+}
+
 async function syncProductToSpree(
   config: ConfigRow,
   product: DevirProduct,
@@ -6340,6 +6405,24 @@ async function operatorAction(
 
   if (action === "catalog-ingest") {
     return json({ ok: true, ...(await ingestCatalogItemsAction(config, body)) });
+  }
+
+  if (action === "catalog-reconcile-supplier") {
+    const supplierCode =
+      typeof body.supplierCode === "string" ? body.supplierCode.trim() : "";
+    if (!supplierCode) return json({ error: "supplier_code_required" }, 400);
+    const offset = Math.max(0, Number(body.offset ?? 0) || 0);
+    const limit = Math.min(100, Math.max(1, Number(body.limit ?? 25) || 25));
+    return json({
+      ok: true,
+      supplierCode: normalizeSupplierCode(supplierCode),
+      ...(await reconcileSupplierCatalogBatch(
+        config,
+        supplierCode,
+        offset,
+        limit,
+      )),
+    });
   }
 
   if (action === "catalog-complete-run") {
