@@ -42,3 +42,41 @@ export function requiresMtgPreconSplitReview(
   const purchasePrice = Number(candidate.purchasePrice);
   return Number.isFinite(purchasePrice) && purchasePrice >= 80;
 }
+
+
+/**
+ * Generic supplier-pack safety rule.
+ *
+ * Devir also uses commercial presentations such as "Presentación: X (5+1)"
+ * or "Venta en pack de 15 u." for cartons containing several retail units.
+ * Those supplier SKUs must stay in draft/review until an operator splits them
+ * into the actual products sold by the shop.
+ *
+ * This intentionally does not match normal MTG prerelease kits or booster
+ * displays unless the title explicitly says that several retail units are
+ * bundled together.
+ */
+export function requiresManualPackSplitReview(
+  candidate: MtgPreconReviewCandidate,
+): boolean {
+  const value = normalize(`${candidate.name} ${candidate.url ?? ""}`);
+
+  const promotionalPresentation =
+    /\bpresentacion\b/.test(value) &&
+    /\(\s*\d+\s*\+\s*\d+\s*\)/.test(value);
+
+  const supplierUnitPack =
+    /\bventa\s+en\s+pack\s+de\s+\d+\s*(?:u\.?|uds?\.?|unidades?)\b/.test(
+      value,
+    );
+
+  const explicitRetailCarton =
+    /\b(?:caja|carton|expositor)\s+(?:de\s+)?\d+\s+(?:juegos?|unidades?|uds?\.?)\b/.test(
+      value,
+    );
+
+  return promotionalPresentation ||
+    supplierUnitPack ||
+    explicitRetailCarton ||
+    requiresMtgPreconSplitReview(candidate);
+}
