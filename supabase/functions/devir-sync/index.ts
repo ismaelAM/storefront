@@ -2358,13 +2358,18 @@ async function syncProductToSpree(
     variantId = existing.variant.id;
     const fields = await productFields(config, productId);
     let catalogLastAuto = Number(catalogContext?.lastAutoPrice);
-    if (!catalogContext) {
+    let needsManagedCleanup = false;
+    if (sourceCode === "devir") {
       const { data: catalogPricing } = await supabase
         .from("devir_sync_catalog")
-        .select("last_auto_price")
+        .select("last_auto_price,title_cleanup_version")
         .eq("supplier_sku", product.sku)
         .maybeSingle();
-      catalogLastAuto = Number(catalogPricing?.last_auto_price);
+      if (!catalogContext) {
+        catalogLastAuto = Number(catalogPricing?.last_auto_price);
+      }
+      needsManagedCleanup =
+        catalogPricing?.title_cleanup_version !== "devir-title-v3";
     }
     const legacyLastAuto = Number(fields.find((f) => f.key === "pricing.last_synced_price")?.value);
     const lastAuto = Number.isFinite(catalogLastAuto) ? catalogLastAuto : legacyLastAuto;
@@ -2386,11 +2391,13 @@ async function syncProductToSpree(
       ),
       ...sourceTags,
     ])).filter((tag) => review || tag !== "REVISION-HUMANA");
+    const refreshManagedMetadata =
+      managed && (!active || forceDraftForSplit || needsManagedCleanup);
     await spreeRequest(config, "PATCH", "/products/" + productId, {
       tags,
       ...(forceDraftForSplit ? { status: "draft" } : {}),
-      ...((!active || forceDraftForSplit) && managed ? { name: spreeProductName } : {}),
-      ...((!active || forceDraftForSplit) && managed && category
+      ...(refreshManagedMetadata ? { name: spreeProductName } : {}),
+      ...(refreshManagedMetadata && category
         ? { category_ids: [category.id] }
         : {}),
     });
@@ -2528,6 +2535,7 @@ function languageGroupingInfo(product: DevirProduct): LanguageGroupingInfo | nul
     ["Alemán", /\b(?:alemán|aleman|german)\b/i],
     ["Italiano", /\b(?:italiano|italian)\b/i],
     ["Portugués", /\b(?:portugués|portugues|portuguese)\b/i],
+    ["Japonés", /\b(?:japonés|japones|japanese)\b/i],
   ];
   const match = patterns.find(([, regex]) => regex.test(product.name));
   if (!match) return null;
@@ -2535,7 +2543,7 @@ function languageGroupingInfo(product: DevirProduct): LanguageGroupingInfo | nul
   const [language] = match;
   const baseName = product.name
     .replace(
-      /\s*[-–—]?\s*\(?\s*(?:español|castellano|inglés|ingles|english|francés|frances|french|alemán|aleman|german|italiano|italian|portugués|portugues|portuguese)\s*\)?\s*/gi,
+      /\s*[-–—]?\s*\(?\s*(?:español|castellano|inglés|ingles|ngles|english|francés|frances|french|alemán|aleman|german|italiano|italian|portugués|portugues|portuguese|japonés|japones|japanese)\s*\)?\s*/gi,
       " ",
     )
     .replace(/\s+/g, " ")
@@ -5937,6 +5945,7 @@ async function processProducts(config: ConfigRow, cycleId: string): Promise<{ do
               language_base_name: null,
             }),
         ...(product.availability === "available" ? { last_confirmed_available_at: now } : {}),
+        title_cleanup_version: "devir-title-v3",
         last_seen_cycle_id: cycleId,
         last_seen_at: now,
         last_synced_at: now,
