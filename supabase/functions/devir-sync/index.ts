@@ -10,6 +10,10 @@ import {
   selectBestOffer,
 } from "../_shared/catalog-sourcing.ts";
 import { requiresManualPackSplitReview } from "../_shared/mtg-precon-policy.ts";
+import {
+  inferDevirCategoryKey,
+  normalizeDevirCatalogTitle,
+} from "../_shared/devir-catalog-policy.ts";
 
 type Json = Record<string, unknown>;
 
@@ -252,22 +256,7 @@ function stripHtml(value: string): string {
 }
 
 function cleanDevirTitle(value: string): string {
-  return value
-    .replace(/^m[aá]s\s+vistas\s+/i, "")
-    .replace(
-      /\s*\((?:fecha\s+de\s+(?:venta(?:\s+en\s+tiendas)?|salida|puesta\s+a\s+la\s+venta)|a\s+la\s+venta(?:\s+el)?)\s*\d{1,2}[\/.-]\d{1,2}[\/.-]\d{4}\)\s*/gi,
-      " ",
-    )
-    .replace(
-      /\s*[-–—]?\s*(?:fecha\s+de\s+(?:venta(?:\s+en\s+tiendas)?|salida|puesta\s+a\s+la\s+venta)|a\s+la\s+venta(?:\s+el)?)\s*\d{1,2}[\/.-]\d{1,2}[\/.-]\d{4}\b/gi,
-      " ",
-    )
-    .replace(/\s+\d{1,2}[\/-]\d{1,2}[\/-]\d{4}\s*$/g, "")
-    .replace(/\s+-\s+(?=(?:ingl[eé]s|español|castellano|japon[eé]s)\b)/gi, " - ")
-    .replace(/\s{2,}/g, " ")
-    .replace(/\s+([,.;:])/g, "$1")
-    .replace(/[\s\-–—,:;]+$/g, "")
-    .trim();
+  return normalizeDevirCatalogTitle(value);
 }
 
 function absoluteUrl(value: string, sourceUrl: string): string | null {
@@ -686,57 +675,7 @@ function isPack(product: DevirProduct): boolean {
 }
 
 function categoryKey(product: DevirProduct): string {
-  if (product.categoryKeyOverride?.trim()) {
-    return product.categoryKeyOverride.trim();
-  }
-  const name = product.name.toLowerCase();
-  const url = product.url.toLowerCase();
-  const value = name + " " + url;
-
-  if (/accesorio|sleeves|fundas|deck\s*box|tapete|playmat|carpeta|album/.test(value)) {
-    return "accesorios";
-  }
-
-  if (/(?:n[uú]m\.?|num\.?|vol\.?|volumen)\s*0*\d{1,3}/i.test(product.name)) {
-    return "manga-comic";
-  }
-
-  // RPG brands are resolved before card-game keywords. A title containing
-  // "magia"/"magic items" must never become MTG just because of that word.
-  if (/pathfinder/.test(value)) return "rol/pathfinder";
-  if (/d&d|dungeons\s*&?\s*dragons|forgotten realms|dragonlance/.test(value)) {
-    return "rol/dungeons-dragons";
-  }
-  if (/warhammer/.test(value)) return "rol/warhammer";
-  if (
-    /vampiro|cthulhu|runequest|forbidden\s+lands|blade\s*runner|alien.*rol|candela\s+obscura|broken\s+tales|juego\s+de\s+rol|roleplaying|rpg\b|libro\s+b[aá]sico|pantalla\s+de\s+direcci[oó]n/.test(value)
-  ) {
-    return "rol/otros";
-  }
-
-  if (
-    /yugioh|yu-gi-oh|yu gi oh|quarter century|duelist|battles of legend|dueling (?:heroes|mirrors)/.test(value)
-  ) {
-    return "tcg/yugioh";
-  }
-
-  const explicitMagicBrand =
-    /^\s*magic\b/i.test(product.name) ||
-    /\/magic(?:-|$)/.test(url) ||
-    /\bmtg\b/.test(value);
-  const knownMagicSet =
-    /aetherdrift|tarkir|bloomburrow|duskmourn|innistrad|zendikar|modern horizons|foundations|strixhaven/.test(value);
-  if (explicitMagicBrand || knownMagicSet) {
-    return "tcg/mtg";
-  }
-
-  if (/expansi[oó]n|expansion|\bexp\.|ampliaci[oó]n|big\s*box/.test(value)) {
-    return "juegos-de-mesa/expansiones";
-  }
-  if (/junior|infantil|primaria|secundaria|kids|niñ[oa]s/.test(value)) {
-    return "juegos-de-mesa/infantil";
-  }
-  return "juegos-de-mesa/general";
+  return inferDevirCategoryKey(product);
 }
 
 function isFixedPriceCandidate(product: DevirProduct, key: string): boolean {
@@ -1775,6 +1714,24 @@ async function resolveCatalogVariant(
   if (productError) throw productError;
   const product = productData as CatalogProductRow;
 
+  // The first supplier insert must not freeze stale taxonomy forever.
+  // Devir is currently the canonical taxonomy source; future suppliers may
+  // fill a missing category but do not overwrite an established Devir name.
+  if (item.supplierCode === "devir" || !product.category_key) {
+    const nextCategoryKey = item.categoryKey ?? product.category_key ?? null;
+    const { error: productRefreshError } = await supabase
+      .from("catalog_products")
+      .update({
+        ...(item.supplierCode === "devir" ? { name: item.productName } : {}),
+        category_key: nextCategoryKey,
+        updated_at: now,
+      })
+      .eq("id", product.id);
+    if (productRefreshError) throw productRefreshError;
+    if (item.supplierCode === "devir") product.name = item.productName;
+    product.category_key = nextCategoryKey;
+  }
+
   const { error: variantInsertError } = await supabase
     .from("catalog_variants")
     .upsert(
@@ -2419,13 +2376,18 @@ async function syncProductToSpree(
     variantId = existing.variant.id;
     const fields = await productFields(config, productId);
     let catalogLastAuto = Number(catalogContext?.lastAutoPrice);
-    if (!catalogContext) {
+    let needsManagedCleanup = false;
+    if (sourceCode === "devir") {
       const { data: catalogPricing } = await supabase
         .from("devir_sync_catalog")
-        .select("last_auto_price")
+        .select("last_auto_price,title_cleanup_version")
         .eq("supplier_sku", product.sku)
         .maybeSingle();
-      catalogLastAuto = Number(catalogPricing?.last_auto_price);
+      if (!catalogContext) {
+        catalogLastAuto = Number(catalogPricing?.last_auto_price);
+      }
+      needsManagedCleanup =
+        catalogPricing?.title_cleanup_version !== "devir-title-v3";
     }
     const legacyLastAuto = Number(fields.find((f) => f.key === "pricing.last_synced_price")?.value);
     const lastAuto = Number.isFinite(catalogLastAuto) ? catalogLastAuto : legacyLastAuto;
@@ -2447,11 +2409,13 @@ async function syncProductToSpree(
       ),
       ...sourceTags,
     ])).filter((tag) => review || tag !== "REVISION-HUMANA");
+    const refreshManagedMetadata =
+      managed && (!active || forceDraftForSplit || needsManagedCleanup);
     await spreeRequest(config, "PATCH", "/products/" + productId, {
       tags,
       ...(forceDraftForSplit ? { status: "draft" } : {}),
-      ...((!active || forceDraftForSplit) && managed ? { name: spreeProductName } : {}),
-      ...((!active || forceDraftForSplit) && managed && category
+      ...(refreshManagedMetadata ? { name: spreeProductName } : {}),
+      ...(refreshManagedMetadata && category
         ? { category_ids: [category.id] }
         : {}),
     });
@@ -2589,6 +2553,7 @@ function languageGroupingInfo(product: DevirProduct): LanguageGroupingInfo | nul
     ["Alemán", /\b(?:alemán|aleman|german)\b/i],
     ["Italiano", /\b(?:italiano|italian)\b/i],
     ["Portugués", /\b(?:portugués|portugues|portuguese)\b/i],
+    ["Japonés", /\b(?:japonés|japones|japanese)\b/i],
   ];
   const match = patterns.find(([, regex]) => regex.test(product.name));
   if (!match) return null;
@@ -2596,7 +2561,7 @@ function languageGroupingInfo(product: DevirProduct): LanguageGroupingInfo | nul
   const [language] = match;
   const baseName = product.name
     .replace(
-      /\s*[-–—]?\s*\(?\s*(?:español|castellano|inglés|ingles|english|francés|frances|french|alemán|aleman|german|italiano|italian|portugués|portugues|portuguese)\s*\)?\s*/gi,
+      /\s*[-–—]?\s*\(?\s*(?:español|castellano|inglés|ingles|ngles|english|francés|frances|french|alemán|aleman|german|italiano|italian|portugués|portugues|portuguese|japonés|japones|japanese)\s*\)?\s*/gi,
       " ",
     )
     .replace(/\s+/g, " ")
@@ -4679,7 +4644,7 @@ async function cleanCatalogTitlesBatch(
   categories_changed: number;
   remaining_products: number;
 }> {
-  const version = "devir-title-v2";
+  const version = "devir-title-v3";
   const categories = await spreeCategories(config);
   const { data, error } = await supabase
     .from("devir_sync_catalog")
@@ -5998,6 +5963,7 @@ async function processProducts(config: ConfigRow, cycleId: string): Promise<{ do
               language_base_name: null,
             }),
         ...(product.availability === "available" ? { last_confirmed_available_at: now } : {}),
+        title_cleanup_version: "devir-title-v3",
         last_seen_cycle_id: cycleId,
         last_seen_at: now,
         last_synced_at: now,
