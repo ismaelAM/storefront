@@ -4,7 +4,7 @@ import {
   normalizeText,
   type SupplierAvailability,
   type SupplierCatalogItem,
-} from "./catalog-sourcing";
+} from "./catalog-sourcing.ts";
 
 export const TCGFACTORY_SUPPLIER_CODE = "tcgfactory";
 export const TCGFACTORY_ADAPTER_KEY = "tcgfactory_b2b_bridge_v1";
@@ -36,6 +36,7 @@ export interface TcgFactoryFeedRecord {
   shippingCostNet?: number | string;
   normalizedCost?: number | string;
   taxRate?: number | string | null;
+  referencePriceNet?: number | string | null;
   currency?: string;
   availability: string;
   stockQuantity?: number | string | null;
@@ -125,6 +126,7 @@ export function mapTcgFactoryAvailability(
   }
   if (
     [
+      "en-reposicion",
       "agotado",
       "sin-stock",
       "no-disponible",
@@ -207,6 +209,8 @@ export function tcgFactoryRecordToCatalogItem(
     currency: input.currency?.trim().toUpperCase() || "EUR",
     taxIncluded,
     taxRate: taxRate ?? null,
+    referencePriceNet:
+      optionalNumber(input.referencePriceNet, "referencePriceNet") ?? null,
     availability,
     stockQuantity: stockQuantity ?? null,
     releaseDate: input.releaseDate?.trim() || null,
