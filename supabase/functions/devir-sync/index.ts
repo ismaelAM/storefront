@@ -856,6 +856,56 @@ function isPack(product: DevirProduct): boolean {
   return requiresManualPackSplitReview(product);
 }
 
+function humanizeReviewReason(reason: string): string {
+  const [code, ...detailParts] = reason.split(":");
+  const detail = detailParts.join(":").trim();
+  switch (code.trim()) {
+    case "pack_requires_operator_split":
+      return "Pack del proveedor: decide si se vende cerrado o se divide en unidades.";
+    case "catalan_requires_operator_review":
+      return "Producto en catalán: revisa si debe publicarse en la tienda.";
+    case "category_unclassified":
+      return "No he podido clasificar automáticamente la categoría.";
+    case "category_margin_unconfigured":
+      return "La categoría no tiene un margen comercial configurado.";
+    case "product_image_missing":
+      return "Falta una imagen de producto válida.";
+    case "grouping_requires_operator_review":
+      return "No está claro cómo agrupar sus variantes; necesita una decisión manual.";
+    case "fixed_book_cost_floor_above_rrp":
+      return "El coste supera el precio legal/recomendado disponible.";
+    case "cost_floor_above_reference_rrp":
+      return "El coste mínimo calculado supera el PVP de referencia.";
+    case "fixed_book_reference_price_missing":
+      return "Falta el PVP de referencia necesario para fijar el precio.";
+    case "supplier_source_not_verified":
+      return "No se ha podido verificar la fuente del proveedor.";
+    case "supplier_cost_missing":
+      return "Falta el coste de compra del proveedor.";
+    case "variant_not_found_for_sku":
+      return detail
+        ? `No encuentro la variante correspondiente al SKU ${detail}.`
+        : "No encuentro la variante correspondiente al SKU.";
+    case "canonical_variant_not_found":
+      return "La variante canónica no está enlazada correctamente con Spree.";
+    case "product_category_conflict":
+      return detail
+        ? `Las variantes apuntan a categorías distintas: ${detail}.`
+        : "Las variantes apuntan a categorías distintas.";
+    default:
+      return detail
+        ? `Revisión manual: ${code.trim()} (${detail}).`
+        : `Revisión manual: ${code.trim().replaceAll("_", " ")}.`;
+  }
+}
+
+function humanizeReviewReasons(reasons: Iterable<string>): string {
+  const values = Array.from(new Set(Array.from(reasons).filter(Boolean))).map(
+    humanizeReviewReason,
+  );
+  return values.length ? values.join(" ") : "Revisión manual pendiente.";
+}
+
 function categoryKey(product: DevirProduct): string {
   return inferDevirCategoryKey(product);
 }
@@ -1285,20 +1335,46 @@ async function definitions(
       .filter((d) => d.resource_type === "Spree::Product")
       .map((d) => [d.namespace + "." + d.key, d]),
   );
-  if (!result.has("sourcing.variant_provenance")) {
+
+  const required = [
+    {
+      namespace: "sourcing",
+      key: "variant_provenance",
+      label: "Compras · Procedencia por variante",
+      field_type: "long_text",
+    },
+    {
+      namespace: "catalog",
+      key: "review_status",
+      label: "⚠ Catálogo · Necesita tu ayuda",
+      field_type: "short_text",
+    },
+    {
+      namespace: "catalog",
+      key: "review_reason",
+      label: "⚠ Catálogo · Motivo de revisión",
+      field_type: "long_text",
+    },
+  ];
+
+  let createdAny = false;
+  for (const definition of required) {
+    const fullKey = definition.namespace + "." + definition.key;
+    if (result.has(fullKey)) continue;
     try {
       await spreeRequest(config, "POST", "/custom_field_definitions", {
-        namespace: "sourcing",
-        key: "variant_provenance",
-        label: "Compras · Procedencia por variante",
-        field_type: "long_text",
+        ...definition,
         resource_type: "Spree::Product",
         storefront_visible: false,
       });
+      createdAny = true;
     } catch (error) {
       // Another worker may have created it between the list and the POST.
       if (!String(error).includes("422")) throw error;
     }
+  }
+
+  if (createdAny) {
     defs = await spreeList<SpreeFieldDefinition>(
       config,
       "/custom_field_definitions",
@@ -2657,7 +2733,7 @@ async function syncProductToSpree(
     managedTag,
     ...(sourceCode === "devir" ? ["devir"] : []),
     review ? reviewTag : readyTag,
-    ...(review ? ["REVISION-HUMANA"] : []),
+    ...(review ? ["REVISION-HUMANA", "NECESITA-TU-AYUDA"] : []),
   ];
 
   if (!existing) {
@@ -2744,11 +2820,16 @@ async function syncProductToSpree(
               "catalog-review",
               "devir-ready",
               "devir-review",
+              "NECESITA-TU-AYUDA",
             ].includes(tag),
         ),
         ...sourceTags,
       ]),
-    ).filter((tag) => review || tag !== "REVISION-HUMANA");
+    ).filter(
+      (tag) =>
+        review ||
+        (tag !== "REVISION-HUMANA" && tag !== "NECESITA-TU-AYUDA"),
+    );
     const refreshManagedMetadata =
       managed && (!active || forceDraftForSplit || needsManagedCleanup);
     await spreeRequest(config, "PATCH", "/products/" + productId, {
@@ -2811,9 +2892,13 @@ async function syncProductToSpree(
     "devir.review_reasons": catalogContext
       ? undefined
       : reasons.length
-        ? reasons.join(", ")
-        : "none",
+        ? humanizeReviewReasons(reasons)
+        : "Sin revisión pendiente.",
     "devir.last_sync_at": catalogContext ? undefined : new Date().toISOString(),
+    "catalog.review_status": review ? "⚠ NECESITA TU AYUDA" : "LISTO",
+    "catalog.review_reason": review
+      ? humanizeReviewReasons(reasons)
+      : "Sin revisión pendiente.",
     "pricing.applied_margin": targetMargin,
     "pricing.effective_margin": effectiveMargin,
     "pricing.rule_source":
@@ -5591,6 +5676,7 @@ async function preparePublishBatch(
           "devir-waiting-stock",
           "devir-review",
           "REVISION-HUMANA",
+          "NECESITA-TU-AYUDA",
         ].includes(tag),
     );
     let tags = Array.from(
@@ -5606,7 +5692,9 @@ async function preparePublishBatch(
             ]
           : []),
         ...(waiting ? ["devir-waiting-stock"] : []),
-        ...(human ? ["devir-review", "REVISION-HUMANA"] : []),
+        ...(human
+          ? ["devir-review", "REVISION-HUMANA", "NECESITA-TU-AYUDA"]
+          : []),
       ]),
     );
     if (publish) {
@@ -5614,6 +5702,7 @@ async function preparePublishBatch(
         (tag) =>
           tag !== "devir-review" &&
           tag !== "REVISION-HUMANA" &&
+          tag !== "NECESITA-TU-AYUDA" &&
           tag !== "devir-waiting-stock",
       );
     } else if (waiting) {
@@ -5623,6 +5712,7 @@ async function preparePublishBatch(
           tag !== "devir-published" &&
           tag !== "devir-review" &&
           tag !== "REVISION-HUMANA" &&
+          tag !== "NECESITA-TU-AYUDA" &&
           tag !== "devir-preorder" &&
           tag !== "devir-buy-now",
       );
@@ -5672,13 +5762,19 @@ async function preparePublishBatch(
       else waitingSupplier += 1;
     }
 
-    if (human) {
-      await upsertProductFields(config, productId, defs, {
-        "devir.review_status": "⚠ REVISIÓN HUMANA",
-        "devir.review_reasons": Array.from(productReasons).join(", "),
-        "devir.last_sync_at": new Date().toISOString(),
-      });
-    }
+    await upsertProductFields(config, productId, defs, {
+      "catalog.review_status": human ? "⚠ NECESITA TU AYUDA" : "LISTO",
+      "catalog.review_reason": human
+        ? humanizeReviewReasons(productReasons)
+        : "Sin revisión pendiente.",
+      ...(human
+        ? {
+            "devir.review_status": "⚠ REVISIÓN HUMANA",
+            "devir.review_reasons": humanizeReviewReasons(productReasons),
+            "devir.last_sync_at": new Date().toISOString(),
+          }
+        : {}),
+    });
 
     if (!human && updatedForProduct === 0 && rows.length > 0) {
       await supabase
@@ -6090,6 +6186,7 @@ async function hideCatalogPolicyViolations(
     violations.set(productId, reasons);
   }
 
+  const defs = await definitions(config);
   const channels = await spreeList<SpreeChannel>(config, "/channels");
   const channel =
     channels.find((item) => item.active && item.default) ??
@@ -6115,6 +6212,7 @@ async function hideCatalogPolicyViolations(
         ),
         "devir-review",
         "REVISION-HUMANA",
+        "NECESITA-TU-AYUDA",
       ]),
     );
     await spreeRequest(
@@ -6136,6 +6234,13 @@ async function hideCatalogPolicyViolations(
       }
     }
     const reason = Array.from(reasons).join(", ");
+    await upsertProductFields(config, productId, defs, {
+      "catalog.review_status": "⚠ NECESITA TU AYUDA",
+      "catalog.review_reason": humanizeReviewReasons(reasons),
+      "devir.review_status": "⚠ REVISIÓN HUMANA",
+      "devir.review_reasons": humanizeReviewReasons(reasons),
+      "devir.last_sync_at": new Date().toISOString(),
+    });
     await supabase
       .from("devir_sync_catalog")
       .update({
