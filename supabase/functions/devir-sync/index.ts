@@ -5377,6 +5377,588 @@ async function completeCatalogSupplierRun(
   };
 }
 
+
+type TcgFactorySessionState = ConfigRow["session_state"];
+
+interface TcgFactoryCrawlState {
+  supplier_id: string;
+  run_id: string | null;
+  section: string;
+  page: number;
+  item_offset: number;
+  total_pages: number | null;
+  discovered_items: number;
+  processed_items: number;
+  failed_items: number;
+  status: "idle" | "running" | "error";
+  last_error: string | null;
+  started_at: string | null;
+  updated_at: string;
+}
+
+const TCGFACTORY_USER_AGENT = "BisonTCG supplier sync/1.0";
+
+function tcgFactoryCredentialsConfigured(): boolean {
+  try {
+    requireTcgFactoryCredentials((name) => Deno.env.get(name));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function htmlAttribute(tag: string, name: string): string | null {
+  const match = tag.match(
+    new RegExp("\\\\b" + name + "\\\\s*=\\\\s*([\\\"'])((?:(?!\\\\1).)*)\\\\1", "i"),
+  );
+  return match?.[2] ?? null;
+}
+
+function tcgFactoryLoginFields(html: string): Record<string, string> {
+  const fields: Record<string, string> = {};
+  for (const input of html.matchAll(/<input\b[^>]*>/gi)) {
+    const tag = input[0];
+    const type = (htmlAttribute(tag, "type") ?? "").toLowerCase();
+    const name = htmlAttribute(tag, "name");
+    if (!name || (type && type !== "hidden")) continue;
+    fields[name] = htmlAttribute(tag, "value") ?? "";
+  }
+  return fields;
+}
+
+function tcgCookieHeader(
+  session: TcgFactorySessionState,
+  url: string,
+): string {
+  if (!session?.cookies?.length) return "";
+  const target = new URL(url);
+  const nowSeconds = Date.now() / 1000;
+  return session.cookies
+    .filter((cookie) => {
+      const domain = cookie.domain.replace(/^\./, "");
+      const hostOk =
+        target.hostname === domain || target.hostname.endsWith("." + domain);
+      const pathOk = target.pathname.startsWith(cookie.path || "/");
+      const expiryOk =
+        !cookie.expires || cookie.expires < 0 || cookie.expires > nowSeconds;
+      return hostOk && pathOk && expiryOk;
+    })
+    .map((cookie) => cookie.name + "=" + cookie.value)
+    .join("; ");
+}
+
+async function tcgFactoryTextFetch(
+  url: string,
+  session?: TcgFactorySessionState,
+): Promise<{ html: string; finalUrl: string; session: TcgFactorySessionState }> {
+  const response = await fetch(url, {
+    redirect: "follow",
+    headers: {
+      accept: "text/html,application/xhtml+xml",
+      "accept-language": "es-ES,es;q=0.9,en;q=0.7",
+      "user-agent": TCGFACTORY_USER_AGENT,
+      ...(session?.cookies?.length
+        ? { cookie: tcgCookieHeader(session, url) }
+        : {}),
+    },
+    signal: AbortSignal.timeout(30_000),
+  });
+  const html = await response.text();
+  if (!response.ok) {
+    throw new Error(
+      "TcgFactory HTTP " + response.status + " en " + new URL(url).pathname,
+    );
+  }
+  const nextSession = mergeSessionCookies(
+    session ?? null,
+    parseSetCookies(response.headers),
+    TCGFACTORY_BASE_URL,
+  );
+  return { html, finalUrl: response.url, session: nextSession };
+}
+
+async function tcgFactoryLogin(): Promise<TcgFactorySessionState> {
+  const credentials = requireTcgFactoryCredentials((name) => Deno.env.get(name));
+  const loginUrl = TCGFACTORY_BASE_URL + "/es/iniciar-sesion?back=my-account";
+  const login = await tcgFactoryTextFetch(loginUrl);
+  const formTag =
+    login.html.match(/<form\b[^>]*(?:id=["']login-form["']|action=["'][^"']*(?:iniciar-sesion|login)[^"']*["'])[^>]*>/i)?.[0] ??
+    "";
+  const actionRaw = htmlAttribute(formTag, "action") ?? loginUrl;
+  const action = new URL(actionRaw, TCGFACTORY_BASE_URL).toString();
+  const fields = tcgFactoryLoginFields(login.html);
+  const body = new URLSearchParams(fields);
+  body.set("email", credentials.email);
+  body.set("password", credentials.password);
+  body.set("submitLogin", "1");
+  if (!body.has("back")) body.set("back", "my-account");
+
+  const response = await fetch(action, {
+    method: "POST",
+    redirect: "manual",
+    headers: {
+      accept: "text/html,application/xhtml+xml",
+      "content-type": "application/x-www-form-urlencoded",
+      "user-agent": TCGFACTORY_USER_AGENT,
+      cookie: tcgCookieHeader(login.session, action),
+      referer: loginUrl,
+    },
+    body,
+    signal: AbortSignal.timeout(30_000),
+  });
+  const responseHtml = await response.text();
+  let session = mergeSessionCookies(
+    login.session,
+    parseSetCookies(response.headers),
+    TCGFACTORY_BASE_URL,
+  );
+  if (response.status >= 400) {
+    throw new Error("TCGFACTORY_LOGIN_FAILED: HTTP " + response.status);
+  }
+  if (/captcha|recaptcha|hcaptcha|turnstile|cloudflare/i.test(responseHtml)) {
+    throw new Error("TCGFACTORY_LOGIN_FAILED: challenge_antibot");
+  }
+
+  const probe = await tcgFactoryTextFetch(
+    TCGFACTORY_BASE_URL + "/es/mi-cuenta",
+    session,
+  );
+  session = probe.session;
+  const loginStillVisible =
+    /\/iniciar-sesion(?:[?#]|$)/i.test(probe.finalUrl) ||
+    /id=["']login-form["']|name=["']submitLogin["']/i.test(
+      probe.html.slice(0, 120000),
+    );
+  if (loginStillVisible) {
+    throw new Error("TCGFACTORY_LOGIN_FAILED: credentials_rejected");
+  }
+  return session;
+}
+
+async function tcgFactorySupplierRow(): Promise<
+  CatalogSupplierRow & {
+    next_sync_at?: string | null;
+    last_error?: string | null;
+  }
+> {
+  const { data, error } = await supabase
+    .from("catalog_suppliers")
+    .select(
+      "id,code,name,adapter_key,enabled,priority,default_currency,stale_after_hours,sync_interval_hours,last_completed_run_id,next_sync_at,last_error",
+    )
+    .eq("code", TCGFACTORY_SUPPLIER_CODE)
+    .single();
+  if (error) throw error;
+  return data as CatalogSupplierRow & {
+    next_sync_at?: string | null;
+    last_error?: string | null;
+  };
+}
+
+async function upsertTcgFactoryDiscovery(
+  supplierId: string,
+  product: TcgFactoryPublicProduct,
+  runId: string | null,
+  metadata: Record<string, unknown> = {},
+): Promise<void> {
+  const { error } = await supabase
+    .from("catalog_supplier_discovery")
+    .upsert(
+      {
+        supplier_id: supplierId,
+        external_product_id: product.externalProductId,
+        external_variant_id: product.externalVariantId,
+        supplier_sku: product.reference ?? product.externalVariantId,
+        gtin: product.ean,
+        product_name: product.productName,
+        source_url: product.sourceUrl,
+        category_key: product.categoryKey,
+        manufacturer: product.manufacturer,
+        manufacturer_sku: product.manufacturerSku,
+        options: product.options,
+        reference_price_net: product.referencePriceNet,
+        availability: product.availability,
+        release_date: product.releaseDate,
+        image_urls: product.imageUrls,
+        metadata: { ...product.metadata, ...metadata },
+        active: true,
+        last_seen_run_id: runId,
+        last_seen_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "supplier_id,external_variant_id" },
+    );
+  if (error) throw error;
+}
+
+async function tcgFactoryDiscoverPublicBatch(
+  page: number,
+  offset: number,
+  limit: number,
+  runId: string | null = null,
+): Promise<{
+  page: number;
+  offset: number;
+  totalPages: number;
+  totalItems: number | null;
+  discovered: number;
+  failed: number;
+  nextOffset: number | null;
+  urls: string[];
+}> {
+  const supplier = await tcgFactorySupplierRow();
+  const pageUrl =
+    TCGFACTORY_ACCESSORIES_URL + (page > 1 ? "?page=" + page : "");
+  const listing = await tcgFactoryTextFetch(pageUrl);
+  const parsed = parseTcgFactoryListing(listing.html, pageUrl);
+  const selected = parsed.productUrls.slice(offset, offset + limit);
+  let discovered = 0;
+  let failed = 0;
+
+  for (const url of selected) {
+    try {
+      const detail = await tcgFactoryTextFetch(url);
+      const product = parseTcgFactoryPublicProduct(detail.html, url);
+      await upsertTcgFactoryDiscovery(supplier.id, product, runId);
+      discovered += 1;
+    } catch (error) {
+      failed += 1;
+      console.error(
+        "TcgFactory public discovery failed",
+        url,
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+
+  const nextOffset =
+    offset + selected.length < parsed.productUrls.length
+      ? offset + selected.length
+      : null;
+  return {
+    page,
+    offset,
+    totalPages: parsed.totalPages,
+    totalItems: parsed.totalItems,
+    discovered,
+    failed,
+    nextOffset,
+    urls: selected,
+  };
+}
+
+function safeTcgFactoryB2bPrice(
+  authenticatedHtml: string,
+  publicReferenceNet: number | null,
+): number {
+  const price = parseTcgFactoryAuthenticatedPrice(authenticatedHtml);
+  if (!price || !Number.isFinite(price) || price <= 0) {
+    throw new Error("TCGFACTORY_B2B_PRICE_MISSING");
+  }
+  if (
+    publicReferenceNet !== null &&
+    Number.isFinite(publicReferenceNet) &&
+    price >= publicReferenceNet * 0.995
+  ) {
+    throw new Error("TCGFACTORY_B2B_PRICE_NOT_DISTINCT_FROM_PUBLIC_REFERENCE");
+  }
+  return price;
+}
+
+function tcgFactoryCatalogItem(
+  product: TcgFactoryPublicProduct,
+  authenticatedPriceNet: number,
+): SupplierCatalogItem {
+  return tcgFactoryRecordToCatalogItem({
+    externalProductId: product.externalProductId,
+    externalVariantId: product.externalVariantId,
+    reference: product.reference ?? product.externalVariantId,
+    productName: product.productName,
+    ean: product.ean,
+    sourceUrl: product.sourceUrl,
+    categoryKey: product.categoryKey,
+    manufacturer: product.manufacturer ?? undefined,
+    manufacturerSku: product.manufacturerSku ?? undefined,
+    options: product.options,
+    purchasePriceNet: authenticatedPriceNet,
+    shippingCostNet: 0,
+    currency: "EUR",
+    availability: product.reportedAvailability || product.availability,
+    releaseDate: product.releaseDate,
+    imageUrls: product.imageUrls,
+    referencePriceNet: product.referencePriceNet,
+  });
+}
+
+async function tcgFactoryStatus(): Promise<Record<string, unknown>> {
+  const supplier = await tcgFactorySupplierRow();
+  const { data: state, error: stateError } = await supabase
+    .from("catalog_supplier_crawl_state")
+    .select("*")
+    .eq("supplier_id", supplier.id)
+    .maybeSingle();
+  if (stateError) throw stateError;
+  const { count: discoveryCount, error: discoveryError } = await supabase
+    .from("catalog_supplier_discovery")
+    .select("id", { count: "exact", head: true })
+    .eq("supplier_id", supplier.id);
+  if (discoveryError) throw discoveryError;
+  const { count: offerCount, error: offerError } = await supabase
+    .from("catalog_supplier_offers")
+    .select("id", { count: "exact", head: true })
+    .eq("supplier_id", supplier.id);
+  if (offerError) throw offerError;
+  return {
+    supplier: {
+      code: supplier.code,
+      enabled: supplier.enabled,
+      nextSyncAt: supplier.next_sync_at ?? null,
+      lastError: supplier.last_error ?? null,
+    },
+    credentialsConfigured: tcgFactoryCredentialsConfigured(),
+    discoveryCount: discoveryCount ?? 0,
+    offerCount: offerCount ?? 0,
+    crawl: state ?? null,
+  };
+}
+
+async function tcgFactoryTick(
+  config: ConfigRow,
+  force = false,
+): Promise<Record<string, unknown>> {
+  const supplier = await tcgFactorySupplierRow();
+  if (!supplier.enabled && !force) return { skipped: "supplier_disabled" };
+
+  const { data: currentState, error: stateError } = await supabase
+    .from("catalog_supplier_crawl_state")
+    .select("*")
+    .eq("supplier_id", supplier.id)
+    .maybeSingle();
+  if (stateError) throw stateError;
+  let state = currentState as TcgFactoryCrawlState | null;
+  const running = state?.status === "running";
+
+  if (
+    !force &&
+    !running &&
+    supplier.next_sync_at &&
+    new Date(supplier.next_sync_at).getTime() > Date.now()
+  ) {
+    return { skipped: "not_due", nextSyncAt: supplier.next_sync_at };
+  }
+
+  if (!tcgFactoryCredentialsConfigured()) {
+    const next = new Date(
+      Date.now() + (supplier.sync_interval_hours ?? 6) * 60 * 60 * 1000,
+    ).toISOString();
+    await supabase
+      .from("catalog_suppliers")
+      .update({
+        last_error: "credentials_missing: TCGFACTORY_B2B_EMAIL/TCGFACTORY_B2B_PASSWORD",
+        next_sync_at: next,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", supplier.id);
+    return { skipped: "credentials_missing", nextSyncAt: next };
+  }
+
+  if (!state || state.status !== "running") {
+    const now = new Date().toISOString();
+    const runId = "tcgfactory-" + String(Date.now());
+    const { data: started, error } = await supabase
+      .from("catalog_supplier_crawl_state")
+      .upsert(
+        {
+          supplier_id: supplier.id,
+          run_id: runId,
+          section: "accessories",
+          page: 1,
+          item_offset: 0,
+          total_pages: null,
+          discovered_items: 0,
+          processed_items: 0,
+          failed_items: 0,
+          status: "running",
+          last_error: null,
+          started_at: now,
+          updated_at: now,
+        },
+        { onConflict: "supplier_id" },
+      )
+      .select("*")
+      .single();
+    if (error) throw error;
+    state = started as TcgFactoryCrawlState;
+    await setupCatalogCategoriesAndMargins(config);
+  }
+
+  const session = await tcgFactoryLogin();
+  const page = state.page;
+  const offset = state.item_offset;
+  const pageUrl =
+    TCGFACTORY_ACCESSORIES_URL + (page > 1 ? "?page=" + page : "");
+  const listing = await tcgFactoryTextFetch(pageUrl, session);
+  const parsed = parseTcgFactoryListing(listing.html, pageUrl);
+  const urls = parsed.productUrls.slice(offset, offset + 6);
+  const categories = await spreeCategories(config);
+  const defs = await definitions(config);
+  let discovered = 0;
+  let processed = 0;
+  let failed = 0;
+
+  for (const url of urls) {
+    try {
+      const publicDetail = await tcgFactoryTextFetch(url);
+      const publicProduct = parseTcgFactoryPublicProduct(publicDetail.html, url);
+      await upsertTcgFactoryDiscovery(
+        supplier.id,
+        publicProduct,
+        state.run_id,
+      );
+      discovered += 1;
+
+      if (
+        publicProduct.availability !== "available" &&
+        publicProduct.availability !== "preorder"
+      ) {
+        continue;
+      }
+
+      const authenticatedDetail = await tcgFactoryTextFetch(url, session);
+      const authenticatedProduct = parseTcgFactoryPublicProduct(
+        authenticatedDetail.html,
+        url,
+      );
+      const price = safeTcgFactoryB2bPrice(
+        authenticatedDetail.html,
+        publicProduct.referencePriceNet,
+      );
+      const rawItem = tcgFactoryCatalogItem(
+        {
+          ...publicProduct,
+          availability: authenticatedProduct.availability,
+          reportedAvailability:
+            authenticatedProduct.reportedAvailability ||
+            publicProduct.reportedAvailability,
+        },
+        price,
+      );
+      await ingestCatalogItem(
+        config,
+        rawItem,
+        state.run_id,
+        categories,
+        defs,
+      );
+      processed += 1;
+      await upsertTcgFactoryDiscovery(
+        supplier.id,
+        publicProduct,
+        state.run_id,
+        { b2bPriceValidated: true },
+      );
+    } catch (error) {
+      failed += 1;
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("TcgFactory sync failed", url, message);
+    }
+  }
+
+  const cumulativeFailed = state.failed_items + failed;
+  const cumulativeDiscovered = state.discovered_items + discovered;
+  const cumulativeProcessed = state.processed_items + processed;
+  const pageDone = offset + urls.length >= parsed.productUrls.length;
+  const nextPage = pageDone ? page + 1 : page;
+  const nextOffset = pageDone ? 0 : offset + urls.length;
+  const fullDone =
+    pageDone &&
+    parsed.productUrls.length > 0 &&
+    page >= parsed.totalPages;
+
+  if (fullDone) {
+    if (cumulativeFailed > 0) {
+      const message =
+        "partial_run_not_completed: " + String(cumulativeFailed) +
+        " TcgFactory items failed validation";
+      await supabase
+        .from("catalog_supplier_crawl_state")
+        .update({
+          total_pages: parsed.totalPages,
+          discovered_items: cumulativeDiscovered,
+          processed_items: cumulativeProcessed,
+          failed_items: cumulativeFailed,
+          status: "error",
+          last_error: message,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("supplier_id", supplier.id);
+      await supabase
+        .from("catalog_suppliers")
+        .update({ last_error: message, updated_at: new Date().toISOString() })
+        .eq("id", supplier.id);
+      return {
+        status: "error",
+        page,
+        discovered,
+        processed,
+        failed,
+        cumulativeFailed,
+      };
+    }
+
+    const completed = await completeCatalogSupplierRun(config, {
+      supplierCode: TCGFACTORY_SUPPLIER_CODE,
+      runId: state.run_id,
+    });
+    await supabase
+      .from("catalog_supplier_crawl_state")
+      .update({
+        run_id: null,
+        page: 1,
+        item_offset: 0,
+        total_pages: parsed.totalPages,
+        discovered_items: cumulativeDiscovered,
+        processed_items: cumulativeProcessed,
+        failed_items: 0,
+        status: "idle",
+        last_error: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("supplier_id", supplier.id);
+    return { status: "complete", ...completed };
+  }
+
+  await supabase
+    .from("catalog_supplier_crawl_state")
+    .update({
+      page: nextPage,
+      item_offset: nextOffset,
+      total_pages: parsed.totalPages,
+      discovered_items: cumulativeDiscovered,
+      processed_items: cumulativeProcessed,
+      failed_items: cumulativeFailed,
+      status: "running",
+      last_error: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("supplier_id", supplier.id);
+  await supabase
+    .from("catalog_suppliers")
+    .update({ last_error: null, updated_at: new Date().toISOString() })
+    .eq("id", supplier.id);
+
+  return {
+    status: "running",
+    page,
+    nextPage,
+    nextOffset,
+    totalPages: parsed.totalPages,
+    discovered,
+    processed,
+    failed,
+  };
+}
+
 async function operatorAction(
   action: string,
   req: Request,
