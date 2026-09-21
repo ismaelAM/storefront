@@ -3287,11 +3287,39 @@ async function normalizeMangaGroupProductMetadata(
         });
         continue;
       }
+
       const groupName =
         rows.find((row) => typeof row.group_name === "string" && row.group_name.trim())
           ?.group_name ?? groupKey;
       const productId = productIds[0];
-      const product = await spreeRequest<SpreeProduct>(
+
+      const conflicts = await spreeList<SpreeProduct & { slug?: string }>(
+        config,
+        "/products?q[slug_eq]=" + encodeURIComponent(groupKey),
+      );
+      const released: string[] = [];
+      for (const conflict of conflicts) {
+        if (conflict.id === productId) continue;
+        const legacy =
+          conflict.status === "archived" ||
+          (conflict.tags ?? []).includes("devir-merged");
+        if (!legacy) {
+          throw new Error(
+            "slug_conflict_with_active_product:" + conflict.id,
+          );
+        }
+        const legacySlug =
+          groupKey + "-legacy-" + conflict.id.replace(/^prod_/, "").toLowerCase();
+        await spreeRequest(
+          config,
+          "PATCH",
+          "/products/" + encodeURIComponent(conflict.id),
+          { slug: legacySlug },
+        );
+        released.push(conflict.id);
+      }
+
+      const product = await spreeRequest<SpreeProduct & { slug?: string }>(
         config,
         "PATCH",
         "/products/" + encodeURIComponent(productId),
@@ -3305,7 +3333,8 @@ async function normalizeMangaGroupProductMetadata(
         ok: true,
         product_id: productId,
         name: product.name,
-        slug: product.slug,
+        slug: product.slug ?? groupKey,
+        released_legacy_products: released,
       });
     } catch (error) {
       results.push({
