@@ -9,6 +9,7 @@ import {
   type SupplierOfferCandidate,
   selectBestOffer,
 } from "../_shared/catalog-sourcing.ts";
+import { requiresMtgPreconSplitReview } from "../_shared/mtg-precon-policy.ts";
 
 type Json = Record<string, unknown>;
 
@@ -681,10 +682,7 @@ function parseProduct(html: string, url: string): DevirProduct | null {
 }
 
 function isPack(product: DevirProduct): boolean {
-  const value = (product.name + " " + product.url).toLowerCase();
-  return /\bcaja\s+(?:de\s+)?\d+\s+(?:barajas|mazos|decks)\b/.test(value) ||
-    /\bstarter\s+commander\s+decks?\b/.test(value) ||
-    /\bcommander\s+decks?\s+set\b/.test(value);
+  return requiresMtgPreconSplitReview(product);
 }
 
 function categoryKey(product: DevirProduct): string {
@@ -2252,11 +2250,12 @@ async function syncProductToSpree(
   const targetMargin = configuredMargin ?? DEFAULT_CATEGORY_MARGINS[key] ?? 0.05;
   const pricing = competitivePricing(product, key, targetMargin);
   const shipping = shippingDefaults(key, product);
+  const packRequiresSplit = isPack(product);
   const reasons: string[] = [];
   if (!category) reasons.push("category_unclassified");
   else if (configuredMargin === null) reasons.push("category_margin_unconfigured");
   if (pricing.reviewReason) reasons.push(pricing.reviewReason);
-  if (isPack(product)) reasons.push("pack_requires_operator_split");
+  if (packRequiresSplit) reasons.push("pack_requires_operator_split");
   const grouping = groupingInfo(product);
   const languageGrouping =
     grouping.itemKind === "standalone" ? languageGroupingInfo(product) : null;
@@ -2435,8 +2434,10 @@ async function syncProductToSpree(
       (existing.product.tags ?? []).includes("devir") ||
       (existing.product.tags ?? []).includes("catalog-managed");
     const active = existing.product.status === "active";
+    const forceDraftForSplit = packRequiresSplit && managed;
     const autoPrice = Number.isFinite(lastAuto) && currentPrice !== null && Math.abs(lastAuto - currentPrice) < 0.005;
-    const canWritePrice = createdVariant || (managed && !active && autoPrice);
+    const canWritePrice = createdVariant ||
+      (managed && (forceDraftForSplit || (!active && autoPrice)));
     manualPrice = currentPrice !== null && !canWritePrice;
     const tags = Array.from(new Set([
       ...(existing.product.tags ?? []).filter((tag) =>
@@ -2448,8 +2449,11 @@ async function syncProductToSpree(
     ])).filter((tag) => review || tag !== "REVISION-HUMANA");
     await spreeRequest(config, "PATCH", "/products/" + productId, {
       tags,
-      ...(!active && managed ? { name: spreeProductName } : {}),
-      ...(!active && managed && category ? { category_ids: [category.id] } : {}),
+      ...(forceDraftForSplit ? { status: "draft" } : {}),
+      ...((!active || forceDraftForSplit) && managed ? { name: spreeProductName } : {}),
+      ...((!active || forceDraftForSplit) && managed && category
+        ? { category_ids: [category.id] }
+        : {}),
     });
     await spreeRequest(
       config,
@@ -5955,6 +5959,7 @@ async function processProducts(config: ConfigRow, cycleId: string): Promise<{ do
       if (!product) throw new Error("Ficha sin SKU reconocible");
       const signature = await sha256(product.imageUrls.join("\n"));
       const grouping = groupingInfo(product);
+      const packRequiresSplit = isPack(product);
       const { synced } = await ingestCatalogItem(
         config,
         devirCatalogItem(product),
@@ -5996,7 +6001,14 @@ async function processProducts(config: ConfigRow, cycleId: string): Promise<{ do
         last_seen_cycle_id: cycleId,
         last_seen_at: now,
         last_synced_at: now,
-        last_error: null,
+        ...(packRequiresSplit
+          ? {
+              catalog_state: "review",
+              catalog_version: null,
+              catalog_prepared_at: null,
+              last_error: "REVIEW: pack_requires_operator_split",
+            }
+          : { last_error: null }),
         updated_at: now,
       }, { onConflict: "supplier_sku" });
       if (catalogError) throw catalogError;
