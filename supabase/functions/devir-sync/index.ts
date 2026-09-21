@@ -14,6 +14,19 @@ import {
   inferDevirCategoryKey,
   normalizeDevirCatalogTitle,
 } from "../_shared/devir-catalog-policy.ts";
+import {
+  requireTcgFactoryCredentials,
+  TCGFACTORY_SUPPLIER_CODE,
+} from "../_shared/tcgfactory-adapter.ts";
+import {
+  parseTcgFactoryAuthenticatedPrice,
+  parseTcgFactoryListing,
+  parseTcgFactoryPublicProduct,
+  TCGFACTORY_ACCESSORIES_URL,
+  TCGFACTORY_ACCESSORY_CATEGORY_SPECS,
+  TCGFACTORY_BASE_URL,
+  type TcgFactoryPublicProduct,
+} from "../_shared/tcgfactory-web.ts";
 
 type Json = Record<string, unknown>;
 
@@ -3115,6 +3128,9 @@ const DEFAULT_CATEGORY_MARGINS: Record<string, number> = {
   "rol/otros": 0.05,
   "manga-comic": 0.05,
   "accesorios": 0.05,
+  ...Object.fromEntries(
+    TCGFACTORY_ACCESSORY_CATEGORY_SPECS.map((spec) => [spec.key, 0.05]),
+  ),
 };
 
 const CATEGORY_REFERENCE_DISCOUNTS: Record<string, number> = {
@@ -3129,6 +3145,9 @@ const CATEGORY_REFERENCE_DISCOUNTS: Record<string, number> = {
   "rol/otros": 0.10,
   "manga-comic": 0.05,
   "accesorios": 0.15,
+  ...Object.fromEntries(
+    TCGFACTORY_ACCESSORY_CATEGORY_SPECS.map((spec) => [spec.key, 0.15]),
+  ),
 };
 
 const STANDARD_EEA_CARD_RATE = 0.015;
@@ -3273,7 +3292,13 @@ function shippingDefaults(
     }
     return { weight: 0.5, height: 20, width: 14, depth: 8, weight_unit: "kg", dimensions_unit: "cm" };
   }
-  if (key === "accesorios") {
+  if (key === "accesorios" || key.startsWith("accesorios/")) {
+    if (key === "accesorios/tapetes") {
+      return { weight: 0.65, height: 42, width: 8, depth: 8, weight_unit: "kg", dimensions_unit: "cm" };
+    }
+    if (key === "accesorios/albumes" || key === "accesorios/almacenaje") {
+      return { weight: 0.65, height: 32, width: 25, depth: 8, weight_unit: "kg", dimensions_unit: "cm" };
+    }
     return { weight: 0.3, height: 22, width: 16, depth: 6, weight_unit: "kg", dimensions_unit: "cm" };
   }
   if (key === "rol/warhammer") {
@@ -3397,6 +3422,11 @@ async function setupCatalogCategoriesAndMargins(config: ConfigRow): Promise<Arra
     { key: "tcg/yugioh", name: "Yugioh", slug: "yugioh", parent: tcg, position: 1 },
     { key: "manga-comic", name: "Manga y cómic", slug: "manga-comic", parent: null, position: 0 },
     { key: "accesorios", name: "Accesorios", slug: "accesorios", parent: null, position: 0 },
+    ...TCGFACTORY_ACCESSORY_CATEGORY_SPECS.map((spec, position) => ({
+      ...spec,
+      parent: accesorios,
+      position,
+    })),
   ];
 
   for (const spec of specs) {
