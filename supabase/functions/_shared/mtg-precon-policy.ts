@@ -1,5 +1,6 @@
 export interface MtgPreconReviewCandidate {
   name: string;
+  sku?: string | null;
   url?: string | null;
   purchasePrice?: number | null;
 }
@@ -62,8 +63,7 @@ export function requiresManualPackSplitReview(
   const value = normalize(`${candidate.name} ${candidate.url ?? ""}`);
 
   const boardgamePresentationSku =
-    /^prbg/i.test(candidate.name.trim()) ||
-    /\bprbg[a-z0-9-]*\b/i.test(candidate.url ?? "");
+    /^prbg/i.test(candidate.sku?.trim() ?? "");
 
   const promotionalPresentation =
     /\bpresentacion\b/.test(value) &&
