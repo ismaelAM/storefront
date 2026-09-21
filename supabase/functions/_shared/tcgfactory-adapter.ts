@@ -36,6 +36,7 @@ export interface TcgFactoryFeedRecord {
   shippingCostNet?: number | string;
   normalizedCost?: number | string;
   taxRate?: number | string | null;
+  referencePriceNet?: number | string | null;
   currency?: string;
   availability: string;
   stockQuantity?: number | string | null;
@@ -125,6 +126,7 @@ export function mapTcgFactoryAvailability(
   }
   if (
     [
+      "en-reposicion",
       "agotado",
       "sin-stock",
       "no-disponible",
@@ -207,6 +209,8 @@ export function tcgFactoryRecordToCatalogItem(
     currency: input.currency?.trim().toUpperCase() || "EUR",
     taxIncluded,
     taxRate: taxRate ?? null,
+    referencePriceNet:
+      optionalNumber(input.referencePriceNet, "referencePriceNet") ?? null,
     availability,
     stockQuantity: stockQuantity ?? null,
     releaseDate: input.releaseDate?.trim() || null,
