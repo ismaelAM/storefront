@@ -5403,13 +5403,29 @@ interface TcgFactoryCrawlState {
 
 const TCGFACTORY_USER_AGENT = "BisonTCG supplier sync/1.0";
 
-function tcgFactoryCredentialsConfigured(): boolean {
-  try {
-    requireTcgFactoryCredentials((name) => Deno.env.get(name));
-    return true;
-  } catch {
-    return false;
+interface TcgFactoryCredentials {
+  email: string;
+  password: string;
+}
+
+async function tcgFactoryCredentials(): Promise<TcgFactoryCredentials | null> {
+  const { data, error } = await supabase.rpc("tcgfactory_sync_get_credentials");
+  if (!error && data && typeof data === "object") {
+    const value = data as Record<string, unknown>;
+    const email = typeof value.email === "string" ? value.email.trim() : "";
+    const password = typeof value.password === "string" ? value.password : "";
+    if (email && password) return { email, password };
   }
+
+  try {
+    return requireTcgFactoryCredentials((name) => Deno.env.get(name));
+  } catch {
+    return null;
+  }
+}
+
+async function tcgFactoryCredentialsConfigured(): Promise<boolean> {
+  return Boolean(await tcgFactoryCredentials());
 }
 
 function htmlAttribute(tag: string, name: string): string | null {
@@ -5482,8 +5498,13 @@ async function tcgFactoryTextFetch(
   return { html, finalUrl: response.url, session: nextSession };
 }
 
-async function tcgFactoryLogin(): Promise<TcgFactorySessionState> {
-  const credentials = requireTcgFactoryCredentials((name) => Deno.env.get(name));
+async function tcgFactoryLogin(
+  credentialsOverride?: TcgFactoryCredentials,
+): Promise<TcgFactorySessionState> {
+  const credentials = credentialsOverride ?? await tcgFactoryCredentials();
+  if (!credentials) {
+    throw new Error("TCGFACTORY_B2B_CREDENTIALS_MISSING");
+  }
   const loginUrl = TCGFACTORY_BASE_URL + "/es/iniciar-sesion?back=my-account";
   const login = await tcgFactoryTextFetch(loginUrl);
   const formTag =
@@ -5720,7 +5741,7 @@ async function tcgFactoryStatus(): Promise<Record<string, unknown>> {
       nextSyncAt: supplier.next_sync_at ?? null,
       lastError: supplier.last_error ?? null,
     },
-    credentialsConfigured: tcgFactoryCredentialsConfigured(),
+    credentialsConfigured: await tcgFactoryCredentialsConfigured(),
     discoveryCount: discoveryCount ?? 0,
     offerCount: offerCount ?? 0,
     crawl: state ?? null,
@@ -5742,7 +5763,7 @@ async function tcgFactoryTick(
   if (stateError) throw stateError;
   let state = currentState as TcgFactoryCrawlState | null;
   const running = state?.status === "running";
-  const credentialsAvailable = tcgFactoryCredentialsConfigured();
+  const credentialsAvailable = await tcgFactoryCredentialsConfigured();
   const credentialsError =
     "credentials_missing: TCGFACTORY_B2B_EMAIL/TCGFACTORY_B2B_PASSWORD";
 
@@ -6297,6 +6318,63 @@ async function operatorAction(
       total: count ?? 0,
       offset,
       limit,
+    });
+  }
+
+  if (action === "tcgfactory-credentials") {
+    const email = typeof body.email === "string" ? body.email.trim() : "";
+    const password = typeof body.password === "string" ? body.password : "";
+    if (!email || !password) {
+      return json({ ok: false, error: "credentials_required" }, 400);
+    }
+
+    await tcgFactoryLogin({ email, password });
+
+    const { error: credentialError } = await supabase.rpc(
+      "tcgfactory_sync_set_credentials",
+      { p_email: email, p_password: password },
+    );
+    if (credentialError) throw credentialError;
+
+    const supplier = await tcgFactorySupplierRow();
+    const now = new Date().toISOString();
+    const { error: crawlError } = await supabase
+      .from("catalog_supplier_crawl_state")
+      .upsert(
+        {
+          supplier_id: supplier.id,
+          run_id: null,
+          page: 1,
+          item_offset: 0,
+          total_pages: null,
+          discovered_items: 0,
+          processed_items: 0,
+          failed_items: 0,
+          status: "idle",
+          last_error: null,
+          started_at: null,
+          updated_at: now,
+        },
+        { onConflict: "supplier_id" },
+      );
+    if (crawlError) throw crawlError;
+
+    const { error: supplierError } = await supabase
+      .from("catalog_suppliers")
+      .update({
+        enabled: true,
+        last_error: null,
+        next_sync_at: now,
+        updated_at: now,
+      })
+      .eq("id", supplier.id);
+    if (supplierError) throw supplierError;
+
+    return json({
+      ok: true,
+      stored: true,
+      validated: true,
+      supplier: TCGFACTORY_SUPPLIER_CODE,
     });
   }
 
