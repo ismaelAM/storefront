@@ -65,6 +65,9 @@ export function requiresManualPackSplitReview(
   const boardgamePresentationSku =
     /^prbg/i.test(candidate.sku?.trim() ?? "");
 
+  const namedBoardgamePresentation =
+    /^\s*presentacion\s*:/.test(value);
+
   const promotionalPresentation =
     /\bpresentacion\b/.test(value) &&
     /\b\d+\s*\+\s*\d+\b/.test(value);
@@ -92,6 +95,7 @@ export function requiresManualPackSplitReview(
     /\bdisplay\b/.test(value);
 
   return boardgamePresentationSku ||
+    namedBoardgamePresentation ||
     promotionalPresentation ||
     supplierUnitPack ||
     explicitRetailCarton ||
