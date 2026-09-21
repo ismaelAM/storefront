@@ -52,6 +52,7 @@ jobs:
             puck-product-controls
             stripe_checkout
             tcgfactory-live-sync
+            tcgfactory-public-discovery
             temp-z
             unify-shipping
             cleanup-residual-branches
