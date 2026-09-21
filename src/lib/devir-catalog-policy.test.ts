@@ -87,7 +87,7 @@ describe("Devir retail-unit normalization", () => {
         referencePriceNet: 0,
       }),
     ).toMatchObject({
-      purchasePrice: 24,
+      purchasePrice: 96,
       referencePriceNet: null,
     });
   });
