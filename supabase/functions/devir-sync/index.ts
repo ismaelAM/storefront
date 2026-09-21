@@ -5742,6 +5742,9 @@ async function tcgFactoryTick(
   if (stateError) throw stateError;
   let state = currentState as TcgFactoryCrawlState | null;
   const running = state?.status === "running";
+  const credentialsAvailable = tcgFactoryCredentialsConfigured();
+  const credentialsError =
+    "credentials_missing: TCGFACTORY_B2B_EMAIL/TCGFACTORY_B2B_PASSWORD";
 
   if (
     !force &&
@@ -5752,19 +5755,31 @@ async function tcgFactoryTick(
     return { skipped: "not_due", nextSyncAt: supplier.next_sync_at };
   }
 
-  if (!tcgFactoryCredentialsConfigured()) {
-    const next = new Date(
-      Date.now() + (supplier.sync_interval_hours ?? 6) * 60 * 60 * 1000,
-    ).toISOString();
-    await supabase
-      .from("catalog_suppliers")
+  if (
+    credentialsAvailable &&
+    state?.status === "running" &&
+    state.processed_items === 0 &&
+    supplier.last_error?.startsWith("credentials_missing") &&
+    (state.page > 1 || state.item_offset > 0)
+  ) {
+    const { data: restarted, error } = await supabase
+      .from("catalog_supplier_crawl_state")
       .update({
-        last_error: "credentials_missing: TCGFACTORY_B2B_EMAIL/TCGFACTORY_B2B_PASSWORD",
-        next_sync_at: next,
+        page: 1,
+        item_offset: 0,
+        total_pages: null,
+        discovered_items: 0,
+        processed_items: 0,
+        failed_items: 0,
+        last_error: null,
+        started_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
-      .eq("id", supplier.id);
-    return { skipped: "credentials_missing", nextSyncAt: next };
+      .eq("supplier_id", supplier.id)
+      .select("*")
+      .single();
+    if (error) throw error;
+    state = restarted as TcgFactoryCrawlState;
   }
 
   if (!state || state.status !== "running") {
@@ -5797,16 +5812,16 @@ async function tcgFactoryTick(
     await setupCatalogCategoriesAndMargins(config);
   }
 
-  const session = await tcgFactoryLogin();
+  const session = credentialsAvailable ? await tcgFactoryLogin() : null;
   const page = state.page;
   const offset = state.item_offset;
   const pageUrl =
     TCGFACTORY_ACCESSORIES_URL + (page > 1 ? "?page=" + page : "");
-  const listing = await tcgFactoryTextFetch(pageUrl, session);
+  const listing = await tcgFactoryTextFetch(pageUrl);
   const parsed = parseTcgFactoryListing(listing.html, pageUrl);
   const urls = parsed.productUrls.slice(offset, offset + 6);
-  const categories = await spreeCategories(config);
-  const defs = await definitions(config);
+  const categories = credentialsAvailable ? await spreeCategories(config) : [];
+  const defs = credentialsAvailable ? await definitions(config) : new Map<string, SpreeFieldDefinition>();
   let discovered = 0;
   let processed = 0;
   let failed = 0;
@@ -5822,6 +5837,7 @@ async function tcgFactoryTick(
       );
       discovered += 1;
 
+      if (!credentialsAvailable) continue;
       if (
         publicProduct.availability !== "available" &&
         publicProduct.availability !== "preorder"
@@ -5829,7 +5845,10 @@ async function tcgFactoryTick(
         continue;
       }
 
-      const authenticatedDetail = await tcgFactoryTextFetch(url, session);
+      const authenticatedDetail = await tcgFactoryTextFetch(
+        url,
+        session ?? undefined,
+      );
       const authenticatedProduct = parseTcgFactoryPublicProduct(
         authenticatedDetail.html,
         url,
@@ -5911,6 +5930,42 @@ async function tcgFactoryTick(
       };
     }
 
+    if (!credentialsAvailable) {
+      const nextSyncAt = new Date(
+        Date.now() + (supplier.sync_interval_hours ?? 6) * 60 * 60 * 1000,
+      ).toISOString();
+      await supabase
+        .from("catalog_supplier_crawl_state")
+        .update({
+          run_id: null,
+          page: 1,
+          item_offset: 0,
+          total_pages: parsed.totalPages,
+          discovered_items: cumulativeDiscovered,
+          processed_items: 0,
+          failed_items: 0,
+          status: "idle",
+          last_error: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("supplier_id", supplier.id);
+      await supabase
+        .from("catalog_suppliers")
+        .update({
+          last_error: credentialsError,
+          next_sync_at: nextSyncAt,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", supplier.id);
+      return {
+        status: "discovery_complete",
+        credentialsConfigured: false,
+        discovered: cumulativeDiscovered,
+        totalPages: parsed.totalPages,
+        nextSyncAt,
+      };
+    }
+
     const completed = await completeCatalogSupplierRun(config, {
       supplierCode: TCGFACTORY_SUPPLIER_CODE,
       runId: state.run_id,
@@ -5930,7 +5985,11 @@ async function tcgFactoryTick(
         updated_at: new Date().toISOString(),
       })
       .eq("supplier_id", supplier.id);
-    return { status: "complete", ...completed };
+    return {
+      status: "complete",
+      credentialsConfigured: true,
+      ...completed,
+    };
   }
 
   await supabase
@@ -5949,11 +6008,15 @@ async function tcgFactoryTick(
     .eq("supplier_id", supplier.id);
   await supabase
     .from("catalog_suppliers")
-    .update({ last_error: null, updated_at: new Date().toISOString() })
+    .update({
+      last_error: credentialsAvailable ? null : credentialsError,
+      updated_at: new Date().toISOString(),
+    })
     .eq("id", supplier.id);
 
   return {
     status: "running",
+    credentialsConfigured: credentialsAvailable,
     page,
     nextPage,
     nextOffset,
