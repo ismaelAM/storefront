@@ -5361,6 +5361,79 @@ async function ingestCatalogItemsAction(
   return { processed: items.length - failed, failed, results };
 }
 
+async function reconcileCatalogSupplierBatch(
+  config: ConfigRow,
+  body: Record<string, unknown>,
+): Promise<{
+  supplierCode: string;
+  processed: number;
+  failed: number;
+  total: number;
+  offset: number;
+  nextOffset: number | null;
+  results: Array<Record<string, unknown>>;
+}> {
+  const supplierCode = normalizeSupplierCode(String(body.supplierCode ?? ""));
+  await configuredCatalogSupplier(supplierCode);
+  const limit = Math.min(100, Math.max(1, Number(body.limit ?? 50) || 50));
+  const offset = Math.max(0, Number(body.offset ?? 0) || 0);
+
+  const { data, error, count } = await supabase
+    .from("catalog_selected_supply")
+    .select("variant_id", { count: "exact" })
+    .eq("supplier_code", supplierCode)
+    .order("variant_id")
+    .range(offset, offset + limit - 1);
+  if (error) throw error;
+
+  const rows = data ?? [];
+  const categories = await spreeCategories(config);
+  const defs = await definitions(config);
+  const results: Array<Record<string, unknown>> = [];
+  let failed = 0;
+
+  for (const row of rows) {
+    const variantId = String(row.variant_id ?? "");
+    if (!variantId) continue;
+    try {
+      const synced = await reconcileCatalogVariant(
+        config,
+        await loadCatalogVariant(variantId),
+        categories,
+        defs,
+      );
+      results.push({
+        ok: true,
+        variantId,
+        productId: synced.productId,
+        spreeVariantId: synced.variantId,
+        review: synced.review,
+        lastAutoPrice: synced.lastAutoPrice,
+        selectedSupplier: synced.selectedSupplierCode,
+      });
+    } catch (error) {
+      failed += 1;
+      results.push({
+        ok: false,
+        variantId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  const total = count ?? 0;
+  const nextOffset = offset + rows.length < total ? offset + rows.length : null;
+  return {
+    supplierCode,
+    processed: rows.length - failed,
+    failed,
+    total,
+    offset,
+    nextOffset,
+    results,
+  };
+}
+
 async function completeCatalogSupplierRun(
   config: ConfigRow,
   body: Record<string, unknown>,
@@ -6312,6 +6385,13 @@ async function operatorAction(
 
   if (action === "catalog-ingest") {
     return json({ ok: true, ...(await ingestCatalogItemsAction(config, body)) });
+  }
+
+  if (action === "catalog-reconcile-supplier") {
+    return json({
+      ok: true,
+      ...(await reconcileCatalogSupplierBatch(config, body)),
+    });
   }
 
   if (action === "catalog-complete-run") {
