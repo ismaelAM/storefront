@@ -83,3 +83,24 @@ describe("generic supplier pack split policy", () => {
     })).toBe(false);
   });
 });
+
+
+describe("additional distributor display safeguards", () => {
+  it("holds explicit multi-deck cartons", () => {
+    expect(requiresManualPackSplitReview({
+      name: "MG TORTUGAS NINJA CAJA DE BARAJAS (4 un. inglés)",
+      purchasePrice: 176,
+    })).toBe(true);
+  });
+
+  it("holds known Hero Realms and Star Realms expansion displays", () => {
+    expect(requiresManualPackSplitReview({
+      name: "Hero Realms: Odiseas Display",
+      purchasePrice: 61.98,
+    })).toBe(true);
+    expect(requiresManualPackSplitReview({
+      name: "Star Realms: Alerta Máxima (display)",
+      purchasePrice: 74.38,
+    })).toBe(true);
+  });
+});
