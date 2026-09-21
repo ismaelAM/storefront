@@ -6629,6 +6629,75 @@ async function operatorAction(
     });
   }
 
+  if (action === "catalog-reconcile-supplier") {
+    const supplierCode = normalizeSupplierCode(
+      typeof body.supplierCode === "string" ? body.supplierCode : "",
+    );
+    if (!supplierCode) {
+      return json({ error: "supplierCode_required" }, 400);
+    }
+    const offset = Math.max(0, Number(body.offset ?? 0) || 0);
+    const limit = Math.min(100, Math.max(1, Number(body.limit ?? 50) || 50));
+    const { data, error, count } = await supabase
+      .from("catalog_selected_supply")
+      .select("variant_id,supplier_code", { count: "exact" })
+      .eq("supplier_code", supplierCode)
+      .order("variant_id")
+      .range(offset, offset + limit - 1);
+    if (error) throw error;
+
+    const categories = await spreeCategories(config);
+    const defs = await definitions(config);
+    const variantIds = Array.from(
+      new Set((data ?? []).map((row) => String(row.variant_id)).filter(Boolean)),
+    );
+    const results: Array<{
+      variant_id: string;
+      ok: boolean;
+      product_id?: string | null;
+      spree_variant_id?: string | null;
+      price?: number | null;
+      review?: boolean;
+      error?: string;
+    }> = [];
+
+    for (const variantId of variantIds) {
+      try {
+        const synced = await reconcileCatalogVariant(
+          config,
+          await loadCatalogVariant(variantId),
+          categories,
+          defs,
+        );
+        results.push({
+          variant_id: variantId,
+          ok: true,
+          product_id: synced.productId,
+          spree_variant_id: synced.variantId,
+          price: synced.lastAutoPrice,
+          review: synced.review,
+        });
+      } catch (error) {
+        results.push({
+          variant_id: variantId,
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    return json({
+      ok: results.every((result) => result.ok),
+      supplierCode,
+      offset,
+      limit,
+      total: count ?? 0,
+      reconciled: results.filter((result) => result.ok).length,
+      failed: results.filter((result) => !result.ok).length,
+      results,
+    });
+  }
+
   if (action === "catalog-sourcing-status") {
     const limit = Math.min(200, Math.max(1, Number(body.limit ?? 50) || 50));
     const offset = Math.max(0, Number(body.offset ?? 0) || 0);
