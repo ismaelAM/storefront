@@ -2801,21 +2801,35 @@ async function repointCanonicalCatalogSku(
   supplierSku: string,
   spreeProductId: string,
   spreeVariantId: string,
-): Promise<void> {
+  targetCatalogProductId: string | null,
+  categoryKeyValue: string,
+  productName: string,
+): Promise<string | null> {
   const { data: supplier, error: supplierError } = await supabase
     .from("catalog_suppliers")
     .select("id")
     .eq("code", supplierCode)
     .maybeSingle();
-  if (supplierError) throw supplierError;
-  if (!supplier?.id) return;
+  if (supplierError) throw new Error("catalog supplier lookup: " + supplierError.message);
+  if (!supplier?.id) return targetCatalogProductId;
+
+  let targetProductId = targetCatalogProductId;
+  if (!targetProductId) {
+    const { data: mappedProduct, error: mappedError } = await supabase
+      .from("catalog_products")
+      .select("id")
+      .eq("spree_product_id", spreeProductId)
+      .maybeSingle();
+    if (mappedError) throw new Error("catalog grouped product lookup: " + mappedError.message);
+    targetProductId = mappedProduct?.id ?? null;
+  }
 
   const { data: offers, error: offersError } = await supabase
     .from("catalog_supplier_offers")
     .select("variant_id")
     .eq("supplier_id", supplier.id)
     .eq("supplier_sku", supplierSku);
-  if (offersError) throw offersError;
+  if (offersError) throw new Error("catalog offer lookup: " + offersError.message);
 
   const canonicalVariantIds = Array.from(
     new Set((offers ?? []).map((offer) => offer.variant_id).filter(Boolean)),
@@ -2828,25 +2842,56 @@ async function repointCanonicalCatalogSku(
       .select("id,product_id")
       .eq("id", canonicalVariantId)
       .maybeSingle();
-    if (variantLookupError) throw variantLookupError;
+    if (variantLookupError) {
+      throw new Error("catalog variant lookup: " + variantLookupError.message);
+    }
     if (!canonicalVariant?.id || !canonicalVariant.product_id) continue;
+
+    if (!targetProductId) {
+      targetProductId = canonicalVariant.product_id;
+      const { error: firstProductError } = await supabase
+        .from("catalog_products")
+        .update({
+          name: productName,
+          category_key: categoryKeyValue,
+          spree_product_id: spreeProductId,
+          updated_at: now,
+        })
+        .eq("id", targetProductId);
+      if (firstProductError) {
+        throw new Error("catalog group product seed: " + firstProductError.message);
+      }
+    }
 
     const { error: variantUpdateError } = await supabase
       .from("catalog_variants")
-      .update({ spree_variant_id: spreeVariantId, updated_at: now })
+      .update({
+        product_id: targetProductId,
+        spree_variant_id: spreeVariantId,
+        updated_at: now,
+      })
       .eq("id", canonicalVariant.id);
-    if (variantUpdateError) throw variantUpdateError;
+    if (variantUpdateError) {
+      throw new Error("catalog group variant update: " + variantUpdateError.message);
+    }
+  }
 
+  if (targetProductId) {
     const { error: productUpdateError } = await supabase
       .from("catalog_products")
       .update({
+        name: productName,
+        category_key: categoryKeyValue,
         spree_product_id: spreeProductId,
-        category_key: "manga-comic",
         updated_at: now,
       })
-      .eq("id", canonicalVariant.product_id);
-    if (productUpdateError) throw productUpdateError;
+      .eq("id", targetProductId);
+    if (productUpdateError) {
+      throw new Error("catalog group product update: " + productUpdateError.message);
+    }
   }
+
+  return targetProductId;
 }
 
 async function rebuildMangaGroup(
@@ -2991,6 +3036,7 @@ async function rebuildMangaGroup(
   const oldProductIds = Array.from(
     new Set(rows.map((row) => row.spree_product_id).filter(Boolean)),
   ) as string[];
+  let canonicalGroupProductId: string | null = null;
 
   for (const row of rows) {
     const variant = createdBySku.get(row.supplier_sku)!;
@@ -3012,11 +3058,14 @@ async function rebuildMangaGroup(
       })
       .eq("supplier_sku", row.supplier_sku);
     if (updateError) throw updateError;
-    await repointCanonicalCatalogSku(
+    canonicalGroupProductId = await repointCanonicalCatalogSku(
       "devir",
       row.supplier_sku,
       created.id,
       variant.id,
+      canonicalGroupProductId,
+      "manga-comic",
+      groupName,
     );
   }
 
@@ -3097,6 +3146,7 @@ async function repairExistingMangaGroup(
       .map((variant) => [variant.sku!.trim(), variant]),
   );
   const standardEditionCounts = new Map<number, number>();
+  let canonicalGroupProductId: string | null = null;
 
   for (const row of rows) {
     const position = Number(row.variant_position ?? 0);
@@ -3147,11 +3197,14 @@ async function repairExistingMangaGroup(
       .eq("supplier_sku", row.supplier_sku);
     if (updateError) throw updateError;
 
-    await repointCanonicalCatalogSku(
+    canonicalGroupProductId = await repointCanonicalCatalogSku(
       "devir",
       row.supplier_sku,
       existing.id,
       variant.id,
+      canonicalGroupProductId,
+      "manga-comic",
+      groupName,
     );
   }
 
@@ -3339,6 +3392,7 @@ async function migrateLanguageGroup(
   const oldProductIds = Array.from(
     new Set(rows.map((row) => row.spree_product_id).filter(Boolean)),
   ) as string[];
+  let canonicalGroupProductId: string | null = null;
 
   for (const row of rows) {
     const variant = createdBySku.get(row.supplier_sku)!;
@@ -3359,11 +3413,14 @@ async function migrateLanguageGroup(
       })
       .eq("supplier_sku", row.supplier_sku);
     if (updateError) throw updateError;
-    await repointCanonicalCatalogSku(
+    canonicalGroupProductId = await repointCanonicalCatalogSku(
       "devir",
       row.supplier_sku,
       created.id,
       variant.id,
+      canonicalGroupProductId,
+      categoryKeyValue,
+      baseName,
     );
   }
 
