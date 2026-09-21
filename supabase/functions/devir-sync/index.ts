@@ -840,7 +840,10 @@ function parseProduct(html: string, url: string): DevirProduct | null {
     url,
     purchasePrice: retailUnit.purchasePrice,
     referencePriceNet: retailUnit.referencePriceNet,
-    retailUnitNormalized: retailUnit.unitsPerSupplierPack > 1,
+    // Supplier Scene Box / Theme Deck packs must stay intact and in manual
+    // review; pack-size metadata is informational, not a signal that the cost
+    // was divided into retail units.
+    retailUnitNormalized: false,
     supplierPackUnits: retailUnit.unitsPerSupplierPack,
     availability: stock.availability,
     availabilityLabel: stock.label,
@@ -5949,6 +5952,10 @@ async function repairRetailUnitProducts(
       continue;
     }
     const original = catalogRowProduct(row);
+    if (requiresManualPackSplitReview(original)) {
+      skipped += 1;
+      continue;
+    }
     const retail = normalizeDevirRetailUnit(original);
     if (retail.unitsPerSupplierPack === 1) {
       skipped += 1;

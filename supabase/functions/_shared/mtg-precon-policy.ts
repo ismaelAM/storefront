@@ -94,6 +94,14 @@ export function requiresManualPackSplitReview(
     /\b(?:hero realms|star realms)\b/.test(value) &&
     /\bdisplay\b/.test(value);
 
+  // Scene Boxes and Theme Decks arrive from Devir as supplier packs
+  // (currently cartons of 4 and displays of 8 respectively). Do not infer
+  // individual retail units: keep the supplier pack hidden until an operator
+  // explicitly decides how it should be split/listed.
+  const devirSceneOrThemePack =
+    /\bscene\s+box\b/.test(value) ||
+    /\btheme\s+decks?\b/.test(value);
+
   return boardgamePresentationSku ||
     namedBoardgamePresentation ||
     promotionalPresentation ||
@@ -101,5 +109,6 @@ export function requiresManualPackSplitReview(
     explicitRetailCarton ||
     explicitDeckCarton ||
     knownExpansionDisplay ||
+    devirSceneOrThemePack ||
     requiresMtgPreconSplitReview(candidate);
 }

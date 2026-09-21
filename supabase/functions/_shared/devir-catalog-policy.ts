@@ -26,9 +26,10 @@ export function isCatalanCatalogProduct(candidate: {
 }
 
 /**
- * Devir supplies Scene Boxes by cartons of 4 and Theme Decks by displays of 8,
- * while the shop sells one consumer unit. Convert the supplier carton cost and
- * title before the item reaches canonical matching, pricing or publication.
+ * Devir supplies Scene Boxes by cartons of 4 and Theme Decks by displays of 8.
+ * These are operator-reviewed supplier packs: preserve the full supplier-pack
+ * cost, normalize only the presentation title, and expose the pack size so the
+ * catalog policy can keep them hidden until an operator decides how to list them.
  */
 export function normalizeDevirRetailUnit(
   candidate: DevirRetailUnitCandidate,
@@ -40,9 +41,9 @@ export function normalizeDevirRetailUnit(
     return { ...candidate, unitsPerSupplierPack };
   }
 
-  const divide = (value: number | null) =>
+  const keepValidPrice = (value: number | null) =>
     value !== null && Number.isFinite(value) && value > 0
-      ? Math.round((value / unitsPerSupplierPack) * 10000) / 10000
+      ? Math.round(value * 10000) / 10000
       : null;
   const name = candidate.name
     .replace(/^\s*\*MG\b/i, "MTG")
@@ -54,8 +55,8 @@ export function normalizeDevirRetailUnit(
 
   return {
     name,
-    purchasePrice: divide(candidate.purchasePrice),
-    referencePriceNet: divide(candidate.referencePriceNet),
+    purchasePrice: keepValidPrice(candidate.purchasePrice),
+    referencePriceNet: keepValidPrice(candidate.referencePriceNet),
     unitsPerSupplierPack,
   };
 }
