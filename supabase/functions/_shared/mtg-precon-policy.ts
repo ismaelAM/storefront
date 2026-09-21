@@ -75,8 +75,22 @@ export function requiresManualPackSplitReview(
       value,
     );
 
+  const explicitDeckCarton =
+    /\b(?:caja|carton|expositor)\s+de\s+(?:barajas|mazos|decks?|juegos?)\b.*\(\s*\d+\s*(?:u\.?|uds?\.?|unidades?)\b/.test(
+      value,
+    );
+
+  // These families are distributed as displays containing multiple retail
+  // expansion packs, not as one consumer product. Keep them in review even
+  // when Devir omits the unit count from the B2B title.
+  const knownExpansionDisplay =
+    /\b(?:hero realms|star realms)\b/.test(value) &&
+    /\bdisplay\b/.test(value);
+
   return promotionalPresentation ||
     supplierUnitPack ||
     explicitRetailCarton ||
+    explicitDeckCarton ||
+    knownExpansionDisplay ||
     requiresMtgPreconSplitReview(candidate);
 }
