@@ -2936,6 +2936,7 @@ async function rebuildMangaGroup(
 
   const created = await spreeRequest<SpreeProduct>(config, "POST", "/products", {
     name: groupName,
+    slug: groupKey,
     status: "draft",
     category_ids: [category.id],
     tags: ["devir", "devir-group", "devir-group-" + groupKey],
@@ -3216,6 +3217,8 @@ async function repairExistingMangaGroup(
     "PATCH",
     "/products/" + encodeURIComponent(existing.id),
     {
+      name: groupName,
+      slug: groupKey,
       status: anySellable ? "active" : "draft",
       category_ids: [category.id],
       tags: [
