@@ -65,6 +65,10 @@ describe("generic supplier pack split policy", () => {
       name: "Oferta comercial juego de mesa",
       purchasePrice: 80,
     })).toBe(true);
+    expect(requiresManualPackSplitReview({
+      name: "Presentación: Nuevo juego de mesa",
+      purchasePrice: 80,
+    })).toBe(true);
   });
 
   it("holds explicit multi-unit supplier packs", () => {
