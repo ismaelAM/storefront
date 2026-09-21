@@ -4,7 +4,7 @@ import type { CategoryListParams, ProductListParams } from "@spree/sdk";
 import { cacheLife, cacheTag } from "next/cache";
 import { getAccessToken, getClient, getLocaleOptions } from "@/lib/spree";
 
-const CATEGORY_PRODUCTS_CACHE_VERSION = "2026-09-21-pack-safety-v3";
+const CATEGORY_PRODUCTS_CACHE_VERSION = "2026-09-21-catalog-404-v4";
 
 async function cachedListCategories(
   params: CategoryListParams | undefined,
