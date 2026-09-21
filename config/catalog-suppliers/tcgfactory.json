@@ -1,0 +1,18 @@
+{
+  "code": "tcgfactory",
+  "name": "TcgFactory",
+  "adapterKey": "tcgfactory_b2b_bridge_v1",
+  "enabled": false,
+  "priority": 100,
+  "defaultCurrency": "EUR",
+  "staleAfterHours": 18,
+  "syncIntervalHours": 6,
+  "config": {
+    "feedContract": "tcgfactory_b2b_bridge_v1",
+    "documentation": "TCGFACTORY_SYNC.md",
+    "secretNames": {
+      "email": "TCGFACTORY_B2B_EMAIL",
+      "password": "TCGFACTORY_B2B_PASSWORD"
+    }
+  }
+}

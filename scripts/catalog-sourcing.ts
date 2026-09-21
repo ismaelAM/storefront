@@ -1,4 +1,9 @@
 import { readFile } from "node:fs/promises";
+import {
+  normalizeTcgFactoryRecord,
+  TCGFACTORY_SUPPLIER_CODE,
+  tcgFactoryRecordToCatalogItem,
+} from "../supabase/functions/_shared/tcgfactory-adapter";
 import { loadLocalEnv } from "./load-local-env";
 
 loadLocalEnv();
@@ -67,6 +72,21 @@ async function jsonFile(path: string): Promise<unknown> {
   return JSON.parse(await readFile(path, "utf8")) as unknown;
 }
 
+function documentItems(document: unknown): unknown[] {
+  let items: unknown[] | null = null;
+  if (Array.isArray(document)) {
+    items = document;
+  } else if (document && typeof document === "object") {
+    const candidate = (document as Record<string, unknown>).items;
+    if (Array.isArray(candidate)) items = candidate;
+  }
+  if (!items) {
+    throw new Error("El fichero debe ser un array o un objeto con items[]");
+  }
+  if (items.length === 0) throw new Error("El fichero no contiene artículos");
+  return items;
+}
+
 async function register(path: string): Promise<void> {
   const supplier = await jsonFile(path);
   if (!supplier || typeof supplier !== "object" || Array.isArray(supplier)) {
@@ -84,23 +104,90 @@ async function ingest(
   runId?: string,
 ): Promise<void> {
   if (!supplierCode) throw new Error("Falta supplier-code");
-  const document = await jsonFile(path);
-  const items = Array.isArray(document)
-    ? document
-    : document &&
-        typeof document === "object" &&
-        Array.isArray((document as Record<string, unknown>).items)
-      ? (document as Record<string, unknown>).items
-      : null;
-  if (!items)
-    throw new Error("El fichero debe ser un array o un objeto con items[]");
-  const result = await callWorker("catalog-ingest", {
-    supplierCode,
-    items,
-    ...(runId ? { runId } : {}),
+  const items = documentItems(await jsonFile(path));
+  await ingestItems(supplierCode, items, runId);
+}
+
+async function ingestItems(
+  supplierCode: string,
+  items: unknown[],
+  runId?: string,
+): Promise<void> {
+  if (items.length > 100 && !runId) {
+    throw new Error(
+      "Los ficheros de más de 100 artículos requieren RUN_ID para compartir el mismo crawl",
+    );
+  }
+  let processed = 0;
+  let failed = 0;
+  const results: unknown[] = [];
+  const runIds = new Set<string>();
+
+  for (let index = 0; index < items.length; index += 100) {
+    const result = await callWorker("catalog-ingest", {
+      supplierCode,
+      items: items.slice(index, index + 100),
+      ...(runId ? { runId } : {}),
+    });
+    processed += Number(result.processed ?? 0);
+    failed += Number(result.failed ?? 0);
+    if (Array.isArray(result.results)) results.push(...result.results);
+    if (typeof result.runId === "string") runIds.add(result.runId);
+  }
+
+  console.log(
+    JSON.stringify(
+      {
+        supplierCode,
+        total: items.length,
+        processed,
+        failed,
+        runIds: [...runIds],
+        results,
+      },
+      null,
+      2,
+    ),
+  );
+  if (failed > 0) process.exitCode = 1;
+}
+
+function mapTcgFactoryDocument(document: unknown) {
+  return documentItems(document).map((item, index) => {
+    try {
+      return tcgFactoryRecordToCatalogItem(item);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`TcgFactory registro ${index + 1}: ${message}`);
+    }
   });
-  console.log(JSON.stringify(result, null, 2));
-  if (Number(result.failed ?? 0) > 0) process.exitCode = 1;
+}
+
+async function validateTcgFactory(path: string): Promise<void> {
+  const items = documentItems(await jsonFile(path));
+  for (const [index, item] of items.entries()) {
+    try {
+      normalizeTcgFactoryRecord(item);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`TcgFactory registro ${index + 1}: ${message}`);
+    }
+  }
+  console.log(
+    JSON.stringify(
+      { ok: true, supplierCode: TCGFACTORY_SUPPLIER_CODE, items: items.length },
+      null,
+      2,
+    ),
+  );
+}
+
+async function ingestTcgFactory(path: string, runId: string): Promise<void> {
+  if (!runId) {
+    throw new Error("ingest-tcgfactory requiere FILE y RUN_ID");
+  }
+  const items = mapTcgFactoryDocument(await jsonFile(path));
+  await ingestItems(TCGFACTORY_SUPPLIER_CODE, items, runId);
 }
 
 async function complete(supplierCode: string, runId: string): Promise<void> {
@@ -125,10 +212,13 @@ async function main(): Promise<void> {
   if (command === "status") await status();
   else if (command === "register") await register(first);
   else if (command === "ingest") await ingest(first, second, third);
+  else if (command === "validate-tcgfactory") await validateTcgFactory(first);
+  else if (command === "ingest-tcgfactory")
+    await ingestTcgFactory(first, second);
   else if (command === "complete") await complete(first, second);
   else {
     throw new Error(
-      "Uso: catalog-sourcing <status|register FILE|ingest SUPPLIER FILE [RUN_ID]|complete SUPPLIER RUN_ID>",
+      "Uso: catalog-sourcing <status|register FILE|ingest SUPPLIER FILE [RUN_ID]|validate-tcgfactory FILE|ingest-tcgfactory FILE RUN_ID|complete SUPPLIER RUN_ID>",
     );
   }
 }

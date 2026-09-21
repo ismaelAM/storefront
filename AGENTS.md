@@ -807,3 +807,48 @@ hacer push a puck_editor;
 verificar Preview.
 
 No repetir preguntas cuya respuesta ya aparece en este documento.
+
+35. Catálogo multidistribuidor
+
+Antes de modificar sincronización de proveedores, leer completos:
+
+CATALOG_SOURCING.md
+TCGFACTORY_SYNC.md, si el cambio afecta a TcgFactory
+supabase/functions/_shared/catalog-sourcing.ts
+
+Spree sigue siendo la fuente de verdad comercial. Supabase conserva ofertas,
+identidad canónica y procedencia interna. Cada variante se crea una sola vez;
+los distribuidores aportan ofertas a esa variante y no productos paralelos.
+
+No usar el SKU del distribuidor como identidad global. Preferir EAN/GTIN válido,
+referencia de fabricante o familia + opciones exactas. Idioma, edición, color,
+tamaño y otras dimensiones deben permanecer en options; no agrupar por títulos
+parecidos.
+
+La selección compara normalizedCost neto puesto en almacén. No mezclar PVP,
+precios públicos, importes con IVA e importes netos. No cerrar un run parcial:
+catalog-complete-run sólo se ejecuta cuando autenticación, paginación e ingesta
+han terminado correctamente.
+
+36. TcgFactory y secretos
+
+TcgFactory usa:
+
+supplier code: tcgfactory
+adapter key: tcgfactory_b2b_bridge_v1
+cuenta secreta: TCGFACTORY_B2B_EMAIL
+contraseña secreta: TCGFACTORY_B2B_PASSWORD
+
+Nunca guardar los valores de cuenta/contraseña, cookies o respuestas B2B en Git,
+fixtures, logs, Puck, Spree ni catalog_suppliers.config. Guardarlos únicamente en
+Supabase Edge Function Secrets/Vault o variables cifradas de Vercel, según dónde
+corra el transporte.
+
+La configuración versionada de TcgFactory está deshabilitada hasta validar un
+feed autenticado. La web pública no es fuente válida de coste de compra. Si no
+hay coste B2B inequívoco, el adaptador debe fallar y la oferta no debe competir.
+
+No codificar selectores de PrestaShop ni endpoints privados sin una muestra
+autorizada y pruebas. Si se implementa el login, verificar que tras enviarlo ya
+no aparece el formulario de acceso; ante fallo o expiración, abortar el run y no
+ejecutar catalog-complete-run.

@@ -242,6 +242,23 @@ Las acciones requieren `x-spree-admin-key`; los ticks internos siguen usando el
 token privado del worker. Devir ya actúa como el primer adaptador y atraviesa el
 mismo pipeline genérico.
 
+### TcgFactory
+
+TcgFactory usa el código `tcgfactory` y el contrato
+`tcgfactory_b2b_bridge_v1`. Su adaptador puro, configuración deshabilitada y
+comandos de validación/ingesta ya están versionados. La cuenta y la contraseña
+son secretos de backend llamados `TCGFACTORY_B2B_EMAIL` y
+`TCGFACTORY_B2B_PASSWORD`; nunca pertenecen al registro del distribuidor.
+
+No se debe habilitar hasta validar un catálogo autenticado real. La web pública
+aporta referencia, EAN, disponibilidad y atributos, pero no garantiza el coste
+profesional comparable. El adaptador exige explícitamente un precio B2B neto o
+un precio bruto con IVA/coste normalizado y rechaza precios ambiguos.
+
+Leer `TCGFACTORY_SYNC.md` antes de modificar este proveedor. Contiene el estado
+real de la integración, el contrato de feed, los pasos para guardar secretos y
+el protocolo de investigación para futuras IAs.
+
 ## Operación y diagnóstico
 
 ```bash
