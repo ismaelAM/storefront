@@ -61,9 +61,9 @@ const nextConfig: NextConfig = {
       expire: 3600, // 1 hour max before recompute on idle entries
     },
     catalogProducts: {
-      stale: 15,
-      revalidate: 30,
-      expire: 120,
+      stale: 0,
+      revalidate: 10,
+      expire: 30,
     },
   },
   images: {
