@@ -1714,6 +1714,24 @@ async function resolveCatalogVariant(
   if (productError) throw productError;
   const product = productData as CatalogProductRow;
 
+  // The first supplier insert must not freeze stale taxonomy forever.
+  // Devir is currently the canonical taxonomy source; future suppliers may
+  // fill a missing category but do not overwrite an established Devir name.
+  if (item.supplierCode === "devir" || !product.category_key) {
+    const nextCategoryKey = item.categoryKey ?? product.category_key ?? null;
+    const { error: productRefreshError } = await supabase
+      .from("catalog_products")
+      .update({
+        ...(item.supplierCode === "devir" ? { name: item.productName } : {}),
+        category_key: nextCategoryKey,
+        updated_at: now,
+      })
+      .eq("id", product.id);
+    if (productRefreshError) throw productRefreshError;
+    if (item.supplierCode === "devir") product.name = item.productName;
+    product.category_key = nextCategoryKey;
+  }
+
   const { error: variantInsertError } = await supabase
     .from("catalog_variants")
     .upsert(
