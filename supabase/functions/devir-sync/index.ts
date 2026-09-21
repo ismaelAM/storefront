@@ -6868,9 +6868,23 @@ async function operatorAction(
     }
     const results = [];
     for (const groupKey of requested) {
-      results.push(await migrateCatalogGroup(config, groupKey));
+      try {
+        results.push(await migrateCatalogGroup(config, groupKey));
+      } catch (error) {
+        results.push({
+          ok: false,
+          group_key: groupKey,
+          error:
+            error instanceof Error
+              ? error.message
+              : JSON.stringify(error),
+        });
+      }
     }
-    return json({ ok: true, results });
+    return json({
+      ok: results.every((result) => result.ok === true),
+      results,
+    });
   }
 
   if (action === "regroup-preview") {
