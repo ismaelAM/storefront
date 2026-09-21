@@ -1,7 +1,7 @@
 import type { Data } from "@puckeditor/core";
 import type { Category } from "@spree/sdk";
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { Breadcrumbs } from "@/components/navigation/Breadcrumbs";
 import { ProductPuckRenderer } from "@/components/puck/ProductPuckRenderer";
 import { JsonLd } from "@/components/seo/JsonLd";
@@ -19,6 +19,7 @@ import {
   buildProductShortDescription,
 } from "@/lib/seo";
 import { getStoreUrl } from "@/lib/store";
+import { legacyGroupedProductSlug } from "@/lib/utils/product-slug";
 import { ProductDetails } from "./ProductDetails";
 
 interface ProductPageProps {
@@ -63,6 +64,27 @@ export default async function ProductPage({
   try {
     product = await getCachedProduct(slug, PRODUCT_PAGE_EXPAND);
   } catch {
+    const groupedSlug = legacyGroupedProductSlug(slug);
+    let replacementSlug: string | null = null;
+    if (groupedSlug) {
+      try {
+        const replacement = await getCachedProduct(
+          groupedSlug,
+          PRODUCT_PAGE_EXPAND,
+        );
+        replacementSlug = replacement.slug;
+      } catch {
+        replacementSlug = null;
+      }
+    }
+    if (replacementSlug) {
+      const categoryQuery = category_id
+        ? `?category_id=${encodeURIComponent(category_id)}`
+        : "";
+      redirect(
+        `${basePath}/products/${replacementSlug}${categoryQuery}`,
+      );
+    }
     notFound();
   }
 

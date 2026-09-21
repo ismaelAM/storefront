@@ -14,6 +14,7 @@ import {
   canWriteManagedCatalogPrice,
   shouldAutoPublishCatalogProduct,
 } from "../_shared/catalog-publish-policy.ts";
+import { supplierVatRate } from "../_shared/supplier-pricing-policy.ts";
 import {
   inferDevirCategoryKey,
   normalizeDevirCatalogTitle,
@@ -2223,7 +2224,12 @@ async function syncProductToSpree(
   const category = key ? categoryForKey(categories, key) ?? null : null;
   const configuredMargin = await categoryMargin(config, category);
   const targetMargin = configuredMargin ?? DEFAULT_CATEGORY_MARGINS[key] ?? 0.05;
-  const pricing = competitivePricing(product, key, targetMargin);
+  const pricing = competitivePricing(
+    product,
+    key,
+    targetMargin,
+    catalogContext?.supplier.code,
+  );
   const shipping = shippingDefaults(key, product);
   const packRequiresSplit = isPack(product);
   const reasons: string[] = [];
@@ -2411,6 +2417,7 @@ async function syncProductToSpree(
     const legacyLastAuto = Number(fields.find((f) => f.key === "pricing.last_synced_price")?.value);
     const lastAuto = Number.isFinite(catalogLastAuto) ? catalogLastAuto : legacyLastAuto;
     const currentPrice = variantPrice(existing.variant);
+    const active = existing.product.status === "active";
     const managed =
       (existing.product.tags ?? []).includes("devir") ||
       (existing.product.tags ?? []).includes("catalog-managed");
@@ -2789,6 +2796,104 @@ async function createGroupedVariant(
   );
 }
 
+async function repointCanonicalCatalogSku(
+  supplierCode: string,
+  supplierSku: string,
+  spreeProductId: string,
+  spreeVariantId: string,
+  targetCatalogProductId: string | null,
+  categoryKeyValue: string,
+  productName: string,
+): Promise<string | null> {
+  const { data: supplier, error: supplierError } = await supabase
+    .from("catalog_suppliers")
+    .select("id")
+    .eq("code", supplierCode)
+    .maybeSingle();
+  if (supplierError) throw new Error("catalog supplier lookup: " + supplierError.message);
+  if (!supplier?.id) return targetCatalogProductId;
+
+  let targetProductId = targetCatalogProductId;
+  if (!targetProductId) {
+    const { data: mappedProduct, error: mappedError } = await supabase
+      .from("catalog_products")
+      .select("id")
+      .eq("spree_product_id", spreeProductId)
+      .maybeSingle();
+    if (mappedError) throw new Error("catalog grouped product lookup: " + mappedError.message);
+    targetProductId = mappedProduct?.id ?? null;
+  }
+
+  const { data: offers, error: offersError } = await supabase
+    .from("catalog_supplier_offers")
+    .select("variant_id")
+    .eq("supplier_id", supplier.id)
+    .eq("supplier_sku", supplierSku);
+  if (offersError) throw new Error("catalog offer lookup: " + offersError.message);
+
+  const canonicalVariantIds = Array.from(
+    new Set((offers ?? []).map((offer) => offer.variant_id).filter(Boolean)),
+  ) as string[];
+  const now = new Date().toISOString();
+
+  for (const canonicalVariantId of canonicalVariantIds) {
+    const { data: canonicalVariant, error: variantLookupError } = await supabase
+      .from("catalog_variants")
+      .select("id,product_id")
+      .eq("id", canonicalVariantId)
+      .maybeSingle();
+    if (variantLookupError) {
+      throw new Error("catalog variant lookup: " + variantLookupError.message);
+    }
+    if (!canonicalVariant?.id || !canonicalVariant.product_id) continue;
+
+    if (!targetProductId) {
+      targetProductId = canonicalVariant.product_id;
+      const { error: firstProductError } = await supabase
+        .from("catalog_products")
+        .update({
+          name: productName,
+          category_key: categoryKeyValue,
+          spree_product_id: spreeProductId,
+          updated_at: now,
+        })
+        .eq("id", targetProductId);
+      if (firstProductError) {
+        throw new Error("catalog group product seed: " + firstProductError.message);
+      }
+    }
+
+    const { error: variantUpdateError } = await supabase
+      .from("catalog_variants")
+      .update({
+        product_id: targetProductId,
+        spree_variant_id: spreeVariantId,
+        updated_at: now,
+      })
+      .eq("id", canonicalVariant.id);
+    if (variantUpdateError) {
+      throw new Error("catalog group variant update: " + variantUpdateError.message);
+    }
+  }
+
+  if (targetProductId) {
+    const { error: productUpdateError } = await supabase
+      .from("catalog_products")
+      .update({
+        name: productName,
+        category_key: categoryKeyValue,
+        spree_product_id: spreeProductId,
+        updated_at: now,
+      })
+      .eq("id", targetProductId);
+    if (productUpdateError) {
+      throw new Error("catalog group product update: " + productUpdateError.message);
+    }
+  }
+
+  return targetProductId;
+}
+
 async function rebuildMangaGroup(
   config: ConfigRow,
   groupKey: string,
@@ -2931,6 +3036,7 @@ async function rebuildMangaGroup(
   const oldProductIds = Array.from(
     new Set(rows.map((row) => row.spree_product_id).filter(Boolean)),
   ) as string[];
+  let canonicalGroupProductId: string | null = null;
 
   for (const row of rows) {
     const variant = createdBySku.get(row.supplier_sku)!;
@@ -2952,6 +3058,15 @@ async function rebuildMangaGroup(
       })
       .eq("supplier_sku", row.supplier_sku);
     if (updateError) throw updateError;
+    canonicalGroupProductId = await repointCanonicalCatalogSku(
+      "devir",
+      row.supplier_sku,
+      created.id,
+      variant.id,
+      canonicalGroupProductId,
+      "manga-comic",
+      groupName,
+    );
   }
 
   for (const oldId of oldProductIds) {
@@ -2966,6 +3081,179 @@ async function rebuildMangaGroup(
   };
 }
 
+async function repairExistingMangaGroup(
+  config: ConfigRow,
+  groupKey: string,
+): Promise<{
+  ok: boolean;
+  group_key: string;
+  product_id?: string;
+  variants?: number;
+  skipped?: string;
+  reused?: boolean;
+}> {
+  const { data, error } = await supabase
+    .from("devir_sync_catalog")
+    .select("supplier_sku,name,source_url,snapshot,image_urls,spree_product_id,spree_variant_id,supplier_status,last_auto_price,group_key,group_name,variant_label,variant_position,grouping_confidence")
+    .eq("group_key", groupKey)
+    .eq("item_kind", "variant_candidate")
+    .order("variant_position", { ascending: true })
+    .order("supplier_sku", { ascending: true });
+  if (error) throw error;
+  const rows = (data ?? []) as CatalogGroupRow[];
+  if (rows.length < 2) {
+    return { ok: true, group_key: groupKey, skipped: "needs_at_least_two_variants" };
+  }
+
+  const groupName = rows.find((row) => row.group_name)?.group_name ?? groupKey;
+  const candidates = await spreeList<SpreeProduct>(
+    config,
+    "/products?q[search]=" + encodeURIComponent(groupName),
+  );
+  const tag = "devir-group-" + groupKey;
+  const existing = candidates.find((product) =>
+    product.status !== "archived" && (product.tags ?? []).includes(tag)
+  );
+  if (!existing) return await rebuildMangaGroup(config, groupKey);
+
+  const category = categoryForKey(await spreeCategories(config), "manga-comic");
+  if (!category) throw new Error("No existe la categoría Manga y cómic");
+
+  const positions = new Map<number, number>();
+  for (const row of rows) {
+    const position = Number(row.variant_position ?? -1);
+    positions.set(position, (positions.get(position) ?? 0) + 1);
+  }
+  const hasEditionDimension =
+    rows.some((row) => Boolean(variantEdition(row.variant_label))) ||
+    Array.from(positions.values()).some((count) => count > 1);
+
+  const displayRows = [...rows].sort((a, b) =>
+    Number(a.variant_position ?? 0) - Number(b.variant_position ?? 0) ||
+    a.supplier_sku.localeCompare(b.supplier_sku)
+  );
+  const displayPosition = new Map(
+    displayRows.map((row, index) => [row.supplier_sku, index + 1]),
+  );
+
+  const currentVariants = await spreeList<SpreeVariant>(
+    config,
+    "/products/" + encodeURIComponent(existing.id) + "/variants",
+  );
+  const variantsBySku = new Map(
+    currentVariants
+      .filter((variant) => variant.sku?.trim())
+      .map((variant) => [variant.sku!.trim(), variant]),
+  );
+  const standardEditionCounts = new Map<number, number>();
+  let canonicalGroupProductId: string | null = null;
+
+  for (const row of rows) {
+    const position = Number(row.variant_position ?? 0);
+    const duplicated = (positions.get(position) ?? 0) > 1;
+    const explicitEdition = variantEdition(row.variant_label);
+    const standardCopyIndex = standardEditionCounts.get(position) ?? 0;
+    const edition =
+      explicitEdition ??
+      (duplicated
+        ? standardEditionStorageValue(standardCopyIndex)
+        : "Estándar");
+    if (!explicitEdition) {
+      standardEditionCounts.set(position, standardCopyIndex + 1);
+    }
+
+    let variant = variantsBySku.get(row.supplier_sku);
+    if (!variant) {
+      variant = await createGroupedVariant(
+        config,
+        existing.id,
+        row,
+        [
+          { name: "tomo", value: String(position).padStart(2, "0") },
+          ...(hasEditionDimension ? [{ name: "edicion", value: edition }] : []),
+        ],
+        "manga-comic",
+        displayPosition.get(row.supplier_sku) ?? 1,
+      );
+      variantsBySku.set(row.supplier_sku, variant);
+    }
+
+    const state = row.supplier_status === "available"
+      ? "published"
+      : row.supplier_status === "preorder"
+        ? "preorder"
+        : "waiting_supplier";
+    const { error: updateError } = await supabase
+      .from("devir_sync_catalog")
+      .update({
+        spree_product_id: existing.id,
+        spree_variant_id: variant.id,
+        catalog_state: state,
+        catalog_version: "devir-taxonomy-v2",
+        sellability_version: "devir-stock-v1",
+        last_error: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("supplier_sku", row.supplier_sku);
+    if (updateError) throw updateError;
+
+    canonicalGroupProductId = await repointCanonicalCatalogSku(
+      "devir",
+      row.supplier_sku,
+      existing.id,
+      variant.id,
+      canonicalGroupProductId,
+      "manga-comic",
+      groupName,
+    );
+  }
+
+  const anyAvailable = rows.some((row) => row.supplier_status === "available");
+  const anyPreorder = rows.some((row) => row.supplier_status === "preorder");
+  const anySellable = anyAvailable || anyPreorder;
+  await spreeRequest(
+    config,
+    "PATCH",
+    "/products/" + encodeURIComponent(existing.id),
+    {
+      status: anySellable ? "active" : "draft",
+      category_ids: [category.id],
+      tags: [
+        "devir",
+        "devir-group",
+        tag,
+        ...(anySellable ? ["devir-ready", "devir-published"] : ["devir-waiting-stock"]),
+        ...(anyAvailable ? ["devir-buy-now"] : []),
+        ...(anyPreorder ? ["devir-preorder"] : []),
+      ],
+    },
+  );
+  await ensureProductsInCategories(config, [existing.id], [category.id]);
+  if (anySellable) await ensureProductsInDefaultChannel(config, [existing.id]);
+
+  const imageSource = rows.map(catalogRowProduct).find((product) => product.imageUrls.length);
+  if (imageSource) await syncImages(config, existing.id, imageSource);
+
+  const oldProductIds = Array.from(
+    new Set(
+      rows
+        .map((row) => row.spree_product_id)
+        .filter((id): id is string => Boolean(id) && id !== existing.id),
+    ),
+  );
+  for (const oldId of oldProductIds) {
+    await retireReplacementSource(config, oldId, existing.id);
+  }
+
+  return {
+    ok: true,
+    group_key: groupKey,
+    product_id: existing.id,
+    variants: rows.length,
+    reused: true,
+  };
+}
+
 async function migrateCatalogGroup(
   config: ConfigRow,
   groupKey: string,
@@ -2975,8 +3263,9 @@ async function migrateCatalogGroup(
   product_id?: string;
   variants?: number;
   skipped?: string;
+  reused?: boolean;
 }> {
-  return await rebuildMangaGroup(config, groupKey);
+  return await repairExistingMangaGroup(config, groupKey);
 }
 
 async function migrateLanguageGroup(
@@ -3103,6 +3392,7 @@ async function migrateLanguageGroup(
   const oldProductIds = Array.from(
     new Set(rows.map((row) => row.spree_product_id).filter(Boolean)),
   ) as string[];
+  let canonicalGroupProductId: string | null = null;
 
   for (const row of rows) {
     const variant = createdBySku.get(row.supplier_sku)!;
@@ -3123,6 +3413,15 @@ async function migrateLanguageGroup(
       })
       .eq("supplier_sku", row.supplier_sku);
     if (updateError) throw updateError;
+    canonicalGroupProductId = await repointCanonicalCatalogSku(
+      "devir",
+      row.supplier_sku,
+      created.id,
+      variant.id,
+      canonicalGroupProductId,
+      categoryKeyValue,
+      baseName,
+    );
   }
 
   for (const oldId of oldProductIds) {
@@ -3223,6 +3522,7 @@ function competitivePricing(
   product: DevirProduct,
   key: string,
   targetProfitRate = DEFAULT_CATEGORY_MARGINS[key] ?? 0.05,
+  supplierCode?: string | null,
 ): {
   retail: number;
   vatRate: number;
@@ -3237,7 +3537,7 @@ function competitivePricing(
   }
 
   const book = isBookProduct(product, key);
-  const vatRate = book ? 0.04 : 0.21;
+  const vatRate = supplierVatRate({ supplierCode, isBook: book });
   const floor = paymentAwareFloor(product.purchasePrice, vatRate, targetProfitRate);
   const referenceNet = Number(product.referencePriceNet);
   const hasReference = Number.isFinite(referenceNet) && referenceNet > product.purchasePrice;
@@ -3579,7 +3879,12 @@ async function categorizeDraftBatch(
     const margin = DEFAULT_CATEGORY_MARGINS[key];
     if (!category || !Number.isFinite(margin) || !product.purchasePrice || product.purchasePrice <= 0) return;
 
-    const pricing = competitivePricing(product, key, margin);
+    const pricing = competitivePricing(
+      product,
+      key,
+      margin,
+      selectedSupply.supplier_code,
+    );
 
     const patch = async () => {
       await spreeRequest(config, "PATCH", "/products/" + encodeURIComponent(productId), {
@@ -3757,6 +4062,7 @@ async function repriceCommercialBooksBatch(
         product,
         key,
         DEFAULT_CATEGORY_MARGINS[key] ?? 0.05,
+        selectedSupply.supplier_code,
       );
 
       let resolvedProductId = productId;
@@ -4397,7 +4703,12 @@ async function preparePublishBatch(
         availability: selectedSupply.availability ?? "unknown",
       };
       const targetMargin = DEFAULT_CATEGORY_MARGINS[key] ?? 0.05;
-      const pricing = competitivePricing(selectedProduct, key, targetMargin);
+      const pricing = competitivePricing(
+        selectedProduct,
+        key,
+        targetMargin,
+        selectedSupply.supplier_code,
+      );
       if (pricing.reviewReason) productReasons.add(pricing.reviewReason);
 
       const reconciled = await reconcileSpreeVariantFromCatalog(
@@ -5356,6 +5667,215 @@ async function ingestCatalogItemsAction(
   }
 
   return { processed: items.length - failed, failed, results };
+}
+
+async function repriceCatalogSupplierBatch(
+  config: ConfigRow,
+  body: Record<string, unknown>,
+): Promise<{
+  supplierCode: string;
+  processed: number;
+  repriced: number;
+  unchanged: number;
+  manualOverrides: number;
+  failed: number;
+  total: number;
+  offset: number;
+  nextOffset: number | null;
+  results: Array<Record<string, unknown>>;
+}> {
+  const supplierCode = normalizeSupplierCode(String(body.supplierCode ?? ""));
+  await configuredCatalogSupplier(supplierCode);
+  const limit = Math.min(100, Math.max(1, Number(body.limit ?? 50) || 50));
+  const offset = Math.max(0, Number(body.offset ?? 0) || 0);
+
+  const { data, error, count } = await supabase
+    .from("catalog_selected_supply")
+    .select(
+      "variant_id,canonical_sku,spree_variant_id,product_id,product_name,spree_product_id,supplier_code,normalized_cost,currency,reference_price_net,availability,source_url",
+      { count: "exact" },
+    )
+    .eq("supplier_code", supplierCode)
+    .order("variant_id")
+    .range(offset, offset + limit - 1);
+  if (error) throw error;
+
+  const rows = data ?? [];
+  const variantIds = Array.from(new Set(rows.map((row) => String(row.variant_id))));
+  const productIds = Array.from(new Set(rows.map((row) => String(row.product_id))));
+
+  const [{ data: variants, error: variantsError }, { data: products, error: productsError }] =
+    await Promise.all([
+      supabase
+        .from("catalog_variants")
+        .select("id,last_auto_price,spree_variant_id,product_id")
+        .in("id", variantIds),
+      supabase
+        .from("catalog_products")
+        .select("id,name,category_key,spree_product_id")
+        .in("id", productIds),
+    ]);
+  if (variantsError) throw variantsError;
+  if (productsError) throw productsError;
+
+  const variantsById = new Map(
+    (variants ?? []).map((row) => [String(row.id), row]),
+  );
+  const productsById = new Map(
+    (products ?? []).map((row) => [String(row.id), row]),
+  );
+
+  const categories = await spreeCategories(config);
+  const marginByKey = new Map<string, number>();
+  const categoryKeys = Array.from(
+    new Set(
+      (products ?? [])
+        .map((row) => String(row.category_key ?? ""))
+        .filter(Boolean),
+    ),
+  );
+  for (const key of categoryKeys) {
+    const category = categoryForKey(categories, key);
+    const configured = category ? await categoryMargin(config, category) : null;
+    marginByKey.set(key, configured ?? DEFAULT_CATEGORY_MARGINS[key] ?? 0.05);
+  }
+
+  let repriced = 0;
+  let unchanged = 0;
+  let manualOverrides = 0;
+  let failed = 0;
+  const results: Array<Record<string, unknown>> = [];
+
+  const processRow = async (row: Record<string, unknown>) => {
+    const variantId = String(row.variant_id ?? "");
+    const productId = String(row.product_id ?? "");
+    const variant = variantsById.get(variantId);
+    const productRow = productsById.get(productId);
+    const spreeVariantId =
+      String(row.spree_variant_id ?? variant?.spree_variant_id ?? "");
+    const spreeProductId =
+      String(row.spree_product_id ?? productRow?.spree_product_id ?? "");
+
+    try {
+      if (!variant || !productRow || !spreeVariantId || !spreeProductId) {
+        throw new Error("catalog_mapping_missing");
+      }
+      const cost = Number(row.normalized_cost);
+      if (!Number.isFinite(cost) || cost <= 0) {
+        throw new Error("supplier_cost_missing");
+      }
+      const key = String(productRow.category_key ?? "");
+      const product: DevirProduct = {
+        sku: String(row.canonical_sku ?? ""),
+        name: String(row.product_name ?? productRow.name ?? ""),
+        url: String(row.source_url ?? ""),
+        purchasePrice: cost,
+        referencePriceNet:
+          Number.isFinite(Number(row.reference_price_net)) &&
+            Number(row.reference_price_net) > 0
+            ? Number(row.reference_price_net)
+            : null,
+        availability:
+          row.availability === "available" ||
+          row.availability === "preorder" ||
+          row.availability === "unavailable"
+            ? row.availability
+            : "unknown",
+        availabilityLabel: null,
+        releaseDate: null,
+        imageUrls: [],
+        categoryKeyOverride: key || null,
+      };
+      const pricing = competitivePricing(
+        product,
+        key,
+        marginByKey.get(key) ?? DEFAULT_CATEGORY_MARGINS[key] ?? 0.05,
+        supplierCode,
+      );
+
+      const spreeVariant = await spreeRequest<SpreeVariant>(
+        config,
+        "GET",
+        "/products/" + encodeURIComponent(spreeProductId) +
+          "/variants/" + encodeURIComponent(spreeVariantId),
+      );
+      const currentPrice = variantPrice(spreeVariant);
+      const lastAutoPrice = Number(variant.last_auto_price);
+      const canWrite = canWriteManagedCatalogPrice({
+        createdVariant: false,
+        managed: true,
+        forceDraftForSplit: false,
+        currentPrice,
+        lastAutoPrice: Number.isFinite(lastAutoPrice) ? lastAutoPrice : null,
+      });
+
+      if (!canWrite) {
+        manualOverrides += 1;
+        results.push({
+          variantId,
+          ok: true,
+          skipped: "manual_price_override",
+          currentPrice,
+          lastAutoPrice: Number.isFinite(lastAutoPrice) ? lastAutoPrice : null,
+        });
+        return;
+      }
+
+      if (currentPrice !== null && Math.abs(currentPrice - pricing.retail) < 0.005) {
+        unchanged += 1;
+      } else {
+        await upsertBasePrice(config, spreeVariantId, pricing.retail);
+        repriced += 1;
+      }
+
+      const { error: updateError } = await supabase
+        .from("catalog_variants")
+        .update({
+          last_auto_price: pricing.retail,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", variantId);
+      if (updateError) throw updateError;
+
+      results.push({
+        variantId,
+        ok: true,
+        previousPrice: currentPrice,
+        price: pricing.retail,
+        vatRate: pricing.vatRate,
+      });
+    } catch (error) {
+      failed += 1;
+      results.push({
+        variantId,
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+
+  for (let index = 0; index < rows.length; index += 8) {
+    await Promise.all(
+      rows
+        .slice(index, index + 8)
+        .map((row) => processRow(row as Record<string, unknown>)),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 75));
+  }
+
+  const total = count ?? 0;
+  return {
+    supplierCode,
+    processed: rows.length,
+    repriced,
+    unchanged,
+    manualOverrides,
+    failed,
+    total,
+    offset,
+    nextOffset: offset + rows.length < total ? offset + rows.length : null,
+    results,
+  };
 }
 
 async function completeCatalogSupplierRun(
@@ -6318,6 +6838,82 @@ async function operatorAction(
     });
   }
 
+  if (action === "catalog-reprice-supplier") {
+    return json({
+      ok: true,
+      ...(await repriceCatalogSupplierBatch(config, body)),
+    });
+  }
+
+  if (action === "catalog-reconcile-supplier") {
+    const supplierCode = normalizeSupplierCode(
+      typeof body.supplierCode === "string" ? body.supplierCode : "",
+    );
+    if (!supplierCode) {
+      return json({ error: "supplierCode_required" }, 400);
+    }
+    const offset = Math.max(0, Number(body.offset ?? 0) || 0);
+    const limit = Math.min(100, Math.max(1, Number(body.limit ?? 50) || 50));
+    const { data, error, count } = await supabase
+      .from("catalog_selected_supply")
+      .select("variant_id,supplier_code", { count: "exact" })
+      .eq("supplier_code", supplierCode)
+      .order("variant_id")
+      .range(offset, offset + limit - 1);
+    if (error) throw error;
+
+    const categories = await spreeCategories(config);
+    const defs = await definitions(config);
+    const variantIds = Array.from(
+      new Set((data ?? []).map((row) => String(row.variant_id)).filter(Boolean)),
+    );
+    const results: Array<{
+      variant_id: string;
+      ok: boolean;
+      product_id?: string | null;
+      spree_variant_id?: string | null;
+      price?: number | null;
+      review?: boolean;
+      error?: string;
+    }> = [];
+
+    for (const variantId of variantIds) {
+      try {
+        const synced = await reconcileCatalogVariant(
+          config,
+          await loadCatalogVariant(variantId),
+          categories,
+          defs,
+        );
+        results.push({
+          variant_id: variantId,
+          ok: true,
+          product_id: synced.productId,
+          spree_variant_id: synced.variantId,
+          price: synced.lastAutoPrice,
+          review: synced.review,
+        });
+      } catch (error) {
+        results.push({
+          variant_id: variantId,
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    return json({
+      ok: results.every((result) => result.ok),
+      supplierCode,
+      offset,
+      limit,
+      total: count ?? 0,
+      reconciled: results.filter((result) => result.ok).length,
+      failed: results.filter((result) => !result.ok).length,
+      results,
+    });
+  }
+
   if (action === "catalog-sourcing-status") {
     const limit = Math.min(200, Math.max(1, Number(body.limit ?? 50) || 50));
     const offset = Math.max(0, Number(body.offset ?? 0) || 0);
@@ -6598,6 +7194,38 @@ async function operatorAction(
     return json({
       ok: true,
       ...(await repriceCommercialBooksBatch(config, offset, limit)),
+    });
+  }
+
+  if (action === "repair-manga-groups") {
+    const requested = Array.isArray(body.groupKeys)
+      ? body.groupKeys
+          .filter((value): value is string => typeof value === "string")
+          .map((value) => value.trim())
+          .filter(Boolean)
+          .slice(0, 10)
+      : [];
+    if (requested.length === 0) {
+      return json({ error: "groupKeys_required" }, 400);
+    }
+    const results = [];
+    for (const groupKey of requested) {
+      try {
+        results.push(await migrateCatalogGroup(config, groupKey));
+      } catch (error) {
+        results.push({
+          ok: false,
+          group_key: groupKey,
+          error:
+            error instanceof Error
+              ? error.message
+              : JSON.stringify(error),
+        });
+      }
+    }
+    return json({
+      ok: results.every((result) => result.ok === true),
+      results,
     });
   }
 
