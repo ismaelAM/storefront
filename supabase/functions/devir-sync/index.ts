@@ -3403,7 +3403,12 @@ async function setupCatalogCategoriesAndMargins(config: ConfigRow): Promise<Arra
   const rol = await ensureCategory(config, categories, "Rol", "rol");
   const tcg = await ensureCategory(config, categories, "TCG", "tcg");
   await ensureCategory(config, categories, "Manga y cómic", "manga-comic");
-  await ensureCategory(config, categories, "Accesorios", "accesorios");
+  const accesorios = await ensureCategory(
+    config,
+    categories,
+    "Accesorios",
+    "accesorios",
+  );
 
   const specs: Array<{
     key: string;
