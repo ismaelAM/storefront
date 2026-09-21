@@ -1,6 +1,6 @@
 # Pendientes del storefront
 
-Rama de trabajo: `puck_editor`
+Rama principal: `main`
 
 Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras. Tras cada edición relevante del proyecto, actualizaré este documento con lo hecho y cualquier comprobación nueva que haya quedado pendiente.
 
@@ -22,10 +22,17 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 ## Transporte externo
 
 - [x] UPS descartado tras respuesta negativa del proveedor.
-- [x] Investigada alternativa oficial de Correos: APIs de prerregistro, etiquetas, recogidas y tracking con OAuth 2.0.
-- [ ] Solicitar/firmar contrato de transporte con Correos y acceso al Portal de Desarrolladores.
-- [ ] Si Correos aprueba el acceso, obtener credenciales API sin compartir secretos por chat e integrar prerregistro/etiqueta/tracking sobre Shipments de Spree.
-- [ ] Si Correos no aprueba el acceso o el volumen no compensa, usar Mi Oficina de Correos como operativa manual y guardar tracking/estado en Spree; no crear una base logística paralela.
+- [x] Investigadas y modeladas las APIs de Correos para tracking, etiquetas, recogidas y BoxEntry.
+- [x] Añadido cliente Correos server-only con autenticación específica por API, validación HTTPS, protección contra escape de endpoints y errores sin payloads privados.
+- [x] Añadido puente server-only a los fulfillments nativos de Spree para listar envíos, guardar tracking, marcar enviado y marcar entregado.
+- [x] Añadida ruta interna protegida `/api/internal/shipping` para operaciones de back-office; no expone secretos al navegador.
+- [x] Preregister permanece desactivada por defecto al estar deprecada; no se usa BoxEntry como sustituto ficticio.
+- [ ] Confirmar que el contrato de transporte de Correos está firmado y vinculado al mismo Correos ID.
+- [ ] Configurar en Vercel `SHIPPING_OPERATIONS_TOKEN` y las variables `CORREOS_*` emitidas por Correos.
+- [ ] Obtener/validar el mecanismo oficial de emisión y renovación del Bearer de Correos ID; hasta entonces se admite `CORREOS_ID_ACCESS_TOKEN` y se falla de forma segura al caducar.
+- [ ] Confirmar con Correos la API soportada que sustituye a Preregister para crear/prerregistrar envíos.
+- [ ] Ejecutar una prueba controlada real de tracking, etiqueta y recogida.
+- [ ] Si el acceso API no está disponible, seguir usando Mi Oficina de Correos y guardar tracking/estado en Spree; no crear una base logística paralela.
 
 ## Idiomas y traducciones
 
@@ -89,15 +96,17 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 
 ## Envíos
 
-- [ ] Crear Zone exclusiva para Madrid en Spree.
-- [ ] Crear método `Entrega local BisonTCG — Madrid` con código `BISON_LOCAL_MADRID`.
+- [ ] Crear/corregir la Zone exclusiva para Madrid en Spree.
+- [ ] Crear o validar el método `Entrega local BisonTCG — Madrid` con código `BISON_LOCAL_MADRID`.
 - [ ] Asociar el método a la Shipping Category física correspondiente.
 - [ ] Definir tarifa fija y tiempo estimado de entrega.
-- [ ] **Bug confirmado:** el método/opción de Madrid aparece también para una dirección de Lugo. El código del storefront no contiene lógica de ciudad Madrid; la corrección debe hacerse en la Zone/método de envío de Spree, no hardcodeando provincias en Next.js.
+- [ ] **Bug confirmado:** el método/opción de Madrid aparece también para una dirección de Lugo. La corrección pertenece a la Zone/método de Spree, no a una condición hardcodeada en Next.js.
 - [ ] Probar que Madrid ofrece el método local y que fuera de Madrid no aparece.
-- [ ] Confirmar que el pedido genera correctamente su Shipment en Spree.
-- [ ] Mostrar al cliente el estado del Shipment mediante los datos nativos de Spree.
-- [ ] Añadir Correos como segundo método cuando exista contrato/API; mientras tanto, usar gestión manual de Correos + tracking en Spree.
+- [ ] Confirmar que un pedido real genera correctamente su fulfillment en Spree.
+- [x] Implementada lógica de back-office para guardar tracking, marcar enviado y marcar entregado sobre el fulfillment nativo de Spree.
+- [x] Implementadas operaciones Correos para Trackpub, Labels, Requests y BoxEntry, condicionadas a credenciales válidas.
+- [ ] Configurar secretos de producción y hacer una prueba real controlada.
+- [ ] Mostrar al cliente el estado/tracking del fulfillment si la página de pedido todavía no lo presenta con claridad.
 
 ## Storefront / UI
 
