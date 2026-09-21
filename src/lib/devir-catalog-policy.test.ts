@@ -49,7 +49,7 @@ describe("Devir automatic publication exclusions", () => {
 });
 
 describe("Devir retail-unit normalization", () => {
-  it("turns a Scene Box carton into one retail unit", () => {
+  it("keeps a Scene Box as a full supplier pack", () => {
     expect(
       normalizeDevirRetailUnit({
         name: "*MG AVATAR TLA SCENE BOX Inglés CARTOON (4)",
@@ -58,13 +58,13 @@ describe("Devir retail-unit normalization", () => {
       }),
     ).toEqual({
       name: "MTG AVATAR TLA SCENE BOX Inglés",
-      purchasePrice: 24,
+      purchasePrice: 96,
       referencePriceNet: null,
       unitsPerSupplierPack: 4,
     });
   });
 
-  it("turns a Theme Deck display into one retail unit", () => {
+  it("keeps a Theme Deck as a full supplier pack", () => {
     expect(
       normalizeDevirRetailUnit({
         name: "*MG LORWYN ECLIPSED THEME DECK Inglés DISP (8)",
@@ -73,7 +73,7 @@ describe("Devir retail-unit normalization", () => {
       }),
     ).toEqual({
       name: "MTG LORWYN ECLIPSED THEME DECK Inglés",
-      purchasePrice: 13.375,
+      purchasePrice: 107,
       referencePriceNet: null,
       unitsPerSupplierPack: 8,
     });
