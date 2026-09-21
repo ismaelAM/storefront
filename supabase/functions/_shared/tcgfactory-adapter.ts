@@ -4,7 +4,7 @@ import {
   normalizeText,
   type SupplierAvailability,
   type SupplierCatalogItem,
-} from "./catalog-sourcing";
+} from "./catalog-sourcing.ts";
 
 export const TCGFACTORY_SUPPLIER_CODE = "tcgfactory";
 export const TCGFACTORY_ADAPTER_KEY = "tcgfactory_b2b_bridge_v1";
