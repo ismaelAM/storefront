@@ -6232,6 +6232,57 @@ async function operatorAction(
     });
   }
 
+  if (action === "tcgfactory-status") {
+    return json({ ok: true, ...(await tcgFactoryStatus()) });
+  }
+
+  if (action === "tcgfactory-discover") {
+    const page = Math.max(1, Number(body.page ?? 1) || 1);
+    const offset = Math.max(0, Number(body.offset ?? 0) || 0);
+    const limit = Math.min(12, Math.max(1, Number(body.limit ?? 6) || 6));
+    return json({
+      ok: true,
+      ...(await tcgFactoryDiscoverPublicBatch(page, offset, limit)),
+    });
+  }
+
+  if (action === "tcgfactory-run") {
+    return json({ ok: true, ...(await tcgFactoryTick(config, true)) });
+  }
+
+  if (action === "tcgfactory-reset-crawl") {
+    const supplier = await tcgFactorySupplierRow();
+    const { error } = await supabase
+      .from("catalog_supplier_crawl_state")
+      .upsert(
+        {
+          supplier_id: supplier.id,
+          run_id: null,
+          page: 1,
+          item_offset: 0,
+          total_pages: null,
+          discovered_items: 0,
+          processed_items: 0,
+          failed_items: 0,
+          status: "idle",
+          last_error: null,
+          started_at: null,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "supplier_id" },
+      );
+    if (error) throw error;
+    await supabase
+      .from("catalog_suppliers")
+      .update({
+        next_sync_at: new Date().toISOString(),
+        last_error: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", supplier.id);
+    return json({ ok: true, reset: true });
+  }
+
   if (action === "inspect-devir-source") {
     const url = typeof body.url === "string" ? body.url.trim() : "";
     if (!url || !url.startsWith(config.base_url)) return json({ error: "invalid_devir_url" }, 400);
@@ -6766,11 +6817,29 @@ Deno.serve(async (req) => {
       return json({ ok: false, skipped: "bootstrap_required" }, 409);
     }
     const staleReconciliation = await reconcileStaleCatalogBatch(config);
+    let tcgFactoryResult: Record<string, unknown>;
+    try {
+      tcgFactoryResult = await tcgFactoryTick(config);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("TcgFactory scheduled sync failed", message);
+      try {
+        const supplier = await tcgFactorySupplierRow();
+        await supabase
+          .from("catalog_suppliers")
+          .update({ last_error: message, updated_at: new Date().toISOString() })
+          .eq("id", supplier.id);
+      } catch {
+        // Supplier registration/migration may still be in progress.
+      }
+      tcgFactoryResult = { status: "error", error: message };
+    }
     if (!config.enabled) {
       return json({
         ok: true,
         skipped: "disabled",
         catalog_reconciliation: staleReconciliation,
+        tcgfactory: tcgFactoryResult,
       });
     }
     if (!config.session_state) {
@@ -6801,6 +6870,7 @@ Deno.serve(async (req) => {
           products_processed: productResult.processed,
           images: productResult.images,
           reviews: productResult.reviews,
+          tcgfactory: tcgFactoryResult,
         });
       }
 
@@ -6819,6 +6889,7 @@ Deno.serve(async (req) => {
         products_processed: productResult.processed,
         images: productResult.images,
         reviews: productResult.reviews,
+        tcgfactory: tcgFactoryResult,
       });
     }
 
@@ -6826,9 +6897,9 @@ Deno.serve(async (req) => {
       const result = await processProducts(config, cycleId);
       if (result.done) {
         await finishCycle(config, cycleId);
-        return json({ ok: true, cycle_id: cycleId, phase: "complete" });
+        return json({ ok: true, cycle_id: cycleId, phase: "complete", tcgfactory: tcgFactoryResult });
       }
-      return json({ ok: true, cycle_id: cycleId, phase: "products", processed: result.processed, images: result.images, reviews: result.reviews });
+      return json({ ok: true, cycle_id: cycleId, phase: "products", processed: result.processed, images: result.images, reviews: result.reviews, tcgfactory: tcgFactoryResult });
     }
 
     return json({ ok: false, cycle_id: cycleId, phase, error: configData.last_error }, 409);
