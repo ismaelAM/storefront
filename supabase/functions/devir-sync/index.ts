@@ -16,6 +16,7 @@ import {
 } from "../_shared/devir-catalog-policy.ts";
 import {
   requireTcgFactoryCredentials,
+  tcgFactoryRecordToCatalogItem,
   TCGFACTORY_SUPPLIER_CODE,
 } from "../_shared/tcgfactory-adapter.ts";
 import {
