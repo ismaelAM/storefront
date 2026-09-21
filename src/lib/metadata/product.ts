@@ -23,7 +23,13 @@ export async function generateProductMetadata({
   let product;
   try {
     product = await getCachedProduct(slug, PRODUCT_METADATA_EXPAND);
-  } catch {
+  } catch (error) {
+    const notFound =
+      typeof error === "object" &&
+      error !== null &&
+      "status" in error &&
+      (error as { status?: unknown }).status === 404;
+    if (!notFound) throw error;
     return { title: "Product Not Found" };
   }
 
