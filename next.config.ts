@@ -60,6 +60,11 @@ const nextConfig: NextConfig = {
       revalidate: 600, // 10 minutes until background revalidation
       expire: 3600, // 1 hour max before recompute on idle entries
     },
+    catalogProducts: {
+      stale: 15,
+      revalidate: 30,
+      expire: 120,
+    },
   },
   images: {
     qualities: [25, 50, 75, 85, 100],
