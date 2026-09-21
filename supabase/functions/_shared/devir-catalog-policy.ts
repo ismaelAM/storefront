@@ -4,6 +4,62 @@ export interface DevirCategoryCandidate {
   categoryKeyOverride?: string | null;
 }
 
+export interface DevirRetailUnitCandidate {
+  name: string;
+  purchasePrice: number | null;
+  referencePriceNet: number | null;
+}
+
+export interface DevirRetailUnit extends DevirRetailUnitCandidate {
+  unitsPerSupplierPack: number;
+}
+
+export function isCatalanCatalogProduct(candidate: {
+  name: string;
+  url?: string | null;
+}): boolean {
+  const value = `${candidate.name} ${candidate.url ?? ""}`
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  return /\b(?:catala|catalan|catalunya)\b/.test(value);
+}
+
+/**
+ * Devir supplies Scene Boxes by cartons of 4 and Theme Decks by displays of 8,
+ * while the shop sells one consumer unit. Convert the supplier carton cost and
+ * title before the item reaches canonical matching, pricing or publication.
+ */
+export function normalizeDevirRetailUnit(
+  candidate: DevirRetailUnitCandidate,
+): DevirRetailUnit {
+  const sceneBox = /\bscene\s+box\b/i.test(candidate.name);
+  const themeDeck = /\btheme\s+decks?\b/i.test(candidate.name);
+  const unitsPerSupplierPack = sceneBox ? 4 : themeDeck ? 8 : 1;
+  if (unitsPerSupplierPack === 1) {
+    return { ...candidate, unitsPerSupplierPack };
+  }
+
+  const divide = (value: number | null) =>
+    value !== null && Number.isFinite(value) && value > 0
+      ? Math.round((value / unitsPerSupplierPack) * 10000) / 10000
+      : null;
+  const name = candidate.name
+    .replace(/^\s*\*MG\b/i, "MTG")
+    .replace(/\btheme\s+decks\b/gi, "Theme Deck")
+    .replace(/\s+(?:CARTOON|DISP(?:LAY)?)\s*\(\s*\d+\s*\)\s*$/i, "")
+    .replace(/\s*\(\s*(?:4|8)\s*\)\s*$/i, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  return {
+    name,
+    purchasePrice: divide(candidate.purchasePrice),
+    referencePriceNet: divide(candidate.referencePriceNet),
+    unitsPerSupplierPack,
+  };
+}
+
 const LANGUAGE_REPLACEMENTS: Array<[RegExp, string]> = [
   [/\b(?:español|espanol|castellano|spanish)\b/gi, "Español"],
   [/\b(?:inglés|ingles|ngles|english)\b/gi, "Inglés"],
@@ -18,38 +74,38 @@ export function normalizeDevirCatalogTitle(value: string): string {
   let cleaned = value
     .replace(/^m[aá]s\s+vistas\s+/i, "")
     .replace(
-      /\s*\((?:fecha\s+de\s+(?:venta(?:\s+en\s+tiendas)?|salida|puesta\s+a\s+la\s+venta)|a\s+la\s+venta(?:\s+el)?)\s*\d{1,2}[\/.-]\d{1,2}[\/.-]\d{4}\)\s*/gi,
+      /\s*\((?:fecha\s+de\s+(?:venta(?:\s+en\s+tiendas)?|salida|puesta\s+a\s+la\s+venta)|a\s+la\s+venta(?:\s+el)?)\s*\d{1,2}[/.-]\d{1,2}[/.-]\d{4}\)\s*/gi,
       " ",
     )
     .replace(
-      /\s*[-–—]?\s*(?:fecha\s+de\s+(?:venta(?:\s+en\s+tiendas)?|salida|puesta\s+a\s+la\s+venta)|a\s+la\s+venta(?:\s+el)?)\s*\d{1,2}[\/.-]\d{1,2}[\/.-]\d{4}\b/gi,
+      /\s*[-–—]?\s*(?:fecha\s+de\s+(?:venta(?:\s+en\s+tiendas)?|salida|puesta\s+a\s+la\s+venta)|a\s+la\s+venta(?:\s+el)?)\s*\d{1,2}[/.-]\d{1,2}[/.-]\d{4}\b/gi,
       " ",
     )
-    .replace(/\s+\d{1,2}[\/-]\d{1,2}[\/-]\d{4}\s*$/g, "");
+    .replace(/\s+\d{1,2}[/-]\d{1,2}[/-]\d{4}\s*$/g, "");
 
   for (const [pattern, replacement] of LANGUAGE_REPLACEMENTS) {
     cleaned = cleaned.replace(pattern, replacement);
   }
 
-  return cleaned
-    // Fix a recurring supplier typo such as "(inglés" at the end.
-    .replace(
-      /\((Español|Inglés|Francés|Alemán|Portugués|Japonés|Italiano)\s*$/i,
-      "($1)",
-    )
-    .replace(
-      /\s+-\s+(?=(?:Español|Inglés|Francés|Alemán|Portugués|Japonés|Italiano)\b)/gi,
-      " - ",
-    )
-    .replace(/\s{2,}/g, " ")
-    .replace(/\s+([,.;:])/g, "$1")
-    .replace(/[\s\-–—,:;]+$/g, "")
-    .trim();
+  return (
+    cleaned
+      // Fix a recurring supplier typo such as "(inglés" at the end.
+      .replace(
+        /\((Español|Inglés|Francés|Alemán|Portugués|Japonés|Italiano)\s*$/i,
+        "($1)",
+      )
+      .replace(
+        /\s+-\s+(?=(?:Español|Inglés|Francés|Alemán|Portugués|Japonés|Italiano)\b)/gi,
+        " - ",
+      )
+      .replace(/\s{2,}/g, " ")
+      .replace(/\s+([,.;:])/g, "$1")
+      .replace(/[\s\-–—,:;]+$/g, "")
+      .trim()
+  );
 }
 
-export function inferDevirCategoryKey(
-  product: DevirCategoryCandidate,
-): string {
+export function inferDevirCategoryKey(product: DevirCategoryCandidate): string {
   if (product.categoryKeyOverride?.trim()) {
     return product.categoryKeyOverride.trim();
   }
@@ -58,7 +114,11 @@ export function inferDevirCategoryKey(
   const url = (product.url ?? "").toLowerCase();
   const value = name + " " + url;
 
-  if (/accesorio|sleeves|fundas|deck\s*box|tapete|playmat|carpeta|album/.test(value)) {
+  if (
+    /accesorio|sleeves|fundas|deck\s*box|tapete|playmat|carpeta|album/.test(
+      value,
+    )
+  ) {
     return "accesorios";
   }
 
@@ -84,7 +144,9 @@ export function inferDevirCategoryKey(
   }
 
   if (
-    /yugioh|yu-gi-oh|yu gi oh|quarter century|duelist|battles of legend|dueling (?:heroes|mirrors)/.test(value)
+    /yugioh|yu-gi-oh|yu gi oh|quarter century|duelist|battles of legend|dueling (?:heroes|mirrors)/.test(
+      value,
+    )
   ) {
     return "tcg/yugioh";
   }
@@ -94,7 +156,9 @@ export function inferDevirCategoryKey(
     /\/magic(?:-|$)/.test(url) ||
     /\bmtg\b/.test(value);
   const knownMagicSet =
-    /aetherdrift|tarkir|bloomburrow|duskmourn|innistrad|zendikar|modern horizons|foundations|strixhaven/.test(value);
+    /aetherdrift|tarkir|bloomburrow|duskmourn|innistrad|zendikar|modern horizons|foundations|strixhaven/.test(
+      value,
+    );
   if (explicitMagicBrand || knownMagicSet) {
     return "tcg/mtg";
   }

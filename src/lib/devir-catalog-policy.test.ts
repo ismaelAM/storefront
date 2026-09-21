@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
   inferDevirCategoryKey,
+  isCatalanCatalogProduct,
   normalizeDevirCatalogTitle,
+  normalizeDevirRetailUnit,
 } from "../../supabase/functions/_shared/devir-catalog-policy";
 
 describe("Devir catalog title normalization", () => {
   it("normalizes Spanish language aliases to Español", () => {
-    expect(normalizeDevirCatalogTitle("Juego - CASTELLANO")).toBe("Juego - Español");
+    expect(normalizeDevirCatalogTitle("Juego - CASTELLANO")).toBe(
+      "Juego - Español",
+    );
     expect(normalizeDevirCatalogTitle("Juego español")).toBe("Juego Español");
     expect(normalizeDevirCatalogTitle("Juego SPANISH")).toBe("Juego Español");
   });
@@ -15,14 +19,77 @@ describe("Devir catalog title normalization", () => {
     expect(normalizeDevirCatalogTitle("MTG MARVEL - JUMPSTART NGLES")).toBe(
       "MTG MARVEL - JUMPSTART Inglés",
     );
-    expect(normalizeDevirCatalogTitle("Producto INGLES")).toBe("Producto Inglés");
-    expect(normalizeDevirCatalogTitle("Producto English")).toBe("Producto Inglés");
+    expect(normalizeDevirCatalogTitle("Producto INGLES")).toBe(
+      "Producto Inglés",
+    );
+    expect(normalizeDevirCatalogTitle("Producto English")).toBe(
+      "Producto Inglés",
+    );
   });
 
   it("repairs an unclosed trailing language parenthesis", () => {
     expect(
       normalizeDevirCatalogTitle("Magic - Tarkir, Landstation unit (inglés"),
     ).toBe("Magic - Tarkir, Landstation unit (Inglés)");
+  });
+});
+
+describe("Devir automatic publication exclusions", () => {
+  it.each([
+    "Catan (ed. Catalán)",
+    "Codi Secret (Catalan)",
+    "Joc en català",
+  ])("detects Catalan products in %s", (name) => {
+    expect(isCatalanCatalogProduct({ name })).toBe(true);
+  });
+
+  it("does not exclude Spanish products", () => {
+    expect(isCatalanCatalogProduct({ name: "Catan Español" })).toBe(false);
+  });
+});
+
+describe("Devir retail-unit normalization", () => {
+  it("turns a Scene Box carton into one retail unit", () => {
+    expect(
+      normalizeDevirRetailUnit({
+        name: "*MG AVATAR TLA SCENE BOX Inglés CARTOON (4)",
+        purchasePrice: 96,
+        referencePriceNet: null,
+      }),
+    ).toEqual({
+      name: "MTG AVATAR TLA SCENE BOX Inglés",
+      purchasePrice: 24,
+      referencePriceNet: null,
+      unitsPerSupplierPack: 4,
+    });
+  });
+
+  it("turns a Theme Deck display into one retail unit", () => {
+    expect(
+      normalizeDevirRetailUnit({
+        name: "*MG LORWYN ECLIPSED THEME DECK Inglés DISP (8)",
+        purchasePrice: 107,
+        referencePriceNet: null,
+      }),
+    ).toEqual({
+      name: "MTG LORWYN ECLIPSED THEME DECK Inglés",
+      purchasePrice: 13.375,
+      referencePriceNet: null,
+      unitsPerSupplierPack: 8,
+    });
+  });
+
+  it("drops a zero reference price instead of persisting an invalid value", () => {
+    expect(
+      normalizeDevirRetailUnit({
+        name: "MTG SCENE BOX Inglés",
+        purchasePrice: 96,
+        referencePriceNet: 0,
+      }),
+    ).toMatchObject({
+      purchasePrice: 24,
+      referencePriceNet: null,
+    });
   });
 });
 

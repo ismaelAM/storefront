@@ -1,5 +1,9 @@
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import {
+  canWriteManagedCatalogPrice,
+  shouldAutoPublishCatalogProduct,
+} from "../_shared/catalog-publish-policy.ts";
+import {
   buildCanonicalIdentity,
   type CanonicalIdentity,
   type NormalizedSupplierCatalogItem,
@@ -9,20 +13,18 @@ import {
   type SupplierOfferCandidate,
   selectBestOffer,
 } from "../_shared/catalog-sourcing.ts";
-import { requiresManualPackSplitReview } from "../_shared/mtg-precon-policy.ts";
-import {
-  canWriteManagedCatalogPrice,
-  shouldAutoPublishCatalogProduct,
-} from "../_shared/catalog-publish-policy.ts";
-import { supplierVatRate } from "../_shared/supplier-pricing-policy.ts";
 import {
   inferDevirCategoryKey,
+  isCatalanCatalogProduct,
   normalizeDevirCatalogTitle,
+  normalizeDevirRetailUnit,
 } from "../_shared/devir-catalog-policy.ts";
+import { requiresManualPackSplitReview } from "../_shared/mtg-precon-policy.ts";
+import { supplierVatRate } from "../_shared/supplier-pricing-policy.ts";
 import {
   requireTcgFactoryCredentials,
-  tcgFactoryRecordToCatalogItem,
   TCGFACTORY_SUPPLIER_CODE,
+  tcgFactoryRecordToCatalogItem,
 } from "../_shared/tcgfactory-adapter.ts";
 import {
   parseTcgFactoryAuthenticatedPrice,
@@ -42,7 +44,15 @@ interface ConfigRow {
   base_url: string;
   spree_api_url: string;
   spree_admin_api_key: string | null;
-  session_state: { cookies?: Array<{ name: string; value: string; domain: string; path?: string; expires?: number }> } | null;
+  session_state: {
+    cookies?: Array<{
+      name: string;
+      value: string;
+      domain: string;
+      path?: string;
+      expires?: number;
+    }>;
+  } | null;
   worker_token_hash: string | null;
   interval_hours: number;
   batch_size: number;
@@ -72,7 +82,11 @@ interface SpreeVariant {
   id: string;
   sku?: string | null;
   cost_price?: string | number | null;
-  price?: { amount?: string | number | null; currency?: string | null } | string | number | null;
+  price?:
+    | { amount?: string | number | null; currency?: string | null }
+    | string
+    | number
+    | null;
   prices?: Array<{ amount?: string | number | null; currency?: string | null }>;
   purchasable?: boolean;
   in_stock?: boolean;
@@ -125,6 +139,8 @@ interface DevirProduct {
   heightCm?: number | null;
   depthCm?: number | null;
   categoryKeyOverride?: string | null;
+  retailUnitNormalized?: boolean;
+  supplierPackUnits?: number;
 }
 
 interface CatalogSupplierRow {
@@ -256,7 +272,9 @@ function json(body: unknown, status = 200): Response {
 async function sha256(value: string): Promise<string> {
   const bytes = new TextEncoder().encode(value);
   const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+  return Array.from(new Uint8Array(digest), (b) =>
+    b.toString(16).padStart(2, "0"),
+  ).join("");
 }
 
 function decodeHtml(value: string): string {
@@ -271,7 +289,12 @@ function decodeHtml(value: string): string {
 }
 
 function stripHtml(value: string): string {
-  return decodeHtml(value.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim());
+  return decodeHtml(
+    value
+      .replace(/<[^>]*>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim(),
+  );
 }
 
 function cleanDevirTitle(value: string): string {
@@ -295,9 +318,11 @@ function cookiesFor(config: ConfigRow, url: string): string {
   return (config.session_state?.cookies ?? [])
     .filter((cookie) => {
       const domain = cookie.domain.replace(/^\./, "");
-      const hostOk = target.hostname === domain || target.hostname.endsWith("." + domain);
+      const hostOk =
+        target.hostname === domain || target.hostname.endsWith("." + domain);
       const pathOk = target.pathname.startsWith(cookie.path || "/");
-      const expiryOk = !cookie.expires || cookie.expires < 0 || cookie.expires > nowSeconds;
+      const expiryOk =
+        !cookie.expires || cookie.expires < 0 || cookie.expires > nowSeconds;
       return hostOk && pathOk && expiryOk;
     })
     .map((cookie) => cookie.name + "=" + cookie.value)
@@ -325,7 +350,10 @@ function mergeSessionCookies(
   baseUrl: string,
 ): ConfigRow["session_state"] {
   const map = new Map(
-    (current?.cookies ?? []).map((cookie) => [cookie.name + "|" + cookie.domain + "|" + (cookie.path || "/"), cookie]),
+    (current?.cookies ?? []).map((cookie) => [
+      cookie.name + "|" + cookie.domain + "|" + (cookie.path || "/"),
+      cookie,
+    ]),
   );
   const host = new URL(baseUrl).hostname;
 
@@ -355,23 +383,33 @@ function mergeSessionCookies(
     }
 
     const key = name + "|" + domain + "|" + path;
-    if (!value || expires === 0 || (expires > 0 && expires < Date.now() / 1000)) map.delete(key);
+    if (!value || expires === 0 || (expires > 0 && expires < Date.now() / 1000))
+      map.delete(key);
     else map.set(key, { name, value, domain, path, expires });
   }
 
   return { ...(current ?? {}), cookies: Array.from(map.values()) };
 }
 
-async function automaticDevirLogin(config: ConfigRow): Promise<ConfigRow["session_state"]> {
-  const { data: credentials, error: credentialsError } = await supabase.rpc("devir_sync_get_credentials");
+async function automaticDevirLogin(
+  config: ConfigRow,
+): Promise<ConfigRow["session_state"]> {
+  const { data: credentials, error: credentialsError } = await supabase.rpc(
+    "devir_sync_get_credentials",
+  );
   if (credentialsError) throw credentialsError;
-  const username = typeof credentials?.username === "string" ? credentials.username : "";
-  const password = typeof credentials?.password === "string" ? credentials.password : "";
+  const username =
+    typeof credentials?.username === "string" ? credentials.username : "";
+  const password =
+    typeof credentials?.password === "string" ? credentials.password : "";
   if (!username || !password) {
-    throw new Error("SESSION_EXPIRED: faltan credenciales Devir en Supabase Vault. Ejecuta pnpm devir:cloud:credentials.");
+    throw new Error(
+      "SESSION_EXPIRED: faltan credenciales Devir en Supabase Vault. Ejecuta pnpm devir:cloud:credentials.",
+    );
   }
 
-  const loginUrl = config.base_url.replace(/\/$/, "") + "/customer/account/login/";
+  const loginUrl =
+    config.base_url.replace(/\/$/, "") + "/customer/account/login/";
   const loginPage = await fetch(loginUrl, {
     redirect: "follow",
     headers: {
@@ -381,16 +419,25 @@ async function automaticDevirLogin(config: ConfigRow): Promise<ConfigRow["sessio
     },
   });
   const loginHtml = await loginPage.text();
-  if (!loginPage.ok) throw new Error("LOGIN_FAILED: Devir devolvió HTTP " + loginPage.status);
+  if (!loginPage.ok)
+    throw new Error("LOGIN_FAILED: Devir devolvió HTTP " + loginPage.status);
 
-  let state = mergeSessionCookies(config.session_state, parseSetCookies(loginPage.headers), config.base_url);
+  let state = mergeSessionCookies(
+    config.session_state,
+    parseSetCookies(loginPage.headers),
+    config.base_url,
+  );
   const formKey =
     loginHtml.match(/name=["']form_key["'][^>]*value=["']([^"']+)["']/i)?.[1] ??
     loginHtml.match(/value=["']([^"']+)["'][^>]*name=["']form_key["']/i)?.[1] ??
     "";
   const actionRaw =
-    loginHtml.match(/<form\b[^>]*id=["']login-form["'][^>]*action=["']([^"']+)["']/i)?.[1] ??
-    loginHtml.match(/<form\b[^>]*action=["']([^"']*customer\/account\/loginPost[^"']*)["']/i)?.[1] ??
+    loginHtml.match(
+      /<form\b[^>]*id=["']login-form["'][^>]*action=["']([^"']+)["']/i,
+    )?.[1] ??
+    loginHtml.match(
+      /<form\b[^>]*action=["']([^"']*customer\/account\/loginPost[^"']*)["']/i,
+    )?.[1] ??
     "/customer/account/loginPost/";
   const action = new URL(decodeHtml(actionRaw), config.base_url).toString();
 
@@ -411,7 +458,11 @@ async function automaticDevirLogin(config: ConfigRow): Promise<ConfigRow["sessio
     },
     body,
   });
-  state = mergeSessionCookies(state, parseSetCookies(loginResponse.headers), config.base_url);
+  state = mergeSessionCookies(
+    state,
+    parseSetCookies(loginResponse.headers),
+    config.base_url,
+  );
 
   const accountUrl = config.base_url.replace(/\/$/, "") + "/customer/account/";
   const probe = await fetch(accountUrl, {
@@ -423,12 +474,20 @@ async function automaticDevirLogin(config: ConfigRow): Promise<ConfigRow["sessio
     },
   });
   const probeHtml = await probe.text();
-  if (!probe.ok || /customer\/account\/login|form-login|customer-login/i.test(probe.url + " " + probeHtml.slice(0, 12000))) {
+  if (
+    !probe.ok ||
+    /customer\/account\/login|form-login|customer-login/i.test(
+      probe.url + " " + probeHtml.slice(0, 12000),
+    )
+  ) {
     const visibleError = stripHtml(
-      probeHtml.match(/<[^>]*class=["'][^"']*(?:message-error|messages|mage-error)[^"']*["'][^>]*>[\s\S]*?<\/[^>]+>/i)?.[0] ?? "",
+      probeHtml.match(
+        /<[^>]*class=["'][^"']*(?:message-error|messages|mage-error)[^"']*["'][^>]*>[\s\S]*?<\/[^>]+>/i,
+      )?.[0] ?? "",
     ).slice(0, 180);
-    const captcha =
-      /captcha|recaptcha|hcaptcha|cloudflare|turnstile/i.test(probeHtml + " " + loginHtml);
+    const captcha = /captcha|recaptcha|hcaptcha|cloudflare|turnstile/i.test(
+      probeHtml + " " + loginHtml,
+    );
     const reason = captcha
       ? "Devir exige CAPTCHA/anti-bot o interacción adicional."
       : visibleError
@@ -436,7 +495,11 @@ async function automaticDevirLogin(config: ConfigRow): Promise<ConfigRow["sessio
         : "Devir mantuvo la pantalla de login tras enviar el formulario.";
     throw new Error("LOGIN_FAILED: " + reason);
   }
-  state = mergeSessionCookies(state, parseSetCookies(probe.headers), config.base_url);
+  state = mergeSessionCookies(
+    state,
+    parseSetCookies(probe.headers),
+    config.base_url,
+  );
 
   const { error: updateError } = await supabase
     .from("devir_sync_config")
@@ -451,7 +514,11 @@ async function automaticDevirLogin(config: ConfigRow): Promise<ConfigRow["sessio
   return state;
 }
 
-async function devirFetch(config: ConfigRow, url: string, retryLogin = true): Promise<string> {
+async function devirFetch(
+  config: ConfigRow,
+  url: string,
+  retryLogin = true,
+): Promise<string> {
   const response = await fetch(url, {
     redirect: "follow",
     headers: {
@@ -462,11 +529,23 @@ async function devirFetch(config: ConfigRow, url: string, retryLogin = true): Pr
     },
   });
   const html = await response.text();
-  if (!response.ok) throw new Error("Devir HTTP " + response.status + " en " + url);
-  if (/customer\/account\/login|form-login|customer-login/i.test(response.url + " " + html.slice(0, 12000))) {
-    if (!retryLogin) throw new Error("SESSION_EXPIRED: la sesión B2B no pudo renovarse automáticamente.");
+  if (!response.ok)
+    throw new Error("Devir HTTP " + response.status + " en " + url);
+  if (
+    /customer\/account\/login|form-login|customer-login/i.test(
+      response.url + " " + html.slice(0, 12000),
+    )
+  ) {
+    if (!retryLogin)
+      throw new Error(
+        "SESSION_EXPIRED: la sesión B2B no pudo renovarse automáticamente.",
+      );
     const sessionState = await automaticDevirLogin(config);
-    return await devirFetch({ ...config, session_state: sessionState }, url, false);
+    return await devirFetch(
+      { ...config, session_state: sessionState },
+      url,
+      false,
+    );
   }
   return html;
 }
@@ -483,11 +562,27 @@ function anchorHrefs(html: string): Array<{ tag: string; href: string }> {
 
 function discoverCategories(html: string, baseUrl: string): string[] {
   const nav =
-    html.match(/<nav\b[^>]*(?:navigation|data-action=["']navigation)[^>]*>[\s\S]*?<\/nav>/i)?.[0] ??
-    html.match(/<div\b[^>]*class=["'][^"']*navigation[^"']*["'][^>]*>[\s\S]*?<\/div>/i)?.[0] ??
+    html.match(
+      /<nav\b[^>]*(?:navigation|data-action=["']navigation)[^>]*>[\s\S]*?<\/nav>/i,
+    )?.[0] ??
+    html.match(
+      /<div\b[^>]*class=["'][^"']*navigation[^"']*["'][^>]*>[\s\S]*?<\/div>/i,
+    )?.[0] ??
     html;
   const origin = new URL(baseUrl).origin;
-  const excluded = ["/customer", "/checkout", "/catalogsearch", "/search", "/wishlist", "/sales", "/contact", "/privacy", "/cookie", "/cart", "/actualidad"];
+  const excluded = [
+    "/customer",
+    "/checkout",
+    "/catalogsearch",
+    "/search",
+    "/wishlist",
+    "/sales",
+    "/contact",
+    "/privacy",
+    "/cookie",
+    "/cart",
+    "/actualidad",
+  ];
   const values = anchorHrefs(nav)
     .map(({ href }) => absoluteUrl(href, baseUrl))
     .filter((url): url is string => Boolean(url))
@@ -496,7 +591,9 @@ function discoverCategories(html: string, baseUrl: string): string[] {
       if (url.origin !== origin) return false;
       const path = url.pathname.replace(/\/+$/, "");
       if (!path) return false;
-      return !excluded.some((prefix) => path === prefix || path.startsWith(prefix + "/"));
+      return !excluded.some(
+        (prefix) => path === prefix || path.startsWith(prefix + "/"),
+      );
     })
     .map((value) => {
       const url = new URL(value);
@@ -516,24 +613,37 @@ function productLinks(html: string, sourceUrl: string): string[] {
 }
 
 function attribute(tag: string, name: string): string | null {
-  return tag.match(new RegExp("\\b" + name + "\\s*=\\s*[\"']([^\"']+)[\"']", "i"))?.[1] ?? null;
+  return (
+    tag.match(
+      new RegExp("\\b" + name + "\\s*=\\s*[\"']([^\"']+)[\"']", "i"),
+    )?.[1] ?? null
+  );
 }
 
 function parsePriceTag(html: string, typePattern: RegExp): number | null {
-  for (const match of html.matchAll(/<[^>]+data-price-(?:type|amount)=[^>]+>/gi)) {
+  for (const match of html.matchAll(
+    /<[^>]+data-price-(?:type|amount)=[^>]+>/gi,
+  )) {
     const tag = match[0];
     const type = attribute(tag, "data-price-type") ?? "";
     if (!typePattern.test(type)) continue;
     const raw = attribute(tag, "data-price-amount");
     if (!raw) continue;
     const parsed = Number(raw.replace(",", "."));
-    if (Number.isFinite(parsed)) return Number.isInteger(parsed) && Math.abs(parsed) >= 1000 ? parsed / 100 : parsed;
+    if (Number.isFinite(parsed))
+      return Number.isInteger(parsed) && Math.abs(parsed) >= 1000
+        ? parsed / 100
+        : parsed;
   }
   return null;
 }
 
 function releaseDate(html: string): string | null {
-  const text = stripHtml(html.match(/<[^>]*class=["'][^"']*product-item-dateavl[^"']*["'][^>]*>[\s\S]*?<\/[^>]+>/i)?.[0] ?? "");
+  const text = stripHtml(
+    html.match(
+      /<[^>]*class=["'][^"']*product-item-dateavl[^"']*["'][^>]*>[\s\S]*?<\/[^>]+>/i,
+    )?.[0] ?? "",
+  );
   const match = text.match(/(\d{2})\/(\d{2})\/(\d{4})/);
   return match ? match[3] + "-" + match[2] + "-" + match[1] : null;
 }
@@ -545,17 +655,26 @@ function imageUrls(html: string, sourceUrl: string): string[] {
     const content = attribute(og, "content");
     if (content) found.push(content);
   }
-  for (const match of html.matchAll(/"(?:img|full)"\s*:\s*"([^"]+)"/gi)) found.push(match[1]);
-  for (const match of html.matchAll(/<img\b[^>]*(?:gallery|fotorama|product-image)[^>]*>/gi)) {
+  for (const match of html.matchAll(/"(?:img|full)"\s*:\s*"([^"]+)"/gi))
+    found.push(match[1]);
+  for (const match of html.matchAll(
+    /<img\b[^>]*(?:gallery|fotorama|product-image)[^>]*>/gi,
+  )) {
     const tag = match[0];
-    const value = attribute(tag, "data-full") ?? attribute(tag, "data-src") ?? attribute(tag, "src");
+    const value =
+      attribute(tag, "data-full") ??
+      attribute(tag, "data-src") ??
+      attribute(tag, "src");
     if (value) found.push(value);
   }
-  return Array.from(new Set(found
-    .map((value) => absoluteUrl(value, sourceUrl))
-    .filter((value): value is string => Boolean(value))
-    .filter((value) => !/logo|placeholder|loading|spinner/i.test(value))))
-    .slice(0, 12);
+  return Array.from(
+    new Set(
+      found
+        .map((value) => absoluteUrl(value, sourceUrl))
+        .filter((value): value is string => Boolean(value))
+        .filter((value) => !/logo|placeholder|loading|spinner/i.test(value)),
+    ),
+  ).slice(0, 12);
 }
 
 function parseAvailability(html: string): {
@@ -563,21 +682,32 @@ function parseAvailability(html: string): {
   label: string | null;
 } {
   const signals: Array<{ className: string; text: string }> = [];
-  for (const match of html.matchAll(/<([^\s>]+)\b[^>]*class=["']([^"']*\bstock\b[^"']*)["'][^>]*>[\s\S]*?<\/\1>/gi)) {
+  for (const match of html.matchAll(
+    /<([^\s>]+)\b[^>]*class=["']([^"']*\bstock\b[^"']*)["'][^>]*>[\s\S]*?<\/\1>/gi,
+  )) {
     signals.push({ className: match[2] ?? "", text: stripHtml(match[0]) });
   }
 
   const combined = signals.map((s) => `${s.className} ${s.text}`).join(" | ");
   const meaningful =
-    signals.map((s) => s.text).find((text) => text && !/^disponibilidad\s*:?$/i.test(text)) ??
+    signals
+      .map((s) => s.text)
+      .find((text) => text && !/^disponibilidad\s*:?$/i.test(text)) ??
     signals.map((s) => s.text).find(Boolean) ??
     "";
 
   // Magento normally exposes the decisive state in the stock element class
   // ("available" / "unavailable"). Text is a fallback because Devir has used
   // several templates over time. Generic "Disponibilidad:" labels are ignored.
-  if (/\bunavailable\b|no est[aá] disponible|agotad[oa]|sin stock|no disponible/i.test(combined)) {
-    return { availability: "unavailable", label: meaningful || "No disponible" };
+  if (
+    /\bunavailable\b|no est[aá] disponible|agotad[oa]|sin stock|no disponible/i.test(
+      combined,
+    )
+  ) {
+    return {
+      availability: "unavailable",
+      label: meaningful || "No disponible",
+    };
   }
   if (/pre\s*reserva|preorder|pr[eé]-?commande/i.test(combined)) {
     return { availability: "preorder", label: meaningful || "Pre reserva" };
@@ -587,13 +717,25 @@ function parseAvailability(html: string): {
   }
 
   // Some Magento themes render inventory state inside JSON configuration.
-  const jsonInStock = html.match(/["'](?:is_in_stock|isInStock)["']\s*:\s*(true|false)/i)?.[1];
-  if (jsonInStock === "true") return { availability: "available", label: meaningful || "Disponible" };
-  if (jsonInStock === "false") return { availability: "unavailable", label: meaningful || "No disponible" };
+  const jsonInStock = html.match(
+    /["'](?:is_in_stock|isInStock)["']\s*:\s*(true|false)/i,
+  )?.[1];
+  if (jsonInStock === "true")
+    return { availability: "available", label: meaningful || "Disponible" };
+  if (jsonInStock === "false")
+    return {
+      availability: "unavailable",
+      label: meaningful || "No disponible",
+    };
 
   const salable = html.match(/["']is_salable["']\s*:\s*["']?([01])["']?/i)?.[1];
-  if (salable === "1") return { availability: "available", label: meaningful || "Disponible" };
-  if (salable === "0") return { availability: "unavailable", label: meaningful || "No disponible" };
+  if (salable === "1")
+    return { availability: "available", label: meaningful || "Disponible" };
+  if (salable === "0")
+    return {
+      availability: "unavailable",
+      label: meaningful || "No disponible",
+    };
 
   return { availability: "unknown", label: meaningful || null };
 }
@@ -625,7 +767,9 @@ function groupingInfo(product: DevirProduct): GroupingInfo {
     /^(.*?)\s+(?:n[uú]m\.?|num\.?|vol\.?|volumen)\s*0*(\d{1,3})(?:\s+de\s+\d+)?(?:[.\s-]+(.*))?$/i,
   );
   if (!match) {
-    const tome = raw.match(/^(.*?)\s+-?\s*tomo\s*0*(\d{1,3})(?:\s+de\s+\d+)?(?:[.\s-]+(.*))?$/i);
+    const tome = raw.match(
+      /^(.*?)\s+-?\s*tomo\s*0*(\d{1,3})(?:\s+de\s+\d+)?(?:[.\s-]+(.*))?$/i,
+    );
     if (!tome) {
       return {
         itemKind: "standalone",
@@ -636,7 +780,7 @@ function groupingInfo(product: DevirProduct): GroupingInfo {
         confidence: "none",
       };
     }
-    const groupName = tome[1].replace(/[\s:;,.\-]+$/g, "").trim();
+    const groupName = tome[1].replace(/[\s:;,.-]+$/g, "").trim();
     const position = Number(tome[2]);
     return {
       itemKind: "variant_candidate",
@@ -648,10 +792,13 @@ function groupingInfo(product: DevirProduct): GroupingInfo {
     };
   }
 
-  const groupName = match[1].replace(/[\s:;,.\-]+$/g, "").trim();
+  const groupName = match[1].replace(/[\s:;,.-]+$/g, "").trim();
   const position = Number(match[2]);
   const suffix = match[3]?.trim() ?? "";
-  const specialEdition = /ed(?:ici[oó]n)?\.?\s*(?:especial|aniversario|limitada)|especial|aniversario/i.test(suffix);
+  const specialEdition =
+    /ed(?:ici[oó]n)?\.?\s*(?:especial|aniversario|limitada)|especial|aniversario/i.test(
+      suffix,
+    );
   return {
     itemKind: "variant_candidate",
     groupKey: normalizeGroupKey(groupName),
@@ -663,10 +810,14 @@ function groupingInfo(product: DevirProduct): GroupingInfo {
 }
 
 function parseProduct(html: string, url: string): DevirProduct | null {
-  const skuHtml = html.match(/<[^>]+itemprop=["']sku["'][^>]*>[\s\S]*?<\/[^>]+>/i)?.[0] ?? "";
+  const skuHtml =
+    html.match(/<[^>]+itemprop=["']sku["'][^>]*>[\s\S]*?<\/[^>]+>/i)?.[0] ?? "";
   const sku = stripHtml(skuHtml);
   if (!sku) return null;
-  const titleHtml = html.match(/<h1\b[^>]*class=["'][^"']*page-title[^"']*["'][^>]*>[\s\S]*?<\/h1>/i)?.[0] ?? "";
+  const titleHtml =
+    html.match(
+      /<h1\b[^>]*class=["'][^"']*page-title[^"']*["'][^>]*>[\s\S]*?<\/h1>/i,
+    )?.[0] ?? "";
   const name = cleanDevirTitle(stripHtml(titleHtml) || sku);
   const maxPrice = parsePriceTag(html, /maxPrice/i);
   const finalPrice = parsePriceTag(html, /finalPrice/i);
@@ -674,14 +825,23 @@ function parseProduct(html: string, url: string): DevirProduct | null {
   const purchasePrice = maxPrice ?? finalPrice ?? minPrice;
   const referencePriceNet =
     parsePriceTag(html, /oldPrice|regularPrice/i) ??
-    (maxPrice !== null && purchasePrice !== null && maxPrice > purchasePrice ? maxPrice : null);
+    (maxPrice !== null && purchasePrice !== null && maxPrice > purchasePrice
+      ? maxPrice
+      : null);
   const stock = parseAvailability(html);
-  return {
-    sku,
+  const retailUnit = normalizeDevirRetailUnit({
     name,
-    url,
     purchasePrice,
     referencePriceNet,
+  });
+  return {
+    sku,
+    name: retailUnit.name,
+    url,
+    purchasePrice: retailUnit.purchasePrice,
+    referencePriceNet: retailUnit.referencePriceNet,
+    retailUnitNormalized: retailUnit.unitsPerSupplierPack > 1,
+    supplierPackUnits: retailUnit.unitsPerSupplierPack,
     availability: stock.availability,
     availabilityLabel: stock.label,
     releaseDate: releaseDate(html),
@@ -702,41 +862,53 @@ function isFixedPriceCandidate(product: DevirProduct, key: string): boolean {
   if (/^(978|979)\d{10}$/.test(digits)) return true;
   if (key === "manga-comic") return true;
   if (key.startsWith("rol/")) {
-    return /manual|gu[ií]a|libro|compendio|aventura|campaña|bestiario|reglamento|suplemento/i.test(product.name);
+    return /manual|gu[ií]a|libro|compendio|aventura|campaña|bestiario|reglamento|suplemento/i.test(
+      product.name,
+    );
   }
   return false;
 }
 
-function shippingEstimate(product: DevirProduct, key: string): {
+function shippingEstimate(
+  product: DevirProduct,
+  key: string,
+): {
   weight: number;
   width: number;
   height: number;
   depth: number;
 } {
   const value = product.name.toLowerCase();
-  if (key === "manga-comic") return { weight: 0.45, width: 17, height: 24, depth: 3 };
-  if (key.startsWith("rol/")) return { weight: 1.20, width: 24, height: 31, depth: 5 };
+  if (key === "manga-comic")
+    return { weight: 0.45, width: 17, height: 24, depth: 3 };
+  if (key.startsWith("rol/"))
+    return { weight: 1.2, width: 24, height: 31, depth: 5 };
   if (key === "tcg/mtg" || key === "tcg/yugioh") {
     if (/blister|sobre\b|booster\b(?!.*display)/i.test(value)) {
       return { weight: 0.25, width: 12, height: 18, depth: 4 };
     }
     if (/display|caja|box|\(\s*\d+\s*\)|pack/i.test(value)) {
-      return { weight: 1.80, width: 30, height: 22, depth: 18 };
+      return { weight: 1.8, width: 30, height: 22, depth: 18 };
     }
-    return { weight: 0.40, width: 18, height: 14, depth: 7 };
+    return { weight: 0.4, width: 18, height: 14, depth: 7 };
   }
-  if (key === "accesorios") return { weight: 1.00, width: 35, height: 25, depth: 10 };
-  if (key === "rol/warhammer") return { weight: 1.50, width: 35, height: 25, depth: 10 };
+  if (key === "accesorios")
+    return { weight: 1.0, width: 35, height: 25, depth: 10 };
+  if (key === "rol/warhammer")
+    return { weight: 1.5, width: 35, height: 25, depth: 10 };
   if (/3d|edici[oó]n\s+3d|big box|deluxe/i.test(value)) {
-    return { weight: 4.50, width: 45, height: 45, depth: 20 };
+    return { weight: 4.5, width: 45, height: 45, depth: 20 };
   }
   if (/expansi[oó]n|exp\.|ampliaci[oó]n/i.test(value)) {
-    return { weight: 1.20, width: 30, height: 30, depth: 9 };
+    return { weight: 1.2, width: 30, height: 30, depth: 9 };
   }
-  return { weight: 2.00, width: 35, height: 35, depth: 12 };
+  return { weight: 2.0, width: 35, height: 35, depth: 12 };
 }
 
-function competitivePrice(cost: number, margin: number): {
+function competitivePrice(
+  cost: number,
+  margin: number,
+): {
   grossCost: number;
   retail: number;
   effective: number;
@@ -744,7 +916,7 @@ function competitivePrice(cost: number, margin: number): {
   const grossCost = cost * 1.21;
   const threshold = grossCost / (1 - margin);
   // End in .90 where possible: visually competitive, never below the floor.
-  let retail = Math.floor(threshold) + 0.90;
+  let retail = Math.floor(threshold) + 0.9;
   if (retail + 1e-9 < threshold) retail += 1;
   retail = Math.round(retail * 100) / 100;
   return { grossCost, retail, effective: (retail - grossCost) / retail };
@@ -771,35 +943,55 @@ async function spreeRequest<T>(
   body?: unknown,
   attempt = 0,
 ): Promise<T> {
-  if (!config.spree_admin_api_key) throw new Error("Falta la Secret API Key de Spree en la configuración cloud.");
-  const response = await fetch(config.spree_api_url.replace(/\/$/, "") + "/api/v3/admin" + path, {
-    method,
-    headers: {
-      accept: "application/json",
-      "content-type": "application/json",
-      "x-spree-api-key": config.spree_admin_api_key,
+  if (!config.spree_admin_api_key)
+    throw new Error(
+      "Falta la Secret API Key de Spree en la configuración cloud.",
+    );
+  const response = await fetch(
+    config.spree_api_url.replace(/\/$/, "") + "/api/v3/admin" + path,
+    {
+      method,
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+        "x-spree-api-key": config.spree_admin_api_key,
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
+  );
   const text = await response.text();
 
   if (
-    (response.status === 429 || [500, 502, 503, 504].includes(response.status)) &&
+    (response.status === 429 ||
+      [500, 502, 503, 504].includes(response.status)) &&
     attempt < 4
   ) {
     const retryAfter = Number(response.headers.get("retry-after"));
-    const waitMs = Number.isFinite(retryAfter) && retryAfter > 0
-      ? retryAfter * 1000
-      : Math.min(6000, 750 * (2 ** attempt));
+    const waitMs =
+      Number.isFinite(retryAfter) && retryAfter > 0
+        ? retryAfter * 1000
+        : Math.min(6000, 750 * 2 ** attempt);
     await new Promise((resolve) => setTimeout(resolve, waitMs));
     return await spreeRequest<T>(config, method, path, body, attempt + 1);
   }
 
   let payload: unknown = null;
   if (text) {
-    try { payload = JSON.parse(text); } catch { payload = text; }
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      payload = text;
+    }
   }
-  if (!response.ok) throw new Error("Spree " + response.status + " " + path + ": " + String(text).slice(0, 350));
+  if (!response.ok)
+    throw new Error(
+      "Spree " +
+        response.status +
+        " " +
+        path +
+        ": " +
+        String(text).slice(0, 350),
+    );
   return payload as T;
 }
 
@@ -836,7 +1028,11 @@ async function ensureProductsInDefaultChannel(
 
 async function spreeList<T>(config: ConfigRow, path: string): Promise<T[]> {
   const sep = path.includes("?") ? "&" : "?";
-  const payload = await spreeRequest<{ data?: T[] }>(config, "GET", path + sep + "limit=100");
+  const payload = await spreeRequest<{ data?: T[] }>(
+    config,
+    "GET",
+    path + sep + "limit=100",
+  );
   return payload.data ?? [];
 }
 
@@ -851,11 +1047,7 @@ async function spreeListAll<T>(
     const payload = await spreeRequest<{
       data?: T[];
       meta?: { next?: number | null; page?: number; pages?: number };
-    }>(
-      config,
-      "GET",
-      path + sep + "limit=100&page=" + page,
-    );
+    }>(config, "GET", path + sep + "limit=100&page=" + page);
     const batch = payload.data ?? [];
     rows.push(...batch);
     const pages = Number(payload.meta?.pages);
@@ -873,12 +1065,16 @@ async function spreeListAll<T>(
 function variantPrice(variant: SpreeVariant): number | null {
   if (typeof variant.price === "number") return variant.price;
   if (typeof variant.price === "string") {
-    const n = Number(variant.price); return Number.isFinite(n) ? n : null;
+    const n = Number(variant.price);
+    return Number.isFinite(n) ? n : null;
   }
   if (variant.price && typeof variant.price === "object") {
-    const n = Number(variant.price.amount); if (Number.isFinite(n)) return n;
+    const n = Number(variant.price.amount);
+    if (Number.isFinite(n)) return n;
   }
-  const eur = variant.prices?.find((p) => p.currency?.toUpperCase() === "EUR") ?? variant.prices?.[0];
+  const eur =
+    variant.prices?.find((p) => p.currency?.toUpperCase() === "EUR") ??
+    variant.prices?.[0];
   const n = Number(eur?.amount);
   return Number.isFinite(n) ? n : null;
 }
@@ -899,7 +1095,8 @@ async function upsertBasePrice(
 ): Promise<void> {
   const prices = await spreeList<SpreePrice>(
     config,
-    "/prices?q[variant_id_eq]=" + encodeURIComponent(variantId) +
+    "/prices?q[variant_id_eq]=" +
+      encodeURIComponent(variantId) +
       "&q[currency_eq]=EUR",
   );
   const basePrice =
@@ -907,8 +1104,7 @@ async function upsertBasePrice(
       (price) =>
         !price.price_list_id &&
         (price.currency ?? "EUR").toUpperCase() === "EUR",
-    ) ??
-    prices.find((price) => !price.price_list_id);
+    ) ?? prices.find((price) => !price.price_list_id);
 
   if (basePrice) {
     await spreeRequest(
@@ -967,24 +1163,37 @@ async function updateVariantRetailPrice(
     "PATCH",
     "/products/" + encodeURIComponent(productId),
     {
-      variants: [{
-        id: variantId,
-        prices: [{ currency: "EUR", amount }],
-      }],
+      variants: [
+        {
+          id: variantId,
+          prices: [{ currency: "EUR", amount }],
+        },
+      ],
     },
   );
   return await spreeRequest<SpreeVariant>(
     config,
     "GET",
-    "/products/" + encodeURIComponent(productId) +
-      "/variants/" + encodeURIComponent(variantId),
+    "/products/" +
+      encodeURIComponent(productId) +
+      "/variants/" +
+      encodeURIComponent(variantId),
   );
 }
 
-async function findSpreeProduct(config: ConfigRow, sku: string): Promise<{ product: SpreeProduct; variant: SpreeVariant } | null> {
-  const products = await spreeList<SpreeProduct>(config, "/products?q[search]=" + encodeURIComponent(sku));
+async function findSpreeProduct(
+  config: ConfigRow,
+  sku: string,
+): Promise<{ product: SpreeProduct; variant: SpreeVariant } | null> {
+  const products = await spreeList<SpreeProduct>(
+    config,
+    "/products?q[search]=" + encodeURIComponent(sku),
+  );
   for (const product of products) {
-    const variants = await spreeList<SpreeVariant>(config, "/products/" + encodeURIComponent(product.id) + "/variants");
+    const variants = await spreeList<SpreeVariant>(
+      config,
+      "/products/" + encodeURIComponent(product.id) + "/variants",
+    );
     const variant = variants.find((v) => v.sku?.trim() === sku);
     if (variant) return { product, variant };
   }
@@ -1031,26 +1240,28 @@ function categoryForKey(
       "rol-warhammer",
       "warhammer",
     ],
-    "rol/otros": [
-      "rol/otros",
-      "rol/rol-otros",
-      "rol-otros",
-    ],
+    "rol/otros": ["rol/otros", "rol/rol-otros", "rol-otros"],
     "tcg/mtg": ["tcg/mtg"],
     "tcg/yugioh": ["tcg/yugioh"],
     "manga-comic": ["manga-comic"],
-    "accesorios": ["accesorios"],
+    accesorios: ["accesorios"],
   };
   const candidates = aliases[key] ?? [key];
   return categories.find((category) =>
-    candidates.includes(category.permalink ?? "")
+    candidates.includes(category.permalink ?? ""),
   );
 }
 
-async function categoryMargin(config: ConfigRow, category: SpreeCategory | null): Promise<number | null> {
+async function categoryMargin(
+  config: ConfigRow,
+  category: SpreeCategory | null,
+): Promise<number | null> {
   if (!category) return null;
   try {
-    const fields = await spreeList<SpreeCustomField>(config, "/categories/" + category.id + "/custom_fields");
+    const fields = await spreeList<SpreeCustomField>(
+      config,
+      "/categories/" + category.id + "/custom_fields",
+    );
     const raw = fields.find((f) => f.key === "pricing.target_margin")?.value;
     const value = Number(raw);
     return Number.isFinite(value) && value >= 0 && value < 0.95 ? value : null;
@@ -1059,8 +1270,13 @@ async function categoryMargin(config: ConfigRow, category: SpreeCategory | null)
   }
 }
 
-async function definitions(config: ConfigRow): Promise<Map<string, SpreeFieldDefinition>> {
-  let defs = await spreeList<SpreeFieldDefinition>(config, "/custom_field_definitions");
+async function definitions(
+  config: ConfigRow,
+): Promise<Map<string, SpreeFieldDefinition>> {
+  let defs = await spreeList<SpreeFieldDefinition>(
+    config,
+    "/custom_field_definitions",
+  );
   let result = new Map(
     defs
       .filter((d) => d.resource_type === "Spree::Product")
@@ -1093,8 +1309,14 @@ async function definitions(config: ConfigRow): Promise<Map<string, SpreeFieldDef
   return result;
 }
 
-async function productFields(config: ConfigRow, productId: string): Promise<SpreeCustomField[]> {
-  return await spreeList<SpreeCustomField>(config, "/products/" + productId + "/custom_fields");
+async function productFields(
+  config: ConfigRow,
+  productId: string,
+): Promise<SpreeCustomField[]> {
+  return await spreeList<SpreeCustomField>(
+    config,
+    "/products/" + productId + "/custom_fields",
+  );
 }
 
 async function upsertProductFields(
@@ -1104,7 +1326,7 @@ async function upsertProductFields(
   values: Record<string, unknown>,
   current?: SpreeCustomField[],
 ): Promise<void> {
-  const fields = current ?? await productFields(config, productId);
+  const fields = current ?? (await productFields(config, productId));
   const byKey = new Map(fields.map((f) => [f.key, f]));
   for (const [key, value] of Object.entries(values)) {
     if (value === undefined || value === null || value === "") continue;
@@ -1113,13 +1335,23 @@ async function upsertProductFields(
     const old = byKey.get(key);
     if (old) {
       if (String(old.value) !== String(value)) {
-        await spreeRequest(config, "PATCH", "/products/" + productId + "/custom_fields/" + old.id, { value });
+        await spreeRequest(
+          config,
+          "PATCH",
+          "/products/" + productId + "/custom_fields/" + old.id,
+          { value },
+        );
       }
     } else {
-      const created = await spreeRequest<SpreeCustomField>(config, "POST", "/products/" + productId + "/custom_fields", {
-        custom_field_definition_id: def.id,
-        value,
-      });
+      const created = await spreeRequest<SpreeCustomField>(
+        config,
+        "POST",
+        "/products/" + productId + "/custom_fields",
+        {
+          custom_field_definition_id: def.id,
+          value,
+        },
+      );
       byKey.set(key, created);
     }
   }
@@ -1136,18 +1368,20 @@ async function upsertVariantProvenance(
   offers: CatalogOfferSelection["offers"],
 ): Promise<void> {
   const fields = await productFields(config, productId);
-  const current = fields.find((field) =>
-    field.key === "sourcing.variant_provenance" ||
-    field.key === "variant_provenance"
+  const current = fields.find(
+    (field) =>
+      field.key === "sourcing.variant_provenance" ||
+      field.key === "variant_provenance",
   );
   let document: {
     version: number;
     variants: Record<string, unknown>;
   } = { version: 1, variants: {} };
   try {
-    const parsed = typeof current?.value === "string"
-      ? JSON.parse(current.value)
-      : current?.value;
+    const parsed =
+      typeof current?.value === "string"
+        ? JSON.parse(current.value)
+        : current?.value;
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       const candidate = parsed as {
         version?: unknown;
@@ -1157,9 +1391,9 @@ async function upsertVariantProvenance(
         version: Number(candidate.version) || 1,
         variants:
           candidate.variants &&
-            typeof candidate.variants === "object" &&
-            !Array.isArray(candidate.variants)
-            ? candidate.variants as Record<string, unknown>
+          typeof candidate.variants === "object" &&
+          !Array.isArray(candidate.variants)
+            ? (candidate.variants as Record<string, unknown>)
             : {},
       };
     }
@@ -1206,7 +1440,10 @@ let cachedDefaultStockLocationId: string | null = null;
 
 async function defaultStockLocationId(config: ConfigRow): Promise<string> {
   if (cachedDefaultStockLocationId) return cachedDefaultStockLocationId;
-  const locations = await spreeList<SpreeStockLocation>(config, "/stock_locations");
+  const locations = await spreeList<SpreeStockLocation>(
+    config,
+    "/stock_locations",
+  );
   const location =
     locations.find((item) => item.active && item.default) ??
     locations.find((item) => item.active) ??
@@ -1226,17 +1463,24 @@ async function patchVariantInventory(
   preorderShipsAt: string | null,
 ): Promise<SpreeVariant> {
   const locationId = await defaultStockLocationId(config);
-  const inventory = [{
-    stock_location_id: locationId,
-    count_on_hand: Math.max(0, Number.isFinite(countOnHand) ? countOnHand : 0),
-    backorderable,
-  }];
+  const inventory = [
+    {
+      stock_location_id: locationId,
+      count_on_hand: Math.max(
+        0,
+        Number.isFinite(countOnHand) ? countOnHand : 0,
+      ),
+      backorderable,
+    },
+  ];
 
   let updated = await spreeRequest<SpreeVariant>(
     config,
     "PATCH",
-    "/products/" + encodeURIComponent(productId) +
-      "/variants/" + encodeURIComponent(variantId),
+    "/products/" +
+      encodeURIComponent(productId) +
+      "/variants/" +
+      encodeURIComponent(variantId),
     {
       track_inventory: true,
       preorderable,
@@ -1251,8 +1495,10 @@ async function patchVariantInventory(
     updated = await spreeRequest<SpreeVariant>(
       config,
       "PATCH",
-      "/products/" + encodeURIComponent(productId) +
-        "/variants/" + encodeURIComponent(variantId),
+      "/products/" +
+        encodeURIComponent(productId) +
+        "/variants/" +
+        encodeURIComponent(variantId),
       {
         track_inventory: true,
         preorderable,
@@ -1269,7 +1515,11 @@ async function syncBackorderability(
   variantId: string | null,
   availability: DevirProduct["availability"],
 ): Promise<number> {
-  if (!variantId || (availability !== "available" && availability !== "unavailable")) return 0;
+  if (
+    !variantId ||
+    (availability !== "available" && availability !== "unavailable")
+  )
+    return 0;
   const desired = availability === "available";
   const attempts = [
     "/stock_items?q[variant_id_eq]=" + encodeURIComponent(variantId),
@@ -1300,9 +1550,16 @@ async function syncBackorderability(
   return changed;
 }
 
-async function syncImages(config: ConfigRow, productId: string, product: DevirProduct): Promise<number> {
+async function syncImages(
+  config: ConfigRow,
+  productId: string,
+  product: DevirProduct,
+): Promise<number> {
   if (!product.imageUrls.length) return 0;
-  const current = await spreeList<Json>(config, "/products/" + productId + "/media");
+  const current = await spreeList<Json>(
+    config,
+    "/products/" + productId + "/media",
+  );
   if (current.length > 0) return 0;
   let uploaded = 0;
   for (const [index, url] of product.imageUrls.entries()) {
@@ -1326,7 +1583,8 @@ async function appendToExistingGroupedProduct(
   grouping: GroupingInfo,
   retailPrice: number,
 ): Promise<{ product: SpreeProduct; variant: SpreeVariant } | null> {
-  if (!grouping.groupKey || grouping.itemKind !== "variant_candidate") return null;
+  if (!grouping.groupKey || grouping.itemKind !== "variant_candidate")
+    return null;
 
   const { data, error } = await supabase
     .from("devir_sync_catalog")
@@ -1358,7 +1616,9 @@ async function appendToExistingGroupedProduct(
       config,
       "/products/" + encodeURIComponent(productId) + "/variants",
     );
-    const already = variants.find((variant) => variant.sku?.trim() === product.sku);
+    const already = variants.find(
+      (variant) => variant.sku?.trim() === product.sku,
+    );
     if (already) return { product: parent, variant: already };
 
     const existingRows = data ?? [];
@@ -1450,7 +1710,9 @@ async function appendToExistingLanguageProduct(
       config,
       "/products/" + encodeURIComponent(productId) + "/variants",
     );
-    const already = variants.find((variant) => variant.sku?.trim() === product.sku);
+    const already = variants.find(
+      (variant) => variant.sku?.trim() === product.sku,
+    );
     if (already) return { product: parent, variant: already };
 
     if ((data ?? []).some((row) => row.language_label === info.language)) {
@@ -1481,7 +1743,8 @@ async function appendToExistingLanguageProduct(
       productId,
       created.id,
       0,
-      product.availability === "available" || product.availability === "preorder",
+      product.availability === "available" ||
+        product.availability === "preorder",
       product.availability === "preorder",
       product.releaseDate,
     );
@@ -1496,7 +1759,9 @@ function supplierRelation(row: CatalogOfferRow): CatalogSupplierRow | null {
   return relation ?? null;
 }
 
-async function configuredCatalogSupplier(code: string): Promise<CatalogSupplierRow> {
+async function configuredCatalogSupplier(
+  code: string,
+): Promise<CatalogSupplierRow> {
   const normalizedCode = normalizeSupplierCode(code);
   const { data, error } = await supabase
     .from("catalog_suppliers")
@@ -1593,12 +1858,14 @@ async function reconcileStaleCatalogBatch(
     .filter((row) => {
       if (row.supplier_enabled === false) return true;
       const lastSeen = new Date(String(row.last_seen_at ?? "")).getTime();
-      const staleAfterMs = Number(row.supplier_stale_after_hours ?? 0) *
-        60 * 60 * 1000;
-      return !Number.isFinite(lastSeen) ||
+      const staleAfterMs =
+        Number(row.supplier_stale_after_hours ?? 0) * 60 * 60 * 1000;
+      return (
+        !Number.isFinite(lastSeen) ||
         !Number.isFinite(staleAfterMs) ||
         staleAfterMs <= 0 ||
-        now - lastSeen > staleAfterMs;
+        now - lastSeen > staleAfterMs
+      );
     })
     .slice(0, limit)
     .map((row) => String(row.variant_id));
@@ -1623,9 +1890,10 @@ async function reconcileStaleCatalogBatch(
       failed += 1;
       console.error("No se pudo reconciliar una oferta caducada", {
         variantId,
-        error: reconcileError instanceof Error
-          ? reconcileError.message
-          : String(reconcileError),
+        error:
+          reconcileError instanceof Error
+            ? reconcileError.message
+            : String(reconcileError),
       });
     }
   }
@@ -1648,9 +1916,10 @@ async function resolveCatalogVariant(
     return await loadCatalogVariant(String(existingOffer.variant_id));
   }
 
-  const orderedIdentifiers = [...identity.identifiers].sort((left, right) =>
-    Number(left.namespace.startsWith("supplier:")) -
-    Number(right.namespace.startsWith("supplier:"))
+  const orderedIdentifiers = [...identity.identifiers].sort(
+    (left, right) =>
+      Number(left.namespace.startsWith("supplier:")) -
+      Number(right.namespace.startsWith("supplier:")),
   );
   for (const identifier of orderedIdentifiers) {
     const { data, error } = await supabase
@@ -1807,16 +2076,14 @@ async function persistCatalogOffer(
   const now = new Date().toISOString();
 
   for (const identifier of identity.identifiers) {
-    const { error } = await supabase
-      .from("catalog_variant_identifiers")
-      .upsert(
-        {
-          variant_id: resolved.variant.id,
-          namespace: identifier.namespace,
-          value: identifier.value,
-        },
-        { onConflict: "namespace,value", ignoreDuplicates: true },
-      );
+    const { error } = await supabase.from("catalog_variant_identifiers").upsert(
+      {
+        variant_id: resolved.variant.id,
+        namespace: identifier.namespace,
+        value: identifier.value,
+      },
+      { onConflict: "namespace,value", ignoreDuplicates: true },
+    );
     if (error) throw error;
 
     const { data: owner, error: ownerError } = await supabase
@@ -1892,26 +2159,28 @@ async function chooseCatalogOffer(
   const candidates: SupplierOfferCandidate[] = rows.flatMap((row) => {
     const supplier = supplierRelation(row);
     if (!supplier) return [];
-    return [{
-      id: row.id,
-      supplierId: supplier.id,
-      supplierCode: supplier.code,
-      supplierSku: row.supplier_sku,
-      supplierPriority: Number(supplier.priority),
-      supplierEnabled: supplier.enabled,
-      staleAfterHours: Number(supplier.stale_after_hours),
-      normalizedCost: Number(row.normalized_cost),
-      currency: row.currency,
-      availability: row.availability,
-      active: row.active,
-      lastSeenAt: row.last_seen_at,
-    }];
+    return [
+      {
+        id: row.id,
+        supplierId: supplier.id,
+        supplierCode: supplier.code,
+        supplierSku: row.supplier_sku,
+        supplierPriority: Number(supplier.priority),
+        supplierEnabled: supplier.enabled,
+        staleAfterHours: Number(supplier.stale_after_hours),
+        normalizedCost: Number(row.normalized_cost),
+        currency: row.currency,
+        availability: row.availability,
+        active: row.active,
+        lastSeenAt: row.last_seen_at,
+      },
+    ];
   });
   const selectedCandidate = selectBestOffer(candidates, {
     targetCurrency: "EUR",
   }).selected;
   const selected = selectedCandidate
-    ? rows.find((row) => row.id === selectedCandidate.id) ?? null
+    ? (rows.find((row) => row.id === selectedCandidate.id) ?? null)
     : null;
   const selectedSupplier = selected ? supplierRelation(selected) : null;
   const selectedId = selected?.id ?? null;
@@ -1945,23 +2214,26 @@ async function chooseCatalogOffer(
     .flatMap((row) => {
       const supplier = supplierRelation(row);
       if (!supplier) return [];
-      return [{
-        id: row.id,
-        supplierCode: supplier.code,
-        supplierName: supplier.name,
-        supplierSku: row.supplier_sku,
-        normalizedCost: Number(row.normalized_cost),
-        currency: row.currency,
-        availability: row.availability,
-        sourceUrl: row.source_url,
-        lastSeenAt: row.last_seen_at,
-        selected: row.id === selectedId,
-      }];
+      return [
+        {
+          id: row.id,
+          supplierCode: supplier.code,
+          supplierName: supplier.name,
+          supplierSku: row.supplier_sku,
+          normalizedCost: Number(row.normalized_cost),
+          currency: row.currency,
+          availability: row.availability,
+          sourceUrl: row.source_url,
+          lastSeenAt: row.last_seen_at,
+          selected: row.id === selectedId,
+        },
+      ];
     })
-    .sort((left, right) =>
-      Number(right.selected) - Number(left.selected) ||
-      left.normalizedCost - right.normalizedCost ||
-      left.supplierCode.localeCompare(right.supplierCode)
+    .sort(
+      (left, right) =>
+        Number(right.selected) - Number(left.selected) ||
+        left.normalizedCost - right.normalizedCost ||
+        left.supplierCode.localeCompare(right.supplierCode),
     );
 
   return { selected, selectedSupplier, offers };
@@ -1984,8 +2256,10 @@ async function catalogSpreeMapping(
   const spreeVariant = await spreeRequest<SpreeVariant>(
     config,
     "GET",
-    "/products/" + encodeURIComponent(product.spree_product_id) +
-      "/variants/" + encodeURIComponent(variant.spree_variant_id),
+    "/products/" +
+      encodeURIComponent(product.spree_product_id) +
+      "/variants/" +
+      encodeURIComponent(variant.spree_variant_id),
   );
   return { product: spreeProduct, variant: spreeVariant };
 }
@@ -1994,15 +2268,18 @@ function offerItem(row: CatalogOfferRow): NormalizedSupplierCatalogItem {
   if (!row.raw_payload || typeof row.raw_payload !== "object") {
     throw new Error(`Oferta ${row.id} sin payload normalizado`);
   }
-  return normalizeSupplierItem(row.raw_payload as unknown as SupplierCatalogItem);
+  return normalizeSupplierItem(
+    row.raw_payload as unknown as SupplierCatalogItem,
+  );
 }
 
 function supplierItemAsProduct(
   item: NormalizedSupplierCatalogItem,
 ): DevirProduct {
-  const displayName = item.variantName && item.variantName !== item.productName
-    ? `${item.productName} ${item.variantName}`
-    : item.productName;
+  const displayName =
+    item.variantName && item.variantName !== item.productName
+      ? `${item.productName} ${item.variantName}`
+      : item.productName;
   return {
     sku: item.supplierSku,
     name: displayName,
@@ -2216,14 +2493,22 @@ async function syncProductToSpree(
   categories: SpreeCategory[],
   defs: Map<string, SpreeFieldDefinition>,
   catalogContext?: CatalogSpreeContext,
-): Promise<{ productId: string; variantId: string | null; images: number; review: boolean; backorderItems: number; lastAutoPrice: number | null }> {
+): Promise<{
+  productId: string;
+  variantId: string | null;
+  images: number;
+  review: boolean;
+  backorderItems: number;
+  lastAutoPrice: number | null;
+}> {
   if (!product.purchasePrice || product.purchasePrice <= 0) {
     throw new Error("Producto sin coste comparable: " + product.sku);
   }
   const key = categoryKey(product);
-  const category = key ? categoryForKey(categories, key) ?? null : null;
+  const category = key ? (categoryForKey(categories, key) ?? null) : null;
   const configuredMargin = await categoryMargin(config, category);
-  const targetMargin = configuredMargin ?? DEFAULT_CATEGORY_MARGINS[key] ?? 0.05;
+  const targetMargin =
+    configuredMargin ?? DEFAULT_CATEGORY_MARGINS[key] ?? 0.05;
   const pricing = competitivePricing(
     product,
     key,
@@ -2234,31 +2519,35 @@ async function syncProductToSpree(
   const packRequiresSplit = isPack(product);
   const reasons: string[] = [];
   if (!category) reasons.push("category_unclassified");
-  else if (configuredMargin === null) reasons.push("category_margin_unconfigured");
+  else if (configuredMargin === null)
+    reasons.push("category_margin_unconfigured");
   if (pricing.reviewReason) reasons.push(pricing.reviewReason);
   if (!product.imageUrls.length) reasons.push("product_image_missing");
   if (packRequiresSplit) reasons.push("pack_requires_operator_split");
+  if (isCatalanCatalogProduct(product)) {
+    reasons.push("catalan_requires_operator_review");
+  }
   const grouping = groupingInfo(product);
   const languageGrouping =
     grouping.itemKind === "standalone" ? languageGroupingInfo(product) : null;
-  if (grouping.confidence === "ambiguous") reasons.push("grouping_requires_operator_review");
+  if (grouping.confidence === "ambiguous")
+    reasons.push("grouping_requires_operator_review");
   const review = reasons.length > 0;
   const spreeSku = catalogContext?.canonicalSku ?? product.sku;
   const spreeProductName = catalogContext?.productName ?? product.name;
   const variantOptions = Object.entries(catalogContext?.options ?? {}).map(
     ([name, value]) => ({ name, value }),
   );
-  let existing = catalogContext?.existingProduct && catalogContext.existingVariant
-    ? {
-        product: catalogContext.existingProduct,
-        variant: catalogContext.existingVariant,
-      }
-    : catalogContext
-      ? null
-      : await findSpreeProduct(config, product.sku);
-  let grouped = catalogContext
-    ? variantOptions.length > 0
-    : false;
+  let existing =
+    catalogContext?.existingProduct && catalogContext.existingVariant
+      ? {
+          product: catalogContext.existingProduct,
+          variant: catalogContext.existingVariant,
+        }
+      : catalogContext
+        ? null
+        : await findSpreeProduct(config, product.sku);
+  let grouped = catalogContext ? variantOptions.length > 0 : false;
   let createdVariant = false;
 
   if (catalogContext && !existing && !catalogContext.existingProduct) {
@@ -2311,11 +2600,12 @@ async function syncProductToSpree(
   if (!existing && catalogContext?.existingProduct) {
     const currentVariants = await spreeList<SpreeVariant>(
       config,
-      "/products/" + encodeURIComponent(catalogContext.existingProduct.id) +
+      "/products/" +
+        encodeURIComponent(catalogContext.existingProduct.id) +
         "/variants",
     );
-    const matchingVariant = currentVariants.find((variant) =>
-      variant.sku?.trim() === spreeSku
+    const matchingVariant = currentVariants.find(
+      (variant) => variant.sku?.trim() === spreeSku,
     );
     if (matchingVariant) {
       existing = {
@@ -2326,7 +2616,8 @@ async function syncProductToSpree(
       const created = await spreeRequest<SpreeVariant>(
         config,
         "POST",
-        "/products/" + encodeURIComponent(catalogContext.existingProduct.id) +
+        "/products/" +
+          encodeURIComponent(catalogContext.existingProduct.id) +
           "/variants",
         {
           sku: spreeSku,
@@ -2367,34 +2658,40 @@ async function syncProductToSpree(
   ];
 
   if (!existing) {
-    const created = await spreeRequest<SpreeProduct>(config, "POST", "/products", {
-      name: spreeProductName,
-      status: "draft",
-      tags: sourceTags,
-      ...(category ? { category_ids: [category.id] } : {}),
-      variants: [{
-        options: variantOptions,
-        sku: spreeSku,
-        cost_price: product.purchasePrice,
-        cost_currency: catalogContext?.offer.currency ?? "EUR",
-        ...shipping,
-        track_inventory: true,
-        backorder_limit: null,
-        preorderable: product.availability === "preorder",
-        preorder_ships_at:
-          product.availability === "preorder" ? product.releaseDate : null,
-        prices: [{ currency: "EUR", amount: pricing.retail }],
-      }],
-    });
+    const created = await spreeRequest<SpreeProduct>(
+      config,
+      "POST",
+      "/products",
+      {
+        name: spreeProductName,
+        status: "draft",
+        tags: sourceTags,
+        ...(category ? { category_ids: [category.id] } : {}),
+        variants: [
+          {
+            options: variantOptions,
+            sku: spreeSku,
+            cost_price: product.purchasePrice,
+            cost_currency: catalogContext?.offer.currency ?? "EUR",
+            ...shipping,
+            track_inventory: true,
+            backorder_limit: null,
+            preorderable: product.availability === "preorder",
+            preorder_ships_at:
+              product.availability === "preorder" ? product.releaseDate : null,
+            prices: [{ currency: "EUR", amount: pricing.retail }],
+          },
+        ],
+      },
+    );
     productId = created.id;
-    const variants = await spreeList<SpreeVariant>(config, "/products/" + productId + "/variants");
+    const variants = await spreeList<SpreeVariant>(
+      config,
+      "/products/" + productId + "/variants",
+    );
     variantId = variants.find((v) => v.sku === spreeSku)?.id ?? null;
     if (catalogContext) {
-      await checkpointCatalogSpreeMapping(
-        catalogContext,
-        productId,
-        variantId,
-      );
+      await checkpointCatalogSpreeMapping(catalogContext, productId, variantId);
     }
   } else {
     productId = existing.product.id;
@@ -2414,8 +2711,12 @@ async function syncProductToSpree(
       needsManagedCleanup =
         catalogPricing?.title_cleanup_version !== "devir-title-v3";
     }
-    const legacyLastAuto = Number(fields.find((f) => f.key === "pricing.last_synced_price")?.value);
-    const lastAuto = Number.isFinite(catalogLastAuto) ? catalogLastAuto : legacyLastAuto;
+    const legacyLastAuto = Number(
+      fields.find((f) => f.key === "pricing.last_synced_price")?.value,
+    );
+    const lastAuto = Number.isFinite(catalogLastAuto)
+      ? catalogLastAuto
+      : legacyLastAuto;
     const currentPrice = variantPrice(existing.variant);
     const active = existing.product.status === "active";
     const managed =
@@ -2430,14 +2731,21 @@ async function syncProductToSpree(
       lastAutoPrice: Number.isFinite(lastAuto) ? lastAuto : null,
     });
     manualPrice = currentPrice !== null && !canWritePrice;
-    const tags = Array.from(new Set([
-      ...(existing.product.tags ?? []).filter((tag) =>
-        !tag.startsWith("sourced:") &&
-        !["catalog-ready", "catalog-review", "devir-ready", "devir-review"]
-          .includes(tag)
-      ),
-      ...sourceTags,
-    ])).filter((tag) => review || tag !== "REVISION-HUMANA");
+    const tags = Array.from(
+      new Set([
+        ...(existing.product.tags ?? []).filter(
+          (tag) =>
+            !tag.startsWith("sourced:") &&
+            ![
+              "catalog-ready",
+              "catalog-review",
+              "devir-ready",
+              "devir-review",
+            ].includes(tag),
+        ),
+        ...sourceTags,
+      ]),
+    ).filter((tag) => review || tag !== "REVISION-HUMANA");
     const refreshManagedMetadata =
       managed && (!active || forceDraftForSplit || needsManagedCleanup);
     await spreeRequest(config, "PATCH", "/products/" + productId, {
@@ -2451,8 +2759,10 @@ async function syncProductToSpree(
     await spreeRequest(
       config,
       "PATCH",
-      "/products/" + encodeURIComponent(productId) +
-      "/variants/" + encodeURIComponent(existing.variant.id),
+      "/products/" +
+        encodeURIComponent(productId) +
+        "/variants/" +
+        encodeURIComponent(existing.variant.id),
       {
         sku: spreeSku,
         cost_price: product.purchasePrice,
@@ -2470,23 +2780,26 @@ async function syncProductToSpree(
     }
   }
 
-  const effectivePrice = existing && manualPrice ? variantPrice(existing.variant) ?? pricing.retail : pricing.retail;
-  const stripeFee = effectivePrice * STANDARD_EEA_CARD_RATE + STANDARD_EEA_CARD_FIXED_EUR;
+  const effectivePrice =
+    existing && manualPrice
+      ? (variantPrice(existing.variant) ?? pricing.retail)
+      : pricing.retail;
+  const stripeFee =
+    effectivePrice * STANDARD_EEA_CARD_RATE + STANDARD_EEA_CARD_FIXED_EUR;
   const effectiveProfit =
-    (effectivePrice / (1 + pricing.vatRate)) -
-    product.purchasePrice -
-    stripeFee;
-  const effectiveMargin = effectivePrice > 0 ? effectiveProfit / effectivePrice : 0;
+    effectivePrice / (1 + pricing.vatRate) - product.purchasePrice - stripeFee;
+  const effectiveMargin =
+    effectivePrice > 0 ? effectiveProfit / effectivePrice : 0;
   await upsertProductFields(config, productId, defs, {
     "devir.supplier_sku": catalogContext || grouped ? undefined : product.sku,
     "devir.source_url": catalogContext || grouped ? undefined : product.url,
     "devir.category_key": catalogContext ? undefined : key,
-    "devir.availability": catalogContext || grouped
-      ? undefined
-      : product.availability,
-    "devir.release_date": catalogContext || grouped
-      ? undefined
-      : product.releaseDate ?? undefined,
+    "devir.availability":
+      catalogContext || grouped ? undefined : product.availability,
+    "devir.release_date":
+      catalogContext || grouped
+        ? undefined
+        : (product.releaseDate ?? undefined),
     "devir.review_status": catalogContext
       ? undefined
       : review
@@ -2500,7 +2813,8 @@ async function syncProductToSpree(
     "devir.last_sync_at": catalogContext ? undefined : new Date().toISOString(),
     "pricing.applied_margin": targetMargin,
     "pricing.effective_margin": effectiveMargin,
-    "pricing.rule_source": pricing.ruleSource +
+    "pricing.rule_source":
+      pricing.ruleSource +
       (category ? ":category=" + category.id : "") +
       (catalogContext ? ":supplier=" + sourceCode : ""),
     "pricing.vat_rate": pricing.vatRate,
@@ -2522,7 +2836,36 @@ async function syncProductToSpree(
     );
   }
 
-  const backorderItems = await syncBackorderability(config, variantId, product.availability);
+  let backorderItems = await syncBackorderability(
+    config,
+    variantId,
+    product.availability,
+  );
+  if (
+    sourceCode === TCGFACTORY_SUPPLIER_CODE &&
+    variantId &&
+    (product.availability === "available" ||
+      product.availability === "preorder")
+  ) {
+    const current = await spreeRequest<SpreeVariant>(
+      config,
+      "GET",
+      "/products/" +
+        encodeURIComponent(productId) +
+        "/variants/" +
+        encodeURIComponent(variantId),
+    );
+    await patchVariantInventory(
+      config,
+      productId,
+      variantId,
+      Number(current.total_on_hand ?? 0),
+      true,
+      product.availability === "preorder",
+      product.availability === "preorder" ? product.releaseDate : null,
+    );
+    backorderItems += 1;
+  }
   const images = await syncImages(config, productId, product);
 
   const autoPublish = shouldAutoPublishCatalogProduct({
@@ -2530,14 +2873,24 @@ async function syncProductToSpree(
     availability: product.availability,
   });
   if (autoPublish) {
-    await spreeRequest(config, "PATCH", "/products/" + encodeURIComponent(productId), {
-      status: "active",
-    });
+    await spreeRequest(
+      config,
+      "PATCH",
+      "/products/" + encodeURIComponent(productId),
+      {
+        status: "active",
+      },
+    );
     await ensureProductsInDefaultChannel(config, [productId]);
   } else if (review) {
-    await spreeRequest(config, "PATCH", "/products/" + encodeURIComponent(productId), {
-      status: "draft",
-    });
+    await spreeRequest(
+      config,
+      "PATCH",
+      "/products/" + encodeURIComponent(productId),
+      {
+        status: "draft",
+      },
+    );
   }
 
   return {
@@ -2550,8 +2903,6 @@ async function syncProductToSpree(
   };
 }
 
-
-
 interface CatalogGroupRow {
   supplier_sku: string;
   name: string;
@@ -2560,7 +2911,12 @@ interface CatalogGroupRow {
   image_urls: string[] | null;
   spree_product_id: string | null;
   spree_variant_id: string | null;
-  supplier_status: "available" | "preorder" | "unavailable" | "unknown" | "missing";
+  supplier_status:
+    | "available"
+    | "preorder"
+    | "unavailable"
+    | "unknown"
+    | "missing";
   last_auto_price: number | string | null;
   group_key: string | null;
   group_name: string | null;
@@ -2590,7 +2946,9 @@ function standardEditionStorageValue(copyIndex: number): string {
   return "Estándar · reimpresión " + String(copyIndex);
 }
 
-function languageGroupingInfo(product: DevirProduct): LanguageGroupingInfo | null {
+function languageGroupingInfo(
+  product: DevirProduct,
+): LanguageGroupingInfo | null {
   const patterns: Array<[string, RegExp]> = [
     ["Español", /\b(?:español|castellano)\b/i],
     ["Inglés", /\b(?:inglés|ingles|english)\b/i],
@@ -2623,29 +2981,32 @@ function languageGroupingInfo(product: DevirProduct): LanguageGroupingInfo | nul
 
 function devirCatalogItem(product: DevirProduct): SupplierCatalogItem {
   const grouping = groupingInfo(product);
-  const language = grouping.itemKind === "standalone"
-    ? languageGroupingInfo(product)
-    : null;
+  const language =
+    grouping.itemKind === "standalone" ? languageGroupingInfo(product) : null;
   const edition = variantEdition(grouping.variantLabel);
-  const options = grouping.itemKind === "variant_candidate"
-    ? {
-        tomo: String(grouping.variantPosition ?? 0).padStart(2, "0"),
-        ...(edition ? { edicion: edition } : {}),
-      }
-    : language
-      ? { idioma: language.language }
-      : {};
-  const productName = grouping.itemKind === "variant_candidate"
-    ? grouping.groupName ?? product.name
-    : language?.baseName ?? product.name;
-  const variantName = grouping.itemKind === "variant_candidate"
-    ? grouping.variantLabel
-    : language?.language ?? null;
-  const groupKey = grouping.itemKind === "variant_candidate"
-    ? grouping.groupKey
-    : language
-      ? language.groupKey
-      : null;
+  const options =
+    grouping.itemKind === "variant_candidate"
+      ? {
+          tomo: String(grouping.variantPosition ?? 0).padStart(2, "0"),
+          ...(edition ? { edicion: edition } : {}),
+        }
+      : language
+        ? { idioma: language.language }
+        : {};
+  const productName =
+    grouping.itemKind === "variant_candidate"
+      ? (grouping.groupName ?? product.name)
+      : (language?.baseName ?? product.name);
+  const variantName =
+    grouping.itemKind === "variant_candidate"
+      ? grouping.variantLabel
+      : (language?.language ?? null);
+  const groupKey =
+    grouping.itemKind === "variant_candidate"
+      ? grouping.groupKey
+      : language
+        ? language.groupKey
+        : null;
 
   return {
     supplierCode: "devir",
@@ -2677,9 +3038,10 @@ function devirCatalogItem(product: DevirProduct): SupplierCatalogItem {
 }
 
 function catalogRowProduct(row: CatalogGroupRow): DevirProduct {
-  const snapshot = row.snapshot && typeof row.snapshot === "object"
-    ? row.snapshot as Json
-    : {};
+  const snapshot =
+    row.snapshot && typeof row.snapshot === "object"
+      ? (row.snapshot as Json)
+      : {};
   const availability =
     row.supplier_status === "available" ||
     row.supplier_status === "preorder" ||
@@ -2693,13 +3055,20 @@ function catalogRowProduct(row: CatalogGroupRow): DevirProduct {
   return {
     sku: row.supplier_sku,
     name: cleanDevirTitle(row.name),
-    url: row.source_url ?? (typeof snapshot.url === "string" ? snapshot.url : ""),
-    purchasePrice: Number.isFinite(Number(snapshot.purchasePrice))
-      ? Number(snapshot.purchasePrice)
-      : null,
-    referencePriceNet: Number.isFinite(Number(snapshot.referencePriceNet))
-      ? Number(snapshot.referencePriceNet)
-      : null,
+    url:
+      row.source_url ?? (typeof snapshot.url === "string" ? snapshot.url : ""),
+    purchasePrice:
+      snapshot.purchasePrice !== null &&
+      snapshot.purchasePrice !== undefined &&
+      Number.isFinite(Number(snapshot.purchasePrice))
+        ? Number(snapshot.purchasePrice)
+        : null,
+    referencePriceNet:
+      snapshot.referencePriceNet !== null &&
+      snapshot.referencePriceNet !== undefined &&
+      Number.isFinite(Number(snapshot.referencePriceNet))
+        ? Number(snapshot.referencePriceNet)
+        : null,
     availability,
     availabilityLabel:
       typeof snapshot.availabilityLabel === "string"
@@ -2708,10 +3077,18 @@ function catalogRowProduct(row: CatalogGroupRow): DevirProduct {
     releaseDate:
       typeof snapshot.releaseDate === "string" ? snapshot.releaseDate : null,
     imageUrls: Array.isArray(row.image_urls)
-      ? row.image_urls.filter((item): item is string => typeof item === "string")
+      ? row.image_urls.filter(
+          (item): item is string => typeof item === "string",
+        )
       : Array.isArray(snapshot.imageUrls)
-        ? snapshot.imageUrls.filter((item): item is string => typeof item === "string")
+        ? snapshot.imageUrls.filter(
+            (item): item is string => typeof item === "string",
+          )
         : [],
+    retailUnitNormalized: snapshot.retailUnitNormalized === true,
+    supplierPackUnits: Number.isFinite(Number(snapshot.supplierPackUnits))
+      ? Number(snapshot.supplierPackUnits)
+      : undefined,
   };
 }
 
@@ -2727,10 +3104,7 @@ async function retireReplacementSource(
       "GET",
       "/products/" + encodeURIComponent(productId),
     );
-    if (
-      old.status === "draft" &&
-      (old.tags ?? []).includes("devir-group")
-    ) {
+    if (old.status === "draft" && (old.tags ?? []).includes("devir-group")) {
       await spreeRequest(
         config,
         "DELETE",
@@ -2739,10 +3113,15 @@ async function retireReplacementSource(
       return;
     }
     const tags = Array.from(new Set([...(old.tags ?? []), "devir-merged"]));
-    await spreeRequest(config, "PATCH", "/products/" + encodeURIComponent(productId), {
-      status: "archived",
-      tags,
-    });
+    await spreeRequest(
+      config,
+      "PATCH",
+      "/products/" + encodeURIComponent(productId),
+      {
+        status: "archived",
+        tags,
+      },
+    );
   } catch {
     // It may already have been removed during an earlier repair.
   }
@@ -2810,7 +3189,8 @@ async function repointCanonicalCatalogSku(
     .select("id")
     .eq("code", supplierCode)
     .maybeSingle();
-  if (supplierError) throw new Error("catalog supplier lookup: " + supplierError.message);
+  if (supplierError)
+    throw new Error("catalog supplier lookup: " + supplierError.message);
   if (!supplier?.id) return targetCatalogProductId;
 
   let targetProductId = targetCatalogProductId;
@@ -2820,7 +3200,8 @@ async function repointCanonicalCatalogSku(
       .select("id")
       .eq("spree_product_id", spreeProductId)
       .maybeSingle();
-    if (mappedError) throw new Error("catalog grouped product lookup: " + mappedError.message);
+    if (mappedError)
+      throw new Error("catalog grouped product lookup: " + mappedError.message);
     targetProductId = mappedProduct?.id ?? null;
   }
 
@@ -2829,7 +3210,8 @@ async function repointCanonicalCatalogSku(
     .select("variant_id")
     .eq("supplier_id", supplier.id)
     .eq("supplier_sku", supplierSku);
-  if (offersError) throw new Error("catalog offer lookup: " + offersError.message);
+  if (offersError)
+    throw new Error("catalog offer lookup: " + offersError.message);
 
   const canonicalVariantIds = Array.from(
     new Set((offers ?? []).map((offer) => offer.variant_id).filter(Boolean)),
@@ -2859,7 +3241,9 @@ async function repointCanonicalCatalogSku(
         })
         .eq("id", targetProductId);
       if (firstProductError) {
-        throw new Error("catalog group product seed: " + firstProductError.message);
+        throw new Error(
+          "catalog group product seed: " + firstProductError.message,
+        );
       }
     }
 
@@ -2872,7 +3256,9 @@ async function repointCanonicalCatalogSku(
       })
       .eq("id", canonicalVariant.id);
     if (variantUpdateError) {
-      throw new Error("catalog group variant update: " + variantUpdateError.message);
+      throw new Error(
+        "catalog group variant update: " + variantUpdateError.message,
+      );
     }
   }
 
@@ -2887,7 +3273,9 @@ async function repointCanonicalCatalogSku(
       })
       .eq("id", targetProductId);
     if (productUpdateError) {
-      throw new Error("catalog group product update: " + productUpdateError.message);
+      throw new Error(
+        "catalog group product update: " + productUpdateError.message,
+      );
     }
   }
 
@@ -2906,7 +3294,9 @@ async function rebuildMangaGroup(
 }> {
   const { data, error } = await supabase
     .from("devir_sync_catalog")
-    .select("supplier_sku,name,source_url,snapshot,image_urls,spree_product_id,spree_variant_id,supplier_status,last_auto_price,group_key,group_name,variant_label,variant_position,grouping_confidence")
+    .select(
+      "supplier_sku,name,source_url,snapshot,image_urls,spree_product_id,spree_variant_id,supplier_status,last_auto_price,group_key,group_name,variant_label,variant_position,grouping_confidence",
+    )
     .eq("group_key", groupKey)
     .eq("item_kind", "variant_candidate")
     .order("variant_position", { ascending: true })
@@ -2914,9 +3304,15 @@ async function rebuildMangaGroup(
   if (error) throw error;
   const rows = (data ?? []) as CatalogGroupRow[];
   if (rows.length < 2) {
-    return { ok: true, group_key: groupKey, skipped: "needs_at_least_two_variants" };
+    return {
+      ok: true,
+      group_key: groupKey,
+      skipped: "needs_at_least_two_variants",
+    };
   }
-  if (rows.some((row) => categoryKey(catalogRowProduct(row)) !== "manga-comic")) {
+  if (
+    rows.some((row) => categoryKey(catalogRowProduct(row)) !== "manga-comic")
+  ) {
     return { ok: true, group_key: groupKey, skipped: "not_manga_group" };
   }
 
@@ -2934,13 +3330,18 @@ async function rebuildMangaGroup(
     rows.some((row) => Boolean(variantEdition(row.variant_label))) ||
     Array.from(positions.values()).some((count) => count > 1);
 
-  const created = await spreeRequest<SpreeProduct>(config, "POST", "/products", {
-    name: groupName,
-    slug: groupKey,
-    status: "draft",
-    category_ids: [category.id],
-    tags: ["devir", "devir-group", "devir-group-" + groupKey],
-  });
+  const created = await spreeRequest<SpreeProduct>(
+    config,
+    "POST",
+    "/products",
+    {
+      name: groupName,
+      slug: groupKey,
+      status: "draft",
+      category_ids: [category.id],
+      tags: ["devir", "devir-group", "devir-group-" + groupKey],
+    },
+  );
 
   const createdBySku = new Map<string, SpreeVariant>();
   const displayRows = [...rows].sort((a, b) => {
@@ -2957,8 +3358,11 @@ async function rebuildMangaGroup(
   );
   const creationRows = [...rows].sort((a, b) => {
     const availabilityRank = (row: CatalogGroupRow) =>
-      row.supplier_status === "available" ? 0 :
-      row.supplier_status === "preorder" ? 1 : 2;
+      row.supplier_status === "available"
+        ? 0
+        : row.supplier_status === "preorder"
+          ? 1
+          : 2;
     const editionRank = (row: CatalogGroupRow) =>
       variantEdition(row.variant_label) ? 1 : 0;
     return (
@@ -3005,31 +3409,42 @@ async function rebuildMangaGroup(
   );
   for (const row of rows) {
     if (!verifiedSkus.has(row.supplier_sku)) {
-      throw new Error("No se pudo verificar la variante migrada " + row.supplier_sku);
+      throw new Error(
+        "No se pudo verificar la variante migrada " + row.supplier_sku,
+      );
     }
   }
 
   const anyAvailable = rows.some((row) => row.supplier_status === "available");
   const anyPreorder = rows.some((row) => row.supplier_status === "preorder");
   const anySellable = anyAvailable || anyPreorder;
-  await spreeRequest(config, "PATCH", "/products/" + encodeURIComponent(created.id), {
-    status: anySellable ? "active" : "draft",
-    category_ids: [category.id],
-    tags: [
-      "devir",
-      "devir-group",
-      "devir-group-" + groupKey,
-      ...(anySellable ? ["devir-ready", "devir-published"] : ["devir-waiting-stock"]),
-      ...(anyAvailable ? ["devir-buy-now"] : []),
-      ...(anyPreorder ? ["devir-preorder"] : []),
-    ],
-  });
+  await spreeRequest(
+    config,
+    "PATCH",
+    "/products/" + encodeURIComponent(created.id),
+    {
+      status: anySellable ? "active" : "draft",
+      category_ids: [category.id],
+      tags: [
+        "devir",
+        "devir-group",
+        "devir-group-" + groupKey,
+        ...(anySellable
+          ? ["devir-ready", "devir-published"]
+          : ["devir-waiting-stock"]),
+        ...(anyAvailable ? ["devir-buy-now"] : []),
+        ...(anyPreorder ? ["devir-preorder"] : []),
+      ],
+    },
+  );
   await ensureProductsInCategories(config, [created.id], [category.id]);
   if (anySellable) {
     await ensureProductsInDefaultChannel(config, [created.id]);
   }
 
-  const imageSource = rows.map(catalogRowProduct).find((product) => product.imageUrls.length);
+  const imageSource = rows
+    .map(catalogRowProduct)
+    .find((product) => product.imageUrls.length);
   if (imageSource) {
     await syncImages(config, created.id, imageSource);
   }
@@ -3041,11 +3456,12 @@ async function rebuildMangaGroup(
 
   for (const row of rows) {
     const variant = createdBySku.get(row.supplier_sku)!;
-    const state = row.supplier_status === "available"
-      ? "published"
-      : row.supplier_status === "preorder"
-        ? "preorder"
-        : "waiting_supplier";
+    const state =
+      row.supplier_status === "available"
+        ? "published"
+        : row.supplier_status === "preorder"
+          ? "preorder"
+          : "waiting_supplier";
     const { error: updateError } = await supabase
       .from("devir_sync_catalog")
       .update({
@@ -3095,7 +3511,9 @@ async function repairExistingMangaGroup(
 }> {
   const { data, error } = await supabase
     .from("devir_sync_catalog")
-    .select("supplier_sku,name,source_url,snapshot,image_urls,spree_product_id,spree_variant_id,supplier_status,last_auto_price,group_key,group_name,variant_label,variant_position,grouping_confidence")
+    .select(
+      "supplier_sku,name,source_url,snapshot,image_urls,spree_product_id,spree_variant_id,supplier_status,last_auto_price,group_key,group_name,variant_label,variant_position,grouping_confidence",
+    )
     .eq("group_key", groupKey)
     .eq("item_kind", "variant_candidate")
     .order("variant_position", { ascending: true })
@@ -3103,7 +3521,11 @@ async function repairExistingMangaGroup(
   if (error) throw error;
   const rows = (data ?? []) as CatalogGroupRow[];
   if (rows.length < 2) {
-    return { ok: true, group_key: groupKey, skipped: "needs_at_least_two_variants" };
+    return {
+      ok: true,
+      group_key: groupKey,
+      skipped: "needs_at_least_two_variants",
+    };
   }
 
   const groupName = rows.find((row) => row.group_name)?.group_name ?? groupKey;
@@ -3112,8 +3534,9 @@ async function repairExistingMangaGroup(
     "/products?q[search]=" + encodeURIComponent(groupName),
   );
   const tag = "devir-group-" + groupKey;
-  const existing = candidates.find((product) =>
-    product.status !== "archived" && (product.tags ?? []).includes(tag)
+  const existing = candidates.find(
+    (product) =>
+      product.status !== "archived" && (product.tags ?? []).includes(tag),
   );
   if (!existing) return await rebuildMangaGroup(config, groupKey);
 
@@ -3129,9 +3552,10 @@ async function repairExistingMangaGroup(
     rows.some((row) => Boolean(variantEdition(row.variant_label))) ||
     Array.from(positions.values()).some((count) => count > 1);
 
-  const displayRows = [...rows].sort((a, b) =>
-    Number(a.variant_position ?? 0) - Number(b.variant_position ?? 0) ||
-    a.supplier_sku.localeCompare(b.supplier_sku)
+  const displayRows = [...rows].sort(
+    (a, b) =>
+      Number(a.variant_position ?? 0) - Number(b.variant_position ?? 0) ||
+      a.supplier_sku.localeCompare(b.supplier_sku),
   );
   const displayPosition = new Map(
     displayRows.map((row, index) => [row.supplier_sku, index + 1]),
@@ -3179,11 +3603,12 @@ async function repairExistingMangaGroup(
       variantsBySku.set(row.supplier_sku, variant);
     }
 
-    const state = row.supplier_status === "available"
-      ? "published"
-      : row.supplier_status === "preorder"
-        ? "preorder"
-        : "waiting_supplier";
+    const state =
+      row.supplier_status === "available"
+        ? "published"
+        : row.supplier_status === "preorder"
+          ? "preorder"
+          : "waiting_supplier";
     const { error: updateError } = await supabase
       .from("devir_sync_catalog")
       .update({
@@ -3225,7 +3650,9 @@ async function repairExistingMangaGroup(
         "devir",
         "devir-group",
         tag,
-        ...(anySellable ? ["devir-ready", "devir-published"] : ["devir-waiting-stock"]),
+        ...(anySellable
+          ? ["devir-ready", "devir-published"]
+          : ["devir-waiting-stock"]),
         ...(anyAvailable ? ["devir-buy-now"] : []),
         ...(anyPreorder ? ["devir-preorder"] : []),
       ],
@@ -3234,7 +3661,9 @@ async function repairExistingMangaGroup(
   await ensureProductsInCategories(config, [existing.id], [category.id]);
   if (anySellable) await ensureProductsInDefaultChannel(config, [existing.id]);
 
-  const imageSource = rows.map(catalogRowProduct).find((product) => product.imageUrls.length);
+  const imageSource = rows
+    .map(catalogRowProduct)
+    .find((product) => product.imageUrls.length);
   if (imageSource) await syncImages(config, existing.id, imageSource);
 
   const oldProductIds = Array.from(
@@ -3273,9 +3702,7 @@ async function normalizeMangaGroupProductMetadata(
       const rows = data ?? [];
       const productIds = Array.from(
         new Set(
-          rows
-            .map((row) => String(row.spree_product_id ?? ""))
-            .filter(Boolean),
+          rows.map((row) => String(row.spree_product_id ?? "")).filter(Boolean),
         ),
       );
       if (rows.length < 2 || productIds.length !== 1) {
@@ -3289,8 +3716,9 @@ async function normalizeMangaGroupProductMetadata(
       }
 
       const groupName =
-        rows.find((row) => typeof row.group_name === "string" && row.group_name.trim())
-          ?.group_name ?? groupKey;
+        rows.find(
+          (row) => typeof row.group_name === "string" && row.group_name.trim(),
+        )?.group_name ?? groupKey;
       const productId = productIds[0];
 
       const conflicts = await spreeList<SpreeProduct & { slug?: string }>(
@@ -3304,12 +3732,12 @@ async function normalizeMangaGroupProductMetadata(
           conflict.status === "archived" ||
           (conflict.tags ?? []).includes("devir-merged");
         if (!legacy) {
-          throw new Error(
-            "slug_conflict_with_active_product:" + conflict.id,
-          );
+          throw new Error("slug_conflict_with_active_product:" + conflict.id);
         }
         const legacySlug =
-          groupKey + "-legacy-" + conflict.id.replace(/^prod_/, "").toLowerCase();
+          groupKey +
+          "-legacy-" +
+          conflict.id.replace(/^prod_/, "").toLowerCase();
         await spreeRequest(
           config,
           "PATCH",
@@ -3373,12 +3801,16 @@ async function migrateLanguageGroup(
 }> {
   const { data, error } = await supabase
     .from("devir_sync_catalog")
-    .select("supplier_sku,name,source_url,snapshot,image_urls,spree_product_id,spree_variant_id,supplier_status,last_auto_price,group_key,group_name,variant_label,variant_position,grouping_confidence,language_group_key,language_label,language_base_name")
+    .select(
+      "supplier_sku,name,source_url,snapshot,image_urls,spree_product_id,spree_variant_id,supplier_status,last_auto_price,group_key,group_name,variant_label,variant_position,grouping_confidence,language_group_key,language_label,language_base_name",
+    )
     .eq("language_group_key", groupKey)
     .order("language_label", { ascending: true });
   if (error) throw error;
   const rows = (data ?? []) as CatalogGroupRow[];
-  const languages = new Set(rows.map((row) => row.language_label).filter(Boolean));
+  const languages = new Set(
+    rows.map((row) => row.language_label).filter(Boolean),
+  );
   if (rows.length < 2 || languages.size < 2) {
     return { ok: true, group_key: groupKey, skipped: "needs_two_languages" };
   }
@@ -3391,40 +3823,50 @@ async function migrateLanguageGroup(
   const categoryKeyValue = Array.from(categoryKeys)[0];
   const categories = await spreeCategories(config);
   const category = categoryForKey(categories, categoryKeyValue);
-  if (!category) return { ok: true, group_key: groupKey, skipped: "category_missing" };
+  if (!category)
+    return { ok: true, group_key: groupKey, skipped: "category_missing" };
 
   const baseName =
     rows.find((row) => row.language_base_name)?.language_base_name ??
     languageGroupingInfo(products[0])?.baseName ??
     products[0].name;
 
-  const created = await spreeRequest<SpreeProduct>(config, "POST", "/products", {
-    name: baseName,
-    status: "draft",
-    category_ids: [category.id],
-    tags: [
-      "devir",
-      "devir-group",
-      "devir-language-group",
-      "devir-language-group-" + groupKey,
-    ],
-  });
+  const created = await spreeRequest<SpreeProduct>(
+    config,
+    "POST",
+    "/products",
+    {
+      name: baseName,
+      status: "draft",
+      category_ids: [category.id],
+      tags: [
+        "devir",
+        "devir-group",
+        "devir-language-group",
+        "devir-language-group-" + groupKey,
+      ],
+    },
+  );
 
   const languageOrder: Record<string, number> = {
-    "Español": 1,
-    "Inglés": 2,
-    "Francés": 3,
-    "Alemán": 4,
-    "Italiano": 5,
-    "Portugués": 6,
+    Español: 1,
+    Inglés: 2,
+    Francés: 3,
+    Alemán: 4,
+    Italiano: 5,
+    Portugués: 6,
   };
   const availabilityRank = (row: CatalogGroupRow) =>
-    row.supplier_status === "available" ? 0 :
-    row.supplier_status === "preorder" ? 1 : 2;
-  const displayRows = [...rows].sort((a, b) =>
-    availabilityRank(a) - availabilityRank(b) ||
-    (languageOrder[a.language_label ?? ""] ?? 99) -
-      (languageOrder[b.language_label ?? ""] ?? 99)
+    row.supplier_status === "available"
+      ? 0
+      : row.supplier_status === "preorder"
+        ? 1
+        : 2;
+  const displayRows = [...rows].sort(
+    (a, b) =>
+      availabilityRank(a) - availabilityRank(b) ||
+      (languageOrder[a.language_label ?? ""] ?? 99) -
+        (languageOrder[b.language_label ?? ""] ?? 99),
   );
   const displayPosition = new Map(
     displayRows.map((row, index) => [row.supplier_sku, index + 1]),
@@ -3432,15 +3874,18 @@ async function migrateLanguageGroup(
   const creationRows = [...displayRows];
   const createdBySku = new Map<string, SpreeVariant>();
   for (const row of creationRows) {
-    const language = row.language_label ?? languageGroupingInfo(catalogRowProduct(row))?.language;
-    if (!language) throw new Error("Idioma no resuelto para " + row.supplier_sku);
+    const language =
+      row.language_label ??
+      languageGroupingInfo(catalogRowProduct(row))?.language;
+    if (!language)
+      throw new Error("Idioma no resuelto para " + row.supplier_sku);
     const variant = await createGroupedVariant(
       config,
       created.id,
       row,
       [{ name: "idioma", value: language }],
       categoryKeyValue,
-      displayPosition.get(row.supplier_sku) ?? (languageOrder[language] ?? 99),
+      displayPosition.get(row.supplier_sku) ?? languageOrder[language] ?? 99,
     );
     createdBySku.set(row.supplier_sku, variant);
   }
@@ -3454,26 +3899,35 @@ async function migrateLanguageGroup(
   );
   for (const row of rows) {
     if (!verifiedSkus.has(row.supplier_sku)) {
-      throw new Error("No se pudo verificar la variante de idioma " + row.supplier_sku);
+      throw new Error(
+        "No se pudo verificar la variante de idioma " + row.supplier_sku,
+      );
     }
   }
 
   const anyAvailable = rows.some((row) => row.supplier_status === "available");
   const anyPreorder = rows.some((row) => row.supplier_status === "preorder");
   const anySellable = anyAvailable || anyPreorder;
-  await spreeRequest(config, "PATCH", "/products/" + encodeURIComponent(created.id), {
-    status: anySellable ? "active" : "draft",
-    category_ids: [category.id],
-    tags: [
-      "devir",
-      "devir-group",
-      "devir-language-group",
-      "devir-language-group-" + groupKey,
-      ...(anySellable ? ["devir-ready", "devir-published"] : ["devir-waiting-stock"]),
-      ...(anyAvailable ? ["devir-buy-now"] : []),
-      ...(anyPreorder ? ["devir-preorder"] : []),
-    ],
-  });
+  await spreeRequest(
+    config,
+    "PATCH",
+    "/products/" + encodeURIComponent(created.id),
+    {
+      status: anySellable ? "active" : "draft",
+      category_ids: [category.id],
+      tags: [
+        "devir",
+        "devir-group",
+        "devir-language-group",
+        "devir-language-group-" + groupKey,
+        ...(anySellable
+          ? ["devir-ready", "devir-published"]
+          : ["devir-waiting-stock"]),
+        ...(anyAvailable ? ["devir-buy-now"] : []),
+        ...(anyPreorder ? ["devir-preorder"] : []),
+      ],
+    },
+  );
   await ensureProductsInCategories(config, [created.id], [category.id]);
   if (anySellable) {
     await ensureProductsInDefaultChannel(config, [created.id]);
@@ -3489,11 +3943,12 @@ async function migrateLanguageGroup(
 
   for (const row of rows) {
     const variant = createdBySku.get(row.supplier_sku)!;
-    const state = row.supplier_status === "available"
-      ? "published"
-      : row.supplier_status === "preorder"
-        ? "preorder"
-        : "waiting_supplier";
+    const state =
+      row.supplier_status === "available"
+        ? "published"
+        : row.supplier_status === "preorder"
+          ? "preorder"
+          : "waiting_supplier";
     const { error: updateError } = await supabase
       .from("devir_sync_catalog")
       .update({
@@ -3529,7 +3984,6 @@ async function migrateLanguageGroup(
   };
 }
 
-
 const DEFAULT_CATEGORY_MARGINS: Record<string, number> = {
   // Minimum contribution after VAT and a standard EEA Stripe card fee.
   // These are safety floors; the market/reference-price discount normally
@@ -3544,7 +3998,7 @@ const DEFAULT_CATEGORY_MARGINS: Record<string, number> = {
   "rol/warhammer": 0.05,
   "rol/otros": 0.05,
   "manga-comic": 0.05,
-  "accesorios": 0.05,
+  accesorios: 0.05,
   ...Object.fromEntries(
     TCGFACTORY_ACCESSORY_CATEGORY_SPECS.map((spec) => [spec.key, 0.05]),
   ),
@@ -3556,12 +4010,12 @@ const CATEGORY_REFERENCE_DISCOUNTS: Record<string, number> = {
   "juegos-de-mesa/infantil": 0.15,
   "tcg/mtg": 0.12,
   "tcg/yugioh": 0.12,
-  "rol/dungeons-dragons": 0.10,
-  "rol/pathfinder": 0.10,
-  "rol/warhammer": 0.10,
-  "rol/otros": 0.10,
+  "rol/dungeons-dragons": 0.1,
+  "rol/pathfinder": 0.1,
+  "rol/warhammer": 0.1,
+  "rol/otros": 0.1,
   "manga-comic": 0.05,
-  "accesorios": 0.15,
+  accesorios: 0.15,
   ...Object.fromEntries(
     TCGFACTORY_ACCESSORY_CATEGORY_SPECS.map((spec) => [spec.key, 0.15]),
   ),
@@ -3581,14 +4035,16 @@ function vatRateForSku(sku: string): number {
 function isBookProduct(product: DevirProduct, key: string): boolean {
   if (isBookSku(product.sku)) return true;
   if (!key.startsWith("rol/")) return false;
-  return /manual|gu[ií]a|libro|compendio|aventura|campaña|bestiario|suplemento|reglamento|pantalla de direcci[oó]n|d&d|dungeons|pathfinder|warhammer/i.test(product.name);
+  return /manual|gu[ií]a|libro|compendio|aventura|campaña|bestiario|suplemento|reglamento|pantalla de direcci[oó]n|d&d|dungeons|pathfinder|warhammer/i.test(
+    product.name,
+  );
 }
 
 function roundUpToProfessionalPrice(value: number): number {
   // Keep the profitability floor untouched: choose the first clean retail
   // ending at or above it instead of mathematically rounding down.
   const euros = Math.floor(value);
-  const endings = [0.50, 0.90, 0.95, 0.99, 1.00];
+  const endings = [0.5, 0.9, 0.95, 0.99, 1.0];
 
   for (const ending of endings) {
     const candidate = euros + ending;
@@ -3606,8 +4062,9 @@ function paymentAwareFloor(
   targetProfitRate: number,
 ): number {
   const denominator =
-    (1 / (1 + vatRate)) - STANDARD_EEA_CARD_RATE - targetProfitRate;
-  if (denominator <= 0) throw new Error("Margen objetivo incompatible con IVA/comisiones");
+    1 / (1 + vatRate) - STANDARD_EEA_CARD_RATE - targetProfitRate;
+  if (denominator <= 0)
+    throw new Error("Margen objetivo incompatible con IVA/comisiones");
   return (costNet + STANDARD_EEA_CARD_FIXED_EUR) / denominator;
 }
 
@@ -3631,9 +4088,14 @@ function competitivePricing(
 
   const book = isBookProduct(product, key);
   const vatRate = supplierVatRate({ supplierCode, isBook: book });
-  const floor = paymentAwareFloor(product.purchasePrice, vatRate, targetProfitRate);
+  const floor = paymentAwareFloor(
+    product.purchasePrice,
+    vatRate,
+    targetProfitRate,
+  );
   const referenceNet = Number(product.referencePriceNet);
-  const hasReference = Number.isFinite(referenceNet) && referenceNet > product.purchasePrice;
+  const hasReference =
+    Number.isFinite(referenceNet) && referenceNet > product.purchasePrice;
   const referenceGross = hasReference ? referenceNet * (1 + vatRate) : null;
   let raw = floor;
   let ruleSource = "cost_floor";
@@ -3670,7 +4132,8 @@ function competitivePricing(
     retail = roundUpToProfessionalPrice(raw);
   }
 
-  const stripeFee = retail * STANDARD_EEA_CARD_RATE + STANDARD_EEA_CARD_FIXED_EUR;
+  const stripeFee =
+    retail * STANDARD_EEA_CARD_RATE + STANDARD_EEA_CARD_FIXED_EUR;
   const netSale = retail / (1 + vatRate);
   const profit = netSale - product.purchasePrice - stripeFee;
   const effectiveProfitRate = retail > 0 ? profit / retail : 0;
@@ -3678,7 +4141,8 @@ function competitivePricing(
   return {
     retail,
     vatRate,
-    referenceGross: referenceGross === null ? null : Math.round(referenceGross * 100) / 100,
+    referenceGross:
+      referenceGross === null ? null : Math.round(referenceGross * 100) / 100,
     floor: Math.round(floor * 100) / 100,
     effectiveProfitRate,
     ruleSource,
@@ -3699,30 +4163,93 @@ function shippingDefaults(
 } {
   const name = product.name.toLowerCase();
   if (key === "manga-comic") {
-    return { weight: 0.35, height: 21, width: 15, depth: 2.5, weight_unit: "kg", dimensions_unit: "cm" };
+    return {
+      weight: 0.35,
+      height: 21,
+      width: 15,
+      depth: 2.5,
+      weight_unit: "kg",
+      dimensions_unit: "cm",
+    };
   }
   if (key.startsWith("rol/") && isBookProduct(product, key)) {
-    return { weight: 1.2, height: 29, width: 22, depth: 3.5, weight_unit: "kg", dimensions_unit: "cm" };
+    return {
+      weight: 1.2,
+      height: 29,
+      width: 22,
+      depth: 3.5,
+      weight_unit: "kg",
+      dimensions_unit: "cm",
+    };
   }
   if (key === "tcg/mtg" || key === "tcg/yugioh") {
     if (/display|cart[oó]n|caja|\(\s*\d{2,}\s*\)|booster box/i.test(name)) {
-      return { weight: 1.5, height: 25, width: 18, depth: 15, weight_unit: "kg", dimensions_unit: "cm" };
+      return {
+        weight: 1.5,
+        height: 25,
+        width: 18,
+        depth: 15,
+        weight_unit: "kg",
+        dimensions_unit: "cm",
+      };
     }
-    return { weight: 0.5, height: 20, width: 14, depth: 8, weight_unit: "kg", dimensions_unit: "cm" };
+    return {
+      weight: 0.5,
+      height: 20,
+      width: 14,
+      depth: 8,
+      weight_unit: "kg",
+      dimensions_unit: "cm",
+    };
   }
   if (key === "accesorios" || key.startsWith("accesorios/")) {
     if (key === "accesorios/tapetes") {
-      return { weight: 0.65, height: 42, width: 8, depth: 8, weight_unit: "kg", dimensions_unit: "cm" };
+      return {
+        weight: 0.65,
+        height: 42,
+        width: 8,
+        depth: 8,
+        weight_unit: "kg",
+        dimensions_unit: "cm",
+      };
     }
     if (key === "accesorios/albumes" || key === "accesorios/almacenaje") {
-      return { weight: 0.65, height: 32, width: 25, depth: 8, weight_unit: "kg", dimensions_unit: "cm" };
+      return {
+        weight: 0.65,
+        height: 32,
+        width: 25,
+        depth: 8,
+        weight_unit: "kg",
+        dimensions_unit: "cm",
+      };
     }
-    return { weight: 0.3, height: 22, width: 16, depth: 6, weight_unit: "kg", dimensions_unit: "cm" };
+    return {
+      weight: 0.3,
+      height: 22,
+      width: 16,
+      depth: 6,
+      weight_unit: "kg",
+      dimensions_unit: "cm",
+    };
   }
   if (key === "rol/warhammer") {
-    return { weight: 0.9, height: 30, width: 22, depth: 7, weight_unit: "kg", dimensions_unit: "cm" };
+    return {
+      weight: 0.9,
+      height: 30,
+      width: 22,
+      depth: 7,
+      weight_unit: "kg",
+      dimensions_unit: "cm",
+    };
   }
-  return { weight: 1.5, height: 30, width: 30, depth: 8, weight_unit: "kg", dimensions_unit: "cm" };
+  return {
+    weight: 1.5,
+    height: 30,
+    width: 30,
+    depth: 8,
+    weight_unit: "kg",
+    dimensions_unit: "cm",
+  };
 }
 
 async function ensureCategory(
@@ -3731,12 +4258,19 @@ async function ensureCategory(
   name: string,
   permalink: string,
 ): Promise<SpreeCategory> {
-  const existing = categories.find((category) => category.permalink === permalink);
+  const existing = categories.find(
+    (category) => category.permalink === permalink,
+  );
   if (existing) return existing;
-  const created = await spreeRequest<SpreeCategory>(config, "POST", "/categories", {
-    name,
-    permalink,
-  });
+  const created = await spreeRequest<SpreeCategory>(
+    config,
+    "POST",
+    "/categories",
+    {
+      name,
+      permalink,
+    },
+  );
   categories.push(created);
   return created;
 }
@@ -3774,28 +4308,36 @@ async function setCategoryMargin(
   category: SpreeCategory,
   margin: number,
 ): Promise<void> {
-  const defs = await spreeList<SpreeFieldDefinition>(config, "/custom_field_definitions");
+  const defs = await spreeList<SpreeFieldDefinition>(
+    config,
+    "/custom_field_definitions",
+  );
   const def = defs.find(
     (item) =>
       item.resource_type === "Spree::Taxon" &&
       item.namespace === "pricing" &&
       item.key === "target_margin",
   );
-  if (!def) throw new Error("Falta custom field pricing.target_margin para categorías");
+  if (!def)
+    throw new Error("Falta custom field pricing.target_margin para categorías");
 
   const fields = await spreeList<SpreeCustomField>(
     config,
     "/categories/" + encodeURIComponent(category.id) + "/custom_fields",
   );
   const current = fields.find(
-    (field) => field.key === "pricing.target_margin" || field.key === "target_margin",
+    (field) =>
+      field.key === "pricing.target_margin" || field.key === "target_margin",
   );
   if (current) {
     if (Math.abs(Number(current.value) - margin) > 0.0001) {
       await spreeRequest(
         config,
         "PATCH",
-        "/categories/" + encodeURIComponent(category.id) + "/custom_fields/" + current.id,
+        "/categories/" +
+          encodeURIComponent(category.id) +
+          "/custom_fields/" +
+          current.id,
         { value: margin },
       );
     }
@@ -3809,14 +4351,21 @@ async function setCategoryMargin(
   }
 }
 
-async function setupCatalogCategoriesAndMargins(config: ConfigRow): Promise<Array<{
-  id: string;
-  name: string;
-  permalink: string;
-  target_margin: number;
-}>> {
+async function setupCatalogCategoriesAndMargins(config: ConfigRow): Promise<
+  Array<{
+    id: string;
+    name: string;
+    permalink: string;
+    target_margin: number;
+  }>
+> {
   let categories = await spreeCategories(config);
-  const juegos = await ensureCategory(config, categories, "Juegos de mesa", "juegos-de-mesa");
+  const juegos = await ensureCategory(
+    config,
+    categories,
+    "Juegos de mesa",
+    "juegos-de-mesa",
+  );
   const rol = await ensureCategory(config, categories, "Rol", "rol");
   const tcg = await ensureCategory(config, categories, "TCG", "tcg");
   await ensureCategory(config, categories, "Manga y cómic", "manga-comic");
@@ -3834,17 +4383,77 @@ async function setupCatalogCategoriesAndMargins(config: ConfigRow): Promise<Arra
     parent: SpreeCategory | null;
     position: number;
   }> = [
-    { key: "juegos-de-mesa/general", name: "General", slug: "general", parent: juegos, position: 0 },
-    { key: "juegos-de-mesa/expansiones", name: "Expansiones", slug: "expansiones", parent: juegos, position: 1 },
-    { key: "juegos-de-mesa/infantil", name: "Infantil", slug: "infantil", parent: juegos, position: 2 },
-    { key: "rol/dungeons-dragons", name: "Dungeons & Dragons", slug: "dungeons-dragons", parent: rol, position: 0 },
-    { key: "rol/pathfinder", name: "Pathfinder", slug: "pathfinder", parent: rol, position: 1 },
-    { key: "rol/warhammer", name: "Warhammer", slug: "warhammer", parent: rol, position: 2 },
-    { key: "rol/otros", name: "Otros juegos de rol", slug: "otros", parent: rol, position: 3 },
+    {
+      key: "juegos-de-mesa/general",
+      name: "General",
+      slug: "general",
+      parent: juegos,
+      position: 0,
+    },
+    {
+      key: "juegos-de-mesa/expansiones",
+      name: "Expansiones",
+      slug: "expansiones",
+      parent: juegos,
+      position: 1,
+    },
+    {
+      key: "juegos-de-mesa/infantil",
+      name: "Infantil",
+      slug: "infantil",
+      parent: juegos,
+      position: 2,
+    },
+    {
+      key: "rol/dungeons-dragons",
+      name: "Dungeons & Dragons",
+      slug: "dungeons-dragons",
+      parent: rol,
+      position: 0,
+    },
+    {
+      key: "rol/pathfinder",
+      name: "Pathfinder",
+      slug: "pathfinder",
+      parent: rol,
+      position: 1,
+    },
+    {
+      key: "rol/warhammer",
+      name: "Warhammer",
+      slug: "warhammer",
+      parent: rol,
+      position: 2,
+    },
+    {
+      key: "rol/otros",
+      name: "Otros juegos de rol",
+      slug: "otros",
+      parent: rol,
+      position: 3,
+    },
     { key: "tcg/mtg", name: "MTG", slug: "mtg", parent: tcg, position: 0 },
-    { key: "tcg/yugioh", name: "Yugioh", slug: "yugioh", parent: tcg, position: 1 },
-    { key: "manga-comic", name: "Manga y cómic", slug: "manga-comic", parent: null, position: 0 },
-    { key: "accesorios", name: "Accesorios", slug: "accesorios", parent: null, position: 0 },
+    {
+      key: "tcg/yugioh",
+      name: "Yugioh",
+      slug: "yugioh",
+      parent: tcg,
+      position: 1,
+    },
+    {
+      key: "manga-comic",
+      name: "Manga y cómic",
+      slug: "manga-comic",
+      parent: null,
+      position: 0,
+    },
+    {
+      key: "accesorios",
+      name: "Accesorios",
+      slug: "accesorios",
+      parent: null,
+      position: 0,
+    },
     ...TCGFACTORY_ACCESSORY_CATEGORY_SPECS.map((spec, position) => ({
       ...spec,
       parent: accesorios,
@@ -3854,10 +4463,15 @@ async function setupCatalogCategoriesAndMargins(config: ConfigRow): Promise<Arra
 
   for (const spec of specs) {
     if (categoryForKey(categories, spec.key)) continue;
-    const created = await spreeRequest<SpreeCategory>(config, "POST", "/categories", {
-      name: spec.name,
-      permalink: spec.slug,
-    });
+    const created = await spreeRequest<SpreeCategory>(
+      config,
+      "POST",
+      "/categories",
+      {
+        name: spec.name,
+        permalink: spec.slug,
+      },
+    );
     if (spec.parent) {
       await spreeRequest(
         config,
@@ -3885,7 +4499,6 @@ async function setupCatalogCategoriesAndMargins(config: ConfigRow): Promise<Arra
   return output;
 }
 
-
 async function categorizeDraftBatch(
   config: ConfigRow,
   offset: number,
@@ -3900,7 +4513,9 @@ async function categorizeDraftBatch(
   const categories = await spreeCategories(config);
   const { data, error } = await supabase
     .from("devir_sync_catalog")
-    .select("supplier_sku,name,source_url,snapshot,spree_product_id,spree_variant_id")
+    .select(
+      "supplier_sku,name,source_url,snapshot,spree_product_id,spree_variant_id",
+    )
     .not("spree_product_id", "is", null)
     .order("supplier_sku")
     .range(offset, offset + limit - 1);
@@ -3908,7 +4523,9 @@ async function categorizeDraftBatch(
 
   const rows = data ?? [];
   const productIds = Array.from(
-    new Set(rows.map((row) => String(row.spree_product_id ?? "")).filter(Boolean)),
+    new Set(
+      rows.map((row) => String(row.spree_product_id ?? "")).filter(Boolean),
+    ),
   );
   const products = new Map<string, SpreeProduct | null>();
 
@@ -3942,13 +4559,18 @@ async function categorizeDraftBatch(
     const legacySku = String(row.supplier_sku ?? "");
     const spreeProduct = products.get(productId);
     if (!productId || !variantId || !legacySku || !spreeProduct) return;
-    if (spreeProduct.status !== "draft" || !(spreeProduct.tags ?? []).includes("devir")) return;
+    if (
+      spreeProduct.status !== "draft" ||
+      !(spreeProduct.tags ?? []).includes("devir")
+    )
+      return;
 
     const selectedSupply = await selectedSupplyForSpreeVariant(variantId);
     if (!selectedSupply?.supplier_code) return;
-    const snapshot = row.snapshot && typeof row.snapshot === "object"
-      ? row.snapshot as Json
-      : null;
+    const snapshot =
+      row.snapshot && typeof row.snapshot === "object"
+        ? (row.snapshot as Json)
+        : null;
     const cost = Number(selectedSupply.normalized_cost);
     const product: DevirProduct = {
       sku: selectedSupply.canonical_sku || legacySku,
@@ -3956,8 +4578,8 @@ async function categorizeDraftBatch(
       url: selectedSupply.source_url ?? String(row.source_url),
       purchasePrice: Number.isFinite(cost) ? cost : null,
       referencePriceNet: Number.isFinite(
-          Number(selectedSupply.reference_price_net),
-        )
+        Number(selectedSupply.reference_price_net),
+      )
         ? Number(selectedSupply.reference_price_net)
         : snapshot && Number.isFinite(Number(snapshot.referencePriceNet))
           ? Number(snapshot.referencePriceNet)
@@ -3970,7 +4592,13 @@ async function categorizeDraftBatch(
     const key = categoryKey(product);
     const category = categoryForKey(categories, key);
     const margin = DEFAULT_CATEGORY_MARGINS[key];
-    if (!category || !Number.isFinite(margin) || !product.purchasePrice || product.purchasePrice <= 0) return;
+    if (
+      !category ||
+      !Number.isFinite(margin) ||
+      !product.purchasePrice ||
+      product.purchasePrice <= 0
+    )
+      return;
 
     const pricing = competitivePricing(
       product,
@@ -3980,14 +4608,21 @@ async function categorizeDraftBatch(
     );
 
     const patch = async () => {
-      await spreeRequest(config, "PATCH", "/products/" + encodeURIComponent(productId), {
-        category_ids: [category.id],
-      });
       await spreeRequest(
         config,
         "PATCH",
-        "/products/" + encodeURIComponent(productId) +
-          "/variants/" + encodeURIComponent(variantId),
+        "/products/" + encodeURIComponent(productId),
+        {
+          category_ids: [category.id],
+        },
+      );
+      await spreeRequest(
+        config,
+        "PATCH",
+        "/products/" +
+          encodeURIComponent(productId) +
+          "/variants/" +
+          encodeURIComponent(variantId),
         {
           sku: product.sku,
           cost_price: product.purchasePrice,
@@ -4001,22 +4636,27 @@ async function categorizeDraftBatch(
       try {
         await patch();
       } catch (patchError) {
-        const message = patchError instanceof Error ? patchError.message : String(patchError);
-        if (!/variant_not_found|Variant no encontrado/i.test(message)) throw patchError;
+        const message =
+          patchError instanceof Error ? patchError.message : String(patchError);
+        if (!/variant_not_found|Variant no encontrado/i.test(message))
+          throw patchError;
 
         const variants = await spreeList<SpreeVariant>(
           config,
           "/products/" + encodeURIComponent(productId) + "/variants",
         );
-        const repaired = variants.find((variant) =>
-          variant.sku?.trim() === product.sku
+        const repaired = variants.find(
+          (variant) => variant.sku?.trim() === product.sku,
         );
         if (!repaired) throw patchError;
 
         variantId = repaired.id;
         const { error: repairError } = await supabase
           .from("devir_sync_catalog")
-          .update({ spree_variant_id: variantId, updated_at: new Date().toISOString() })
+          .update({
+            spree_variant_id: variantId,
+            updated_at: new Date().toISOString(),
+          })
           .eq("supplier_sku", legacySku);
         if (repairError) throw repairError;
         await patch();
@@ -4048,7 +4688,8 @@ async function categorizeDraftBatch(
       await supabase
         .from("devir_sync_catalog")
         .update({
-          last_error: rowError instanceof Error ? rowError.message : String(rowError),
+          last_error:
+            rowError instanceof Error ? rowError.message : String(rowError),
           updated_at: new Date().toISOString(),
         })
         .eq("supplier_sku", legacySku);
@@ -4057,7 +4698,9 @@ async function categorizeDraftBatch(
 
   for (let index = 0; index < rows.length; index += 5) {
     await Promise.all(
-      rows.slice(index, index + 5).map((row) => processRow(row as Record<string, unknown>)),
+      rows
+        .slice(index, index + 5)
+        .map((row) => processRow(row as Record<string, unknown>)),
     );
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
@@ -4070,7 +4713,6 @@ async function categorizeDraftBatch(
     next_offset: rows.length < limit ? null : offset + limit,
   };
 }
-
 
 async function repriceCommercialBooksBatch(
   config: ConfigRow,
@@ -4085,7 +4727,9 @@ async function repriceCommercialBooksBatch(
 }> {
   const { data, error } = await supabase
     .from("devir_sync_catalog")
-    .select("supplier_sku,name,source_url,snapshot,spree_product_id,spree_variant_id,last_auto_price")
+    .select(
+      "supplier_sku,name,source_url,snapshot,spree_product_id,spree_variant_id,last_auto_price",
+    )
     .or("supplier_sku.like.978%,supplier_sku.like.979%")
     .not("spree_product_id", "is", null)
     .not("spree_variant_id", "is", null)
@@ -4114,7 +4758,7 @@ async function repriceCommercialBooksBatch(
     const sku = selectedSupply?.canonical_sku || legacySku;
     const snapshot =
       row.snapshot && typeof row.snapshot === "object"
-        ? row.snapshot as Json
+        ? (row.snapshot as Json)
         : {};
     const purchasePrice = Number(selectedSupply?.normalized_cost);
     const selectedReferencePrice = Number(selectedSupply?.reference_price_net);
@@ -4324,9 +4968,13 @@ function productFromCatalogRow(row: CatalogAuditRow): DevirProduct {
   const cost = Number(snapshot.purchasePrice);
   const reference = Number(snapshot.referencePriceNet);
   const imageUrls = Array.isArray(snapshot.imageUrls)
-    ? snapshot.imageUrls.filter((value): value is string => typeof value === "string")
+    ? snapshot.imageUrls.filter(
+        (value): value is string => typeof value === "string",
+      )
     : Array.isArray(row.image_urls)
-      ? (row.image_urls as unknown[]).filter((value): value is string => typeof value === "string")
+      ? (row.image_urls as unknown[]).filter(
+          (value): value is string => typeof value === "string",
+        )
       : [];
   const availability =
     row.supplier_status === "available" ||
@@ -4340,11 +4988,15 @@ function productFromCatalogRow(row: CatalogAuditRow): DevirProduct {
     name: row.name,
     url: row.source_url,
     purchasePrice: Number.isFinite(cost) ? cost : null,
-    referencePriceNet: Number.isFinite(reference) && reference > 0 ? reference : null,
+    referencePriceNet:
+      Number.isFinite(reference) && reference > 0 ? reference : null,
     availability,
     availabilityLabel:
-      typeof snapshot.availabilityLabel === "string" ? snapshot.availabilityLabel : null,
-    releaseDate: typeof snapshot.releaseDate === "string" ? snapshot.releaseDate : null,
+      typeof snapshot.availabilityLabel === "string"
+        ? snapshot.availabilityLabel
+        : null,
+    releaseDate:
+      typeof snapshot.releaseDate === "string" ? snapshot.releaseDate : null,
     imageUrls,
   };
 }
@@ -4365,7 +5017,9 @@ async function verifyDevirBatch(
 }> {
   const { data, error } = await supabase
     .from("devir_sync_catalog")
-    .select("supplier_sku,source_url,name,snapshot,image_urls,spree_product_id,spree_variant_id,supplier_status,item_kind,grouping_confidence,last_error")
+    .select(
+      "supplier_sku,source_url,name,snapshot,image_urls,spree_product_id,spree_variant_id,supplier_status,item_kind,grouping_confidence,last_error",
+    )
     .order("supplier_sku")
     .range(offset, offset + limit - 1);
   if (error) throw error;
@@ -4432,7 +5086,10 @@ async function verifyDevirBatch(
       confirmed += 1;
     } catch (sourceError) {
       failed += 1;
-      const message = sourceError instanceof Error ? sourceError.message : String(sourceError);
+      const message =
+        sourceError instanceof Error
+          ? sourceError.message
+          : String(sourceError);
       const previous = row.snapshot ?? {};
       await supabase
         .from("devir_sync_catalog")
@@ -4467,22 +5124,45 @@ async function verifyDevirBatch(
   };
 }
 
-async function repairCategoryTreeAndMembership(
-  config: ConfigRow,
-): Promise<{
+async function repairCategoryTreeAndMembership(config: ConfigRow): Promise<{
   categories: Array<{ id: string; name: string; permalink?: string }>;
   products_assigned: number;
   conflicts: number;
 }> {
   const categories = await spreeCategories(config);
-  const juegos = await ensureCategory(config, categories, "Juegos de mesa", "juegos-de-mesa");
-  const warhammer = await ensureCategory(config, categories, "Warhammer", "warhammer");
+  const juegos = await ensureCategory(
+    config,
+    categories,
+    "Juegos de mesa",
+    "juegos-de-mesa",
+  );
+  const warhammer = await ensureCategory(
+    config,
+    categories,
+    "Warhammer",
+    "warhammer",
+  );
   const tcg = await ensureCategory(config, categories, "TCG", "tcg");
   const mtg = await ensureCategory(config, categories, "MTG", "tcg/mtg");
-  const yugioh = await ensureCategory(config, categories, "Yugioh", "tcg/yugioh");
+  const yugioh = await ensureCategory(
+    config,
+    categories,
+    "Yugioh",
+    "tcg/yugioh",
+  );
   const rol = await ensureCategory(config, categories, "Rol", "rol");
-  const manga = await ensureCategory(config, categories, "Manga y cómic", "manga-comic");
-  const accesorios = await ensureCategory(config, categories, "Accesorios", "accesorios");
+  const manga = await ensureCategory(
+    config,
+    categories,
+    "Manga y cómic",
+    "manga-comic",
+  );
+  const accesorios = await ensureCategory(
+    config,
+    categories,
+    "Accesorios",
+    "accesorios",
+  );
 
   // Only move nodes whose parent is actually wrong. Repositioning an
   // already-correct child can be rejected by Spree as a self/tree move.
@@ -4518,9 +5198,21 @@ async function repairCategoryTreeAndMembership(
   if (error) throw error;
 
   const allProductIds = Array.from(
-    new Set((data ?? []).map((row) => String(row.spree_product_id ?? "")).filter(Boolean)),
+    new Set(
+      (data ?? [])
+        .map((row) => String(row.spree_product_id ?? ""))
+        .filter(Boolean),
+    ),
   );
-  const leafCategories = [juegos, warhammer, mtg, yugioh, rol, manga, accesorios];
+  const leafCategories = [
+    juegos,
+    warhammer,
+    mtg,
+    yugioh,
+    rol,
+    manga,
+    accesorios,
+  ];
 
   // Remove only Devir-managed product memberships, then rebuild deterministically.
   for (const category of leafCategories) {
@@ -4554,7 +5246,9 @@ async function repairCategoryTreeAndMembership(
     productKeys.set(productId, set);
   }
 
-  const byPermalink = new Map(leafCategories.map((category) => [category.permalink, category]));
+  const byPermalink = new Map(
+    leafCategories.map((category) => [category.permalink, category]),
+  );
   const memberships = new Map<string, string[]>();
   let conflicts = 0;
 
@@ -4604,22 +5298,41 @@ async function repairCategoryTreeAndMembership(
 }
 
 async function updateReviewFieldLabels(config: ConfigRow): Promise<void> {
-  const defs = await spreeList<SpreeFieldDefinition>(config, "/custom_field_definitions");
+  const defs = await spreeList<SpreeFieldDefinition>(
+    config,
+    "/custom_field_definitions",
+  );
   const status = defs.find(
-    (item) => item.resource_type === "Spree::Product" && item.namespace === "devir" && item.key === "review_status",
+    (item) =>
+      item.resource_type === "Spree::Product" &&
+      item.namespace === "devir" &&
+      item.key === "review_status",
   );
   const reasons = defs.find(
-    (item) => item.resource_type === "Spree::Product" && item.namespace === "devir" && item.key === "review_reasons",
+    (item) =>
+      item.resource_type === "Spree::Product" &&
+      item.namespace === "devir" &&
+      item.key === "review_reasons",
   );
   if (status) {
-    await spreeRequest(config, "PATCH", "/custom_field_definitions/" + status.id, {
-      label: "⚠ Devir · Intervención humana",
-    });
+    await spreeRequest(
+      config,
+      "PATCH",
+      "/custom_field_definitions/" + status.id,
+      {
+        label: "⚠ Devir · Intervención humana",
+      },
+    );
   }
   if (reasons) {
-    await spreeRequest(config, "PATCH", "/custom_field_definitions/" + reasons.id, {
-      label: "⚠ Devir · Motivo de revisión",
-    });
+    await spreeRequest(
+      config,
+      "PATCH",
+      "/custom_field_definitions/" + reasons.id,
+      {
+        label: "⚠ Devir · Motivo de revisión",
+      },
+    );
   }
 }
 
@@ -4637,7 +5350,9 @@ async function preparePublishBatch(
 }> {
   const { data, error } = await supabase
     .from("devir_sync_catalog")
-    .select("supplier_sku,source_url,name,snapshot,image_urls,spree_product_id,spree_variant_id,supplier_status,item_kind,grouping_confidence,last_error,catalog_version,catalog_state")
+    .select(
+      "supplier_sku,source_url,name,snapshot,image_urls,spree_product_id,spree_variant_id,supplier_status,item_kind,grouping_confidence,last_error,catalog_version,catalog_state",
+    )
     .not("spree_product_id", "is", null)
     .or("catalog_version.is.null,catalog_version.neq.devir-taxonomy-v2")
     .order("spree_product_id")
@@ -4660,7 +5375,8 @@ async function preparePublishBatch(
   const defs = await definitions(config);
   const categories = await spreeCategories(config);
   const channels = await spreeList<SpreeChannel>(config, "/channels");
-  const channel = channels.find((item) => item.active && item.default) ??
+  const channel =
+    channels.find((item) => item.active && item.default) ??
     channels.find((item) => item.active) ??
     channels[0];
   if (!channel) throw new Error("No hay canal de venta activo en Spree");
@@ -4683,7 +5399,11 @@ async function preparePublishBatch(
       await supabase
         .from("devir_sync_catalog")
         .update({
-          last_error: "SPREE-PRODUCT: " + (productError instanceof Error ? productError.message : String(productError)),
+          last_error:
+            "SPREE-PRODUCT: " +
+            (productError instanceof Error
+              ? productError.message
+              : String(productError)),
           updated_at: new Date().toISOString(),
         })
         .eq("spree_product_id", productId);
@@ -4736,6 +5456,9 @@ async function preparePublishBatch(
       if (isPack(legacyProduct)) {
         productReasons.add("pack_requires_operator_split");
       }
+      if (isCatalanCatalogProduct(legacyProduct)) {
+        productReasons.add("catalan_requires_operator_review");
+      }
       if (row.grouping_confidence === "ambiguous") {
         productReasons.add("grouping_requires_operator_review");
       }
@@ -4744,14 +5467,12 @@ async function preparePublishBatch(
         ? variants.find((item) => item.id === row.spree_variant_id)
         : undefined;
       if (!variant) {
-        variant = variants.find((item) =>
-          item.sku?.trim() === legacyProduct.sku
+        variant = variants.find(
+          (item) => item.sku?.trim() === legacyProduct.sku,
         );
       }
       if (!variant) {
-        productReasons.add(
-          "variant_not_found_for_sku:" + legacyProduct.sku,
-        );
+        productReasons.add("variant_not_found_for_sku:" + legacyProduct.sku);
         continue;
       }
 
@@ -4839,7 +5560,9 @@ async function preparePublishBatch(
     }
 
     if (categoryKeys.size !== 1) {
-      productReasons.add("product_category_conflict:" + Array.from(categoryKeys).join(","));
+      productReasons.add(
+        "product_category_conflict:" + Array.from(categoryKeys).join(","),
+      );
     }
 
     const human = productReasons.size > 0;
@@ -4855,51 +5578,61 @@ async function preparePublishBatch(
             ? "preorder"
             : "published";
 
-    const cleanTags = originalTags.filter((tag) =>
-      ![
-        "devir-ready",
-        "devir-published",
-        "devir-preorder",
-        "devir-buy-now",
-        "devir-waiting-stock",
-        "devir-review",
-        "REVISION-HUMANA",
-      ].includes(tag)
+    const cleanTags = originalTags.filter(
+      (tag) =>
+        ![
+          "devir-ready",
+          "devir-published",
+          "devir-preorder",
+          "devir-buy-now",
+          "devir-waiting-stock",
+          "devir-review",
+          "REVISION-HUMANA",
+        ].includes(tag),
     );
-    let tags = Array.from(new Set([
-      ...cleanTags,
-      "devir",
-      ...(publish ? [
-        "devir-ready",
-        "devir-published",
-        ...(hasPreorder ? ["devir-preorder"] : []),
-        ...(hasAvailable ? ["devir-buy-now"] : []),
-      ] : []),
-      ...(waiting ? ["devir-waiting-stock"] : []),
-      ...(human ? ["devir-review", "REVISION-HUMANA"] : []),
-    ]));
+    let tags = Array.from(
+      new Set([
+        ...cleanTags,
+        "devir",
+        ...(publish
+          ? [
+              "devir-ready",
+              "devir-published",
+              ...(hasPreorder ? ["devir-preorder"] : []),
+              ...(hasAvailable ? ["devir-buy-now"] : []),
+            ]
+          : []),
+        ...(waiting ? ["devir-waiting-stock"] : []),
+        ...(human ? ["devir-review", "REVISION-HUMANA"] : []),
+      ]),
+    );
     if (publish) {
-      tags = tags.filter((tag) =>
-        tag !== "devir-review" &&
-        tag !== "REVISION-HUMANA" &&
-        tag !== "devir-waiting-stock"
+      tags = tags.filter(
+        (tag) =>
+          tag !== "devir-review" &&
+          tag !== "REVISION-HUMANA" &&
+          tag !== "devir-waiting-stock",
       );
     } else if (waiting) {
-      tags = tags.filter((tag) =>
-        tag !== "devir-ready" &&
-        tag !== "devir-published" &&
-        tag !== "devir-review" &&
-        tag !== "REVISION-HUMANA" &&
-        tag !== "devir-preorder" &&
-        tag !== "devir-buy-now"
+      tags = tags.filter(
+        (tag) =>
+          tag !== "devir-ready" &&
+          tag !== "devir-published" &&
+          tag !== "devir-review" &&
+          tag !== "REVISION-HUMANA" &&
+          tag !== "devir-preorder" &&
+          tag !== "devir-buy-now",
       );
     } else {
-      tags = tags.filter((tag) => tag !== "devir-ready" && tag !== "devir-published");
+      tags = tags.filter(
+        (tag) => tag !== "devir-ready" && tag !== "devir-published",
+      );
     }
 
-    const resolvedCategory = categoryKeys.size === 1
-      ? categoryForKey(categories, Array.from(categoryKeys)[0])
-      : undefined;
+    const resolvedCategory =
+      categoryKeys.size === 1
+        ? categoryForKey(categories, Array.from(categoryKeys)[0])
+        : undefined;
 
     await spreeRequest(
       config,
@@ -4985,9 +5718,6 @@ async function preparePublishBatch(
   };
 }
 
-
-
-
 async function repairSellabilityBatch(
   config: ConfigRow,
   limit: number,
@@ -5002,7 +5732,9 @@ async function repairSellabilityBatch(
   const defs = await definitions(config);
   const { data, error } = await supabase
     .from("devir_sync_catalog")
-    .select("supplier_sku,spree_product_id,spree_variant_id,supplier_status,snapshot,catalog_state")
+    .select(
+      "supplier_sku,spree_product_id,spree_variant_id,supplier_status,snapshot,catalog_state",
+    )
     .in("catalog_state", ["published", "preorder", "published_mixed"])
     .or("sellability_version.is.null,sellability_version.neq." + version)
     .not("spree_product_id", "is", null)
@@ -5032,12 +5764,13 @@ async function repairSellabilityBatch(
       const current = await spreeRequest<SpreeVariant>(
         config,
         "GET",
-        "/products/" + encodeURIComponent(productId) +
-          "/variants/" + encodeURIComponent(variantId),
+        "/products/" +
+          encodeURIComponent(productId) +
+          "/variants/" +
+          encodeURIComponent(variantId),
       );
       const preorder = selectedSupply?.availability === "preorder";
-      const sellable =
-        selectedSupply?.availability === "available" || preorder;
+      const sellable = selectedSupply?.availability === "available" || preorder;
 
       const updated = await patchVariantInventory(
         config,
@@ -5068,7 +5801,9 @@ async function repairSellabilityBatch(
       await supabase
         .from("devir_sync_catalog")
         .update({
-          last_error: "SELLABILITY: " + (err instanceof Error ? err.message : String(err)),
+          last_error:
+            "SELLABILITY: " +
+            (err instanceof Error ? err.message : String(err)),
           updated_at: new Date().toISOString(),
         })
         .eq("supplier_sku", sku);
@@ -5077,9 +5812,9 @@ async function repairSellabilityBatch(
 
   for (let index = 0; index < rows.length; index += 5) {
     await Promise.all(
-      rows.slice(index, index + 5).map((row) =>
-        processRow(row as Record<string, unknown>)
-      ),
+      rows
+        .slice(index, index + 5)
+        .map((row) => processRow(row as Record<string, unknown>)),
     );
     await new Promise((resolve) => setTimeout(resolve, 150));
   }
@@ -5099,6 +5834,314 @@ async function repairSellabilityBatch(
   };
 }
 
+async function repairTcgFactorySellabilityBatch(
+  config: ConfigRow,
+  offset: number,
+  limit: number,
+): Promise<Record<string, unknown>> {
+  const { data, error, count } = await supabase
+    .from("catalog_selected_supply")
+    .select(
+      "variant_id,spree_product_id,spree_variant_id,availability,supplier_code",
+      { count: "exact" },
+    )
+    .eq("supplier_code", TCGFACTORY_SUPPLIER_CODE)
+    .in("availability", ["available", "preorder"])
+    .not("spree_product_id", "is", null)
+    .not("spree_variant_id", "is", null)
+    .order("variant_id")
+    .range(offset, offset + limit - 1);
+  if (error) throw error;
+
+  let repaired = 0;
+  let failed = 0;
+  const results: Array<Record<string, unknown>> = [];
+
+  const processRow = async (row: Record<string, unknown>) => {
+    const variantId = String(row.variant_id ?? "");
+    const productId = String(row.spree_product_id ?? "");
+    const spreeVariantId = String(row.spree_variant_id ?? "");
+    try {
+      const current = await spreeRequest<SpreeVariant>(
+        config,
+        "GET",
+        "/products/" +
+          encodeURIComponent(productId) +
+          "/variants/" +
+          encodeURIComponent(spreeVariantId),
+      );
+      const preorder = row.availability === "preorder";
+      const updated = await patchVariantInventory(
+        config,
+        productId,
+        spreeVariantId,
+        Number(current.total_on_hand ?? 0),
+        true,
+        preorder,
+        null,
+      );
+      if (!updated.backorderable && !updated.purchasable) {
+        throw new Error("Spree no dejó la variante comprable");
+      }
+      repaired += 1;
+      results.push({ variant_id: variantId, ok: true });
+    } catch (repairError) {
+      failed += 1;
+      results.push({
+        variant_id: variantId,
+        ok: false,
+        error:
+          repairError instanceof Error
+            ? repairError.message
+            : String(repairError),
+      });
+    }
+  };
+
+  const rows = (data ?? []) as Array<Record<string, unknown>>;
+  for (let index = 0; index < rows.length; index += 5) {
+    await Promise.all(rows.slice(index, index + 5).map(processRow));
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+
+  const total = count ?? 0;
+  return {
+    processed: data?.length ?? 0,
+    repaired,
+    failed,
+    total,
+    offset,
+    nextOffset:
+      offset + (data?.length ?? 0) < total
+        ? offset + (data?.length ?? 0)
+        : null,
+    results,
+  };
+}
+
+async function repairRetailUnitProducts(
+  config: ConfigRow,
+): Promise<Record<string, unknown>> {
+  const { data, error } = await supabase
+    .from("devir_sync_catalog")
+    .select(
+      "supplier_sku,source_url,name,snapshot,image_urls,spree_product_id,spree_variant_id,supplier_status,last_auto_price,group_key,group_name,variant_label,variant_position,grouping_confidence",
+    )
+    .or("name.ilike.%scene box%,name.ilike.%theme deck%")
+    .order("supplier_sku");
+  if (error) throw error;
+
+  const supplier = await configuredCatalogSupplier("devir");
+  const categories = await spreeCategories(config);
+  const defs = await definitions(config);
+  let repaired = 0;
+  let skipped = 0;
+  const results: Array<Record<string, unknown>> = [];
+
+  for (const rawRow of data ?? []) {
+    const row = rawRow as CatalogGroupRow;
+    const snapshot =
+      row.snapshot && typeof row.snapshot === "object"
+        ? (row.snapshot as Json)
+        : {};
+    if (snapshot.retailUnitNormalized === true) {
+      skipped += 1;
+      continue;
+    }
+    const original = catalogRowProduct(row);
+    const retail = normalizeDevirRetailUnit(original);
+    if (retail.unitsPerSupplierPack === 1) {
+      skipped += 1;
+      continue;
+    }
+    const product: DevirProduct = {
+      ...original,
+      name: retail.name,
+      purchasePrice: retail.purchasePrice,
+      referencePriceNet: retail.referencePriceNet,
+    };
+    const item = normalizeSupplierItem(devirCatalogItem(product));
+    const { data: offer, error: offerError } = await supabase
+      .from("catalog_supplier_offers")
+      .select("id,variant_id,raw_payload")
+      .eq("supplier_id", supplier.id)
+      .eq("external_variant_id", row.supplier_sku)
+      .single();
+    if (offerError) throw offerError;
+
+    const now = new Date().toISOString();
+    const { error: offerUpdateError } = await supabase
+      .from("catalog_supplier_offers")
+      .update({
+        purchase_price: item.purchasePrice,
+        normalized_cost: item.normalizedCost,
+        reference_price_net: item.referencePriceNet ?? null,
+        raw_payload: {
+          ...(offer.raw_payload && typeof offer.raw_payload === "object"
+            ? offer.raw_payload
+            : {}),
+          ...item,
+          metadata: {
+            ...item.metadata,
+            retailUnitNormalized: true,
+            supplierPackUnits: retail.unitsPerSupplierPack,
+          },
+        },
+        updated_at: now,
+      })
+      .eq("id", offer.id);
+    if (offerUpdateError) throw offerUpdateError;
+
+    const currentResolution = await loadCatalogVariant(
+      String(offer.variant_id),
+    );
+    const { error: productUpdateError } = await supabase
+      .from("catalog_products")
+      .update({
+        name: item.productName,
+        category_key:
+          item.categoryKey ?? currentResolution.product.category_key,
+        updated_at: now,
+      })
+      .eq("id", currentResolution.product.id);
+    if (productUpdateError) throw productUpdateError;
+    const resolution = await loadCatalogVariant(String(offer.variant_id));
+    const synced = await reconcileCatalogVariant(
+      config,
+      resolution,
+      categories,
+      defs,
+    );
+    const { error: catalogError } = await supabase
+      .from("devir_sync_catalog")
+      .update({
+        name: product.name,
+        snapshot: {
+          ...snapshot,
+          ...product,
+          retailUnitNormalized: true,
+          supplierPackUnits: retail.unitsPerSupplierPack,
+        },
+        last_auto_price: synced.lastAutoPrice,
+        last_error: null,
+        title_cleanup_version: null,
+        catalog_version: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("supplier_sku", row.supplier_sku);
+    if (catalogError) throw catalogError;
+    repaired += 1;
+    results.push({
+      sku: row.supplier_sku,
+      name: product.name,
+      units: retail.unitsPerSupplierPack,
+      price: synced.lastAutoPrice,
+      ok: true,
+    });
+  }
+
+  return { processed: data?.length ?? 0, repaired, skipped, results };
+}
+
+async function hideCatalogPolicyViolations(
+  config: ConfigRow,
+): Promise<Record<string, unknown>> {
+  const { data, error } = await supabase
+    .from("devir_sync_catalog")
+    .select(
+      "supplier_sku,source_url,name,snapshot,image_urls,spree_product_id,spree_variant_id,supplier_status,item_kind,grouping_confidence,last_error,catalog_state",
+    )
+    .in("catalog_state", ["published", "preorder", "published_mixed"])
+    .not("spree_product_id", "is", null);
+  if (error) throw error;
+
+  const violations = new Map<string, Set<string>>();
+  for (const row of (data ?? []) as CatalogAuditRow[]) {
+    const product = productFromCatalogRow(row);
+    const productId = String(row.spree_product_id ?? "");
+    const reasons = violations.get(productId) ?? new Set<string>();
+    if (isCatalanCatalogProduct(product)) {
+      reasons.add("catalan_requires_operator_review");
+    }
+    if (isPack(product)) reasons.add("pack_requires_operator_split");
+    if (reasons.size) violations.set(productId, reasons);
+  }
+
+  const { data: catalanProducts, error: catalanProductsError } = await supabase
+    .from("catalog_products")
+    .select("name,spree_product_id")
+    .not("spree_product_id", "is", null)
+    .ilike("name", "%catal%");
+  if (catalanProductsError) throw catalanProductsError;
+  for (const product of catalanProducts ?? []) {
+    if (!isCatalanCatalogProduct({ name: String(product.name ?? "") })) {
+      continue;
+    }
+    const productId = String(product.spree_product_id ?? "");
+    const reasons = violations.get(productId) ?? new Set<string>();
+    reasons.add("catalan_requires_operator_review");
+    violations.set(productId, reasons);
+  }
+
+  const channels = await spreeList<SpreeChannel>(config, "/channels");
+  const channel =
+    channels.find((item) => item.active && item.default) ??
+    channels.find((item) => item.active) ??
+    channels[0];
+  const hidden: Array<Record<string, unknown>> = [];
+  for (const [productId, reasons] of violations) {
+    const product = await spreeRequest<SpreeProduct>(
+      config,
+      "GET",
+      "/products/" + encodeURIComponent(productId),
+    );
+    const tags = Array.from(
+      new Set([
+        ...(product.tags ?? []).filter(
+          (tag) =>
+            ![
+              "devir-ready",
+              "devir-published",
+              "devir-preorder",
+              "devir-buy-now",
+            ].includes(tag),
+        ),
+        "devir-review",
+        "REVISION-HUMANA",
+      ]),
+    );
+    await spreeRequest(
+      config,
+      "PATCH",
+      "/products/" + encodeURIComponent(productId),
+      { status: "draft", tags },
+    );
+    if (channel) {
+      try {
+        await spreeRequest(
+          config,
+          "POST",
+          "/channels/" + encodeURIComponent(channel.id) + "/remove_products",
+          { product_ids: [productId] },
+        );
+      } catch {
+        // Draft status is the primary visibility control.
+      }
+    }
+    const reason = Array.from(reasons).join(", ");
+    await supabase
+      .from("devir_sync_catalog")
+      .update({
+        catalog_state: "review",
+        last_error: "REVIEW: " + reason,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("spree_product_id", productId);
+    hidden.push({ product_id: productId, name: product.name, reason });
+  }
+  return { hidden: hidden.length, products: hidden };
+}
+
 async function cleanCatalogTitlesBatch(
   config: ConfigRow,
   limit: number,
@@ -5112,7 +6155,9 @@ async function cleanCatalogTitlesBatch(
   const categories = await spreeCategories(config);
   const { data, error } = await supabase
     .from("devir_sync_catalog")
-    .select("supplier_sku,name,snapshot,source_url,spree_product_id,title_cleanup_version")
+    .select(
+      "supplier_sku,name,snapshot,source_url,spree_product_id,title_cleanup_version",
+    )
     .not("spree_product_id", "is", null)
     .or("title_cleanup_version.is.null,title_cleanup_version.neq." + version)
     .order("spree_product_id")
@@ -5143,9 +6188,10 @@ async function cleanCatalogTitlesBatch(
     for (const row of rows) {
       const rawName = String(row.name ?? "");
       const cleanName = cleanDevirTitle(rawName);
-      const snapshot = row.snapshot && typeof row.snapshot === "object"
-        ? row.snapshot as Json
-        : {};
+      const snapshot =
+        row.snapshot && typeof row.snapshot === "object"
+          ? (row.snapshot as Json)
+          : {};
       const product: DevirProduct = {
         sku: String(row.supplier_sku ?? ""),
         name: cleanName,
@@ -5167,9 +6213,13 @@ async function cleanCatalogTitlesBatch(
             ? snapshot.availabilityLabel
             : null,
         releaseDate:
-          typeof snapshot.releaseDate === "string" ? snapshot.releaseDate : null,
+          typeof snapshot.releaseDate === "string"
+            ? snapshot.releaseDate
+            : null,
         imageUrls: Array.isArray(snapshot.imageUrls)
-          ? snapshot.imageUrls.filter((item): item is string => typeof item === "string")
+          ? snapshot.imageUrls.filter(
+              (item): item is string => typeof item === "string",
+            )
           : [],
       };
       keys.add(categoryKey(product));
@@ -5212,9 +6262,9 @@ async function cleanCatalogTitlesBatch(
 
   for (let index = 0; index < selected.length; index += 5) {
     await Promise.all(
-      selected.slice(index, index + 5).map(([productId, rows]) =>
-        processProduct(productId, rows)
-      ),
+      selected
+        .slice(index, index + 5)
+        .map(([productId, rows]) => processProduct(productId, rows)),
     );
     await new Promise((resolve) => setTimeout(resolve, 120));
   }
@@ -5231,7 +6281,8 @@ async function cleanCatalogTitlesBatch(
     titles_changed: titlesChanged,
     categories_changed: categoriesChanged,
     remaining_products: new Set(
-      (remainingRows ?? []).map((row) => String(row.spree_product_id ?? ""))
+      (remainingRows ?? [])
+        .map((row) => String(row.spree_product_id ?? ""))
         .filter(Boolean),
     ).size,
   };
@@ -5259,9 +6310,9 @@ function specialProgramPrice(
   sku: string,
 ): number {
   const vatRate = vatRateForSku(sku);
-  return Math.ceil(
-    paymentAwareFloor(cost, vatRate, targetMargin) * 100 - 1e-9,
-  ) / 100;
+  return (
+    Math.ceil(paymentAwareFloor(cost, vatRate, targetMargin) * 100 - 1e-9) / 100
+  );
 }
 
 function isFixedPriceBookSku(sku: string): boolean {
@@ -5294,12 +6345,17 @@ async function ensureSpecialPriceList(
     }
   }
 
-  const created = await spreeRequest<SpreePriceList>(config, "POST", "/price_lists", {
-    name: program.code + " · " + program.name,
-    description:
-      "Precio por cuenta aprobada. Margen objetivo configurable; no altera el PVP público.",
-    match_policy: "all",
-  });
+  const created = await spreeRequest<SpreePriceList>(
+    config,
+    "POST",
+    "/price_lists",
+    {
+      name: program.code + " · " + program.name,
+      description:
+        "Precio por cuenta aprobada. Margen objetivo configurable; no altera el PVP público.",
+      match_policy: "all",
+    },
+  );
 
   const { error } = await supabase
     .from("special_pricing_programs")
@@ -5314,7 +6370,9 @@ async function ensureSpecialPriceList(
   return created;
 }
 
-async function approvedSpecialCustomerIds(programCode: string): Promise<string[]> {
+async function approvedSpecialCustomerIds(
+  programCode: string,
+): Promise<string[]> {
   const { data, error } = await supabase
     .from("special_pricing_requests")
     .select("spree_customer_id")
@@ -5322,7 +6380,9 @@ async function approvedSpecialCustomerIds(programCode: string): Promise<string[]
     .eq("status", "approved");
   if (error) throw error;
   return Array.from(
-    new Set((data ?? []).map((row) => String(row.spree_customer_id)).filter(Boolean)),
+    new Set(
+      (data ?? []).map((row) => String(row.spree_customer_id)).filter(Boolean),
+    ),
   );
 }
 
@@ -5333,14 +6393,21 @@ async function syncSpecialPriceListRules(
 ): Promise<number> {
   const customerIds = await approvedSpecialCustomerIds(program.code);
 
-  await spreeRequest(config, "PATCH", "/price_lists/" + encodeURIComponent(priceList.id), {
-    rules: customerIds.length
-      ? [{
-          type: "user_rule",
-          preferences: { user_ids: customerIds },
-        }]
-      : [],
-  });
+  await spreeRequest(
+    config,
+    "PATCH",
+    "/price_lists/" + encodeURIComponent(priceList.id),
+    {
+      rules: customerIds.length
+        ? [
+            {
+              type: "user_rule",
+              preferences: { user_ids: customerIds },
+            },
+          ]
+        : [],
+    },
+  );
 
   if (customerIds.length && program.active) {
     await spreeRequest(
@@ -5369,7 +6436,11 @@ async function syncSpecialPriceRows(
   priceList: SpreePriceList,
 ): Promise<number> {
   const targetMargin = Number(program.target_margin);
-  if (!Number.isFinite(targetMargin) || targetMargin < 0 || targetMargin >= 0.95) {
+  if (
+    !Number.isFinite(targetMargin) ||
+    targetMargin < 0 ||
+    targetMargin >= 0.95
+  ) {
     throw new Error("Margen especial inválido");
   }
 
@@ -5434,7 +6505,11 @@ async function syncSpecialPricingProgram(
   const priceRows = syncPrices
     ? await syncSpecialPriceRows(config, program, priceList)
     : undefined;
-  const approvedCustomers = await syncSpecialPriceListRules(config, program, priceList);
+  const approvedCustomers = await syncSpecialPriceListRules(
+    config,
+    program,
+    priceList,
+  );
 
   return {
     code: program.code,
@@ -5445,20 +6520,31 @@ async function syncSpecialPricingProgram(
   };
 }
 
-async function validateSpreeAdminKey(spreeApiUrl: string, key: string): Promise<void> {
-  if (!key.startsWith("sk_")) throw new Error("La clave de Spree no es una Secret API Key válida.");
+async function validateSpreeAdminKey(
+  spreeApiUrl: string,
+  key: string,
+): Promise<void> {
+  if (!key.startsWith("sk_"))
+    throw new Error("La clave de Spree no es una Secret API Key válida.");
   const response = await fetch(
     spreeApiUrl.replace(/\/$/, "") + "/api/v3/admin/products?limit=1",
     { headers: { accept: "application/json", "x-spree-api-key": key } },
   );
   if (!response.ok) {
-    throw new Error("Spree rechazó la Secret API Key (" + response.status + ").");
+    throw new Error(
+      "Spree rechazó la Secret API Key (" + response.status + ").",
+    );
   }
 }
 
-async function operatorAuthorized(config: ConfigRow, provided: string): Promise<boolean> {
+async function operatorAuthorized(
+  config: ConfigRow,
+  provided: string,
+): Promise<boolean> {
   if (!provided || !config.spree_admin_api_key) return false;
-  return (await sha256(provided)) === (await sha256(config.spree_admin_api_key));
+  return (
+    (await sha256(provided)) === (await sha256(config.spree_admin_api_key))
+  );
 }
 
 interface MerchandisingOfferInput {
@@ -5484,9 +6570,8 @@ async function applyMerchandisingOffers(
   }>;
 }> {
   const offers: MerchandisingOfferInput[] = rawOffers.map((raw) => {
-    const value = raw && typeof raw === "object"
-      ? raw as Record<string, unknown>
-      : {};
+    const value =
+      raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
     return {
       productId: String(value.productId ?? "").trim(),
       sku: String(value.sku ?? "").trim(),
@@ -5582,9 +6667,11 @@ async function applyMerchandisingOffers(
 
     if (offer.amount + 0.005 < safetyFloor) {
       throw new Error(
-        "Oferta " + offer.sku +
+        "Oferta " +
+          offer.sku +
           " por debajo del suelo de contribución (" +
-          safetyFloor.toFixed(2) + " EUR)",
+          safetyFloor.toFixed(2) +
+          " EUR)",
       );
     }
 
@@ -5595,7 +6682,8 @@ async function applyMerchandisingOffers(
         merchandisingProduct.referencePriceNet * 1.04 * 0.95
     ) {
       throw new Error(
-        "Oferta " + offer.sku +
+        "Oferta " +
+          offer.sku +
           " supera el descuento ordinario permitido para libros",
       );
     }
@@ -5615,12 +6703,7 @@ async function applyMerchandisingOffers(
       );
     }
 
-    await upsertBasePrice(
-      config,
-      variant.id,
-      offer.amount,
-      compareAtAmount,
-    );
+    await upsertBasePrice(config, variant.id, offer.amount, compareAtAmount);
 
     const tags = Array.from(
       new Set([
@@ -5651,9 +6734,10 @@ async function applyMerchandisingOffers(
 async function upsertCatalogSupplier(
   body: Record<string, unknown>,
 ): Promise<CatalogSupplierRow> {
-  const raw = body.supplier && typeof body.supplier === "object"
-    ? body.supplier as Record<string, unknown>
-    : body;
+  const raw =
+    body.supplier && typeof body.supplier === "object"
+      ? (body.supplier as Record<string, unknown>)
+      : body;
   const code = normalizeSupplierCode(String(raw.code ?? ""));
   const name = String(raw.name ?? "").trim();
   const adapterKey = normalizeSupplierCode(String(raw.adapterKey ?? code));
@@ -5663,13 +6747,17 @@ async function upsertCatalogSupplier(
   const defaultCurrency = String(raw.defaultCurrency ?? "EUR")
     .trim()
     .toUpperCase();
-  const adapterConfig = raw.config === undefined
-    ? undefined
-    : raw.config && typeof raw.config === "object" && !Array.isArray(raw.config)
-      ? raw.config as Record<string, unknown>
-      : null;
+  const adapterConfig =
+    raw.config === undefined
+      ? undefined
+      : raw.config &&
+          typeof raw.config === "object" &&
+          !Array.isArray(raw.config)
+        ? (raw.config as Record<string, unknown>)
+        : null;
   if (!name) throw new Error("supplier.name es obligatorio");
-  if (!Number.isInteger(priority)) throw new Error("supplier.priority debe ser entero");
+  if (!Number.isInteger(priority))
+    throw new Error("supplier.priority debe ser entero");
   if (!Number.isInteger(staleAfterHours) || staleAfterHours <= 0) {
     throw new Error("supplier.staleAfterHours debe ser un entero positivo");
   }
@@ -5719,20 +6807,21 @@ async function ingestCatalogItemsAction(
   const supplierCode = normalizeSupplierCode(String(body.supplierCode ?? ""));
   await configuredCatalogSupplier(supplierCode);
   const items = Array.isArray(body.items) ? body.items : [];
-  if (items.length === 0) throw new Error("items debe contener al menos un producto");
+  if (items.length === 0)
+    throw new Error("items debe contener al menos un producto");
   if (items.length > 100) throw new Error("Máximo 100 variantes por petición");
-  const runId = typeof body.runId === "string" && body.runId.trim()
-    ? body.runId.trim()
-    : null;
+  const runId =
+    typeof body.runId === "string" && body.runId.trim()
+      ? body.runId.trim()
+      : null;
   const categories = await spreeCategories(config);
   const defs = await definitions(config);
   const results: Array<Record<string, unknown>> = [];
   let failed = 0;
 
   for (const raw of items) {
-    const value = raw && typeof raw === "object"
-      ? raw as Record<string, unknown>
-      : {};
+    const value =
+      raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
     try {
       const { resolution, synced } = await ingestCatalogItem(
         config,
@@ -5794,20 +6883,26 @@ async function repriceCatalogSupplierBatch(
   if (error) throw error;
 
   const rows = data ?? [];
-  const variantIds = Array.from(new Set(rows.map((row) => String(row.variant_id))));
-  const productIds = Array.from(new Set(rows.map((row) => String(row.product_id))));
+  const variantIds = Array.from(
+    new Set(rows.map((row) => String(row.variant_id))),
+  );
+  const productIds = Array.from(
+    new Set(rows.map((row) => String(row.product_id))),
+  );
 
-  const [{ data: variants, error: variantsError }, { data: products, error: productsError }] =
-    await Promise.all([
-      supabase
-        .from("catalog_variants")
-        .select("id,last_auto_price,spree_variant_id,product_id")
-        .in("id", variantIds),
-      supabase
-        .from("catalog_products")
-        .select("id,name,category_key,spree_product_id")
-        .in("id", productIds),
-    ]);
+  const [
+    { data: variants, error: variantsError },
+    { data: products, error: productsError },
+  ] = await Promise.all([
+    supabase
+      .from("catalog_variants")
+      .select("id,last_auto_price,spree_variant_id,product_id")
+      .in("id", variantIds),
+    supabase
+      .from("catalog_products")
+      .select("id,name,category_key,spree_product_id")
+      .in("id", productIds),
+  ]);
   if (variantsError) throw variantsError;
   if (productsError) throw productsError;
 
@@ -5844,10 +6939,12 @@ async function repriceCatalogSupplierBatch(
     const productId = String(row.product_id ?? "");
     const variant = variantsById.get(variantId);
     const productRow = productsById.get(productId);
-    const spreeVariantId =
-      String(row.spree_variant_id ?? variant?.spree_variant_id ?? "");
-    const spreeProductId =
-      String(row.spree_product_id ?? productRow?.spree_product_id ?? "");
+    const spreeVariantId = String(
+      row.spree_variant_id ?? variant?.spree_variant_id ?? "",
+    );
+    const spreeProductId = String(
+      row.spree_product_id ?? productRow?.spree_product_id ?? "",
+    );
 
     try {
       if (!variant || !productRow || !spreeVariantId || !spreeProductId) {
@@ -5865,7 +6962,7 @@ async function repriceCatalogSupplierBatch(
         purchasePrice: cost,
         referencePriceNet:
           Number.isFinite(Number(row.reference_price_net)) &&
-            Number(row.reference_price_net) > 0
+          Number(row.reference_price_net) > 0
             ? Number(row.reference_price_net)
             : null,
         availability:
@@ -5889,8 +6986,10 @@ async function repriceCatalogSupplierBatch(
       const spreeVariant = await spreeRequest<SpreeVariant>(
         config,
         "GET",
-        "/products/" + encodeURIComponent(spreeProductId) +
-          "/variants/" + encodeURIComponent(spreeVariantId),
+        "/products/" +
+          encodeURIComponent(spreeProductId) +
+          "/variants/" +
+          encodeURIComponent(spreeVariantId),
       );
       const currentPrice = variantPrice(spreeVariant);
       const lastAutoPrice = Number(variant.last_auto_price);
@@ -5914,7 +7013,10 @@ async function repriceCatalogSupplierBatch(
         return;
       }
 
-      if (currentPrice !== null && Math.abs(currentPrice - pricing.retail) < 0.005) {
+      if (
+        currentPrice !== null &&
+        Math.abs(currentPrice - pricing.retail) < 0.005
+      ) {
         unchanged += 1;
       } else {
         await upsertBasePrice(config, spreeVariantId, pricing.retail);
@@ -5991,9 +7093,10 @@ async function completeCatalogSupplierRun(
     { p_supplier_id: supplier.id, p_run_id: runId },
   );
   if (completeError) throw completeError;
-  const result = completed && typeof completed === "object"
-    ? completed as Record<string, unknown>
-    : {};
+  const result =
+    completed && typeof completed === "object"
+      ? (completed as Record<string, unknown>)
+      : {};
   const affectedVariantIds = Array.isArray(result.variantIds)
     ? Array.from(new Set(result.variantIds.map(String)))
     : [];
@@ -6018,7 +7121,6 @@ async function completeCatalogSupplierRun(
     alreadyCompleted: result.alreadyCompleted === true,
   };
 }
-
 
 type TcgFactorySessionState = ConfigRow["session_state"];
 
@@ -6067,7 +7169,10 @@ async function tcgFactoryCredentialsConfigured(): Promise<boolean> {
 
 function htmlAttribute(tag: string, name: string): string | null {
   const match = tag.match(
-    new RegExp("\\\\b" + name + "\\\\s*=\\\\s*([\\\"'])((?:(?!\\\\1).)*)\\\\1", "i"),
+    new RegExp(
+      "\\\\b" + name + "\\\\s*=\\\\s*([\\\"'])((?:(?!\\\\1).)*)\\\\1",
+      "i",
+    ),
   );
   return match?.[2] ?? null;
 }
@@ -6084,10 +7189,7 @@ function tcgFactoryLoginFields(html: string): Record<string, string> {
   return fields;
 }
 
-function tcgCookieHeader(
-  session: TcgFactorySessionState,
-  url: string,
-): string {
+function tcgCookieHeader(session: TcgFactorySessionState, url: string): string {
   if (!session?.cookies?.length) return "";
   const target = new URL(url);
   const nowSeconds = Date.now() / 1000;
@@ -6108,7 +7210,11 @@ function tcgCookieHeader(
 async function tcgFactoryTextFetch(
   url: string,
   session?: TcgFactorySessionState,
-): Promise<{ html: string; finalUrl: string; session: TcgFactorySessionState }> {
+): Promise<{
+  html: string;
+  finalUrl: string;
+  session: TcgFactorySessionState;
+}> {
   const response = await fetch(url, {
     redirect: "follow",
     headers: {
@@ -6138,15 +7244,16 @@ async function tcgFactoryTextFetch(
 async function tcgFactoryLogin(
   credentialsOverride?: TcgFactoryCredentials,
 ): Promise<TcgFactorySessionState> {
-  const credentials = credentialsOverride ?? await tcgFactoryCredentials();
+  const credentials = credentialsOverride ?? (await tcgFactoryCredentials());
   if (!credentials) {
     throw new Error("TCGFACTORY_B2B_CREDENTIALS_MISSING");
   }
   const loginUrl = TCGFACTORY_BASE_URL + "/es/iniciar-sesion?back=my-account";
   const login = await tcgFactoryTextFetch(loginUrl);
   const formTag =
-    login.html.match(/<form\b[^>]*(?:id=["']login-form["']|action=["'][^"']*(?:iniciar-sesion|login)[^"']*["'])[^>]*>/i)?.[0] ??
-    "";
+    login.html.match(
+      /<form\b[^>]*(?:id=["']login-form["']|action=["'][^"']*(?:iniciar-sesion|login)[^"']*["'])[^>]*>/i,
+    )?.[0] ?? "";
   const actionRaw = htmlAttribute(formTag, "action") ?? loginUrl;
   const action = new URL(actionRaw, TCGFACTORY_BASE_URL).toString();
   const fields = tcgFactoryLoginFields(login.html);
@@ -6224,33 +7331,31 @@ async function upsertTcgFactoryDiscovery(
   runId: string | null,
   metadata: Record<string, unknown> = {},
 ): Promise<void> {
-  const { error } = await supabase
-    .from("catalog_supplier_discovery")
-    .upsert(
-      {
-        supplier_id: supplierId,
-        external_product_id: product.externalProductId,
-        external_variant_id: product.externalVariantId,
-        supplier_sku: product.reference ?? product.externalVariantId,
-        gtin: product.ean,
-        product_name: product.productName,
-        source_url: product.sourceUrl,
-        category_key: product.categoryKey,
-        manufacturer: product.manufacturer,
-        manufacturer_sku: product.manufacturerSku,
-        options: product.options,
-        reference_price_net: product.referencePriceNet,
-        availability: product.availability,
-        release_date: product.releaseDate,
-        image_urls: product.imageUrls,
-        metadata: { ...product.metadata, ...metadata },
-        active: true,
-        last_seen_run_id: runId,
-        last_seen_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "supplier_id,external_variant_id" },
-    );
+  const { error } = await supabase.from("catalog_supplier_discovery").upsert(
+    {
+      supplier_id: supplierId,
+      external_product_id: product.externalProductId,
+      external_variant_id: product.externalVariantId,
+      supplier_sku: product.reference ?? product.externalVariantId,
+      gtin: product.ean,
+      product_name: product.productName,
+      source_url: product.sourceUrl,
+      category_key: product.categoryKey,
+      manufacturer: product.manufacturer,
+      manufacturer_sku: product.manufacturerSku,
+      options: product.options,
+      reference_price_net: product.referencePriceNet,
+      availability: product.availability,
+      release_date: product.releaseDate,
+      image_urls: product.imageUrls,
+      metadata: { ...product.metadata, ...metadata },
+      active: true,
+      last_seen_run_id: runId,
+      last_seen_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "supplier_id,external_variant_id" },
+  );
   if (error) throw error;
 }
 
@@ -6479,7 +7584,9 @@ async function tcgFactoryTick(
   const parsed = parseTcgFactoryListing(listing.html, pageUrl);
   const urls = parsed.productUrls.slice(offset, offset + 6);
   const categories = credentialsAvailable ? await spreeCategories(config) : [];
-  const defs = credentialsAvailable ? await definitions(config) : new Map<string, SpreeFieldDefinition>();
+  const defs = credentialsAvailable
+    ? await definitions(config)
+    : new Map<string, SpreeFieldDefinition>();
   let discovered = 0;
   let processed = 0;
   let failed = 0;
@@ -6487,12 +7594,11 @@ async function tcgFactoryTick(
   for (const url of urls) {
     try {
       const publicDetail = await tcgFactoryTextFetch(url);
-      const publicProduct = parseTcgFactoryPublicProduct(publicDetail.html, url);
-      await upsertTcgFactoryDiscovery(
-        supplier.id,
-        publicProduct,
-        state.run_id,
+      const publicProduct = parseTcgFactoryPublicProduct(
+        publicDetail.html,
+        url,
       );
+      await upsertTcgFactoryDiscovery(supplier.id, publicProduct, state.run_id);
       discovered += 1;
 
       if (!credentialsAvailable) continue;
@@ -6525,13 +7631,7 @@ async function tcgFactoryTick(
         },
         price,
       );
-      await ingestCatalogItem(
-        config,
-        rawItem,
-        state.run_id,
-        categories,
-        defs,
-      );
+      await ingestCatalogItem(config, rawItem, state.run_id, categories, defs);
       processed += 1;
       await upsertTcgFactoryDiscovery(
         supplier.id,
@@ -6553,14 +7653,13 @@ async function tcgFactoryTick(
   const nextPage = pageDone ? page + 1 : page;
   const nextOffset = pageDone ? 0 : offset + urls.length;
   const fullDone =
-    pageDone &&
-    parsed.productUrls.length > 0 &&
-    page >= parsed.totalPages;
+    pageDone && parsed.productUrls.length > 0 && page >= parsed.totalPages;
 
   if (fullDone) {
     if (cumulativeFailed > 0) {
       const message =
-        "partial_run_not_completed: " + String(cumulativeFailed) +
+        "partial_run_not_completed: " +
+        String(cumulativeFailed) +
         " TcgFactory items failed validation";
       await supabase
         .from("catalog_supplier_crawl_state")
@@ -6704,7 +7803,7 @@ async function operatorAction(
         : "https://b2bdevir.es";
     const sessionState =
       body.sessionState && typeof body.sessionState === "object"
-        ? body.sessionState as ConfigRow["session_state"]
+        ? (body.sessionState as ConfigRow["session_state"])
         : null;
 
     if (!providedKey || !sessionState) {
@@ -6720,7 +7819,10 @@ async function operatorAction(
       spree_admin_api_key: providedKey,
       session_state: sessionState,
     };
-    await devirFetch(probeConfig, baseUrl.replace(/\/$/, "") + "/customer/account/");
+    await devirFetch(
+      probeConfig,
+      baseUrl.replace(/\/$/, "") + "/customer/account/",
+    );
 
     const { error } = await supabase
       .from("devir_sync_config")
@@ -6743,7 +7845,8 @@ async function operatorAction(
     return json({
       ok: true,
       enabled: true,
-      message: "Bootstrap validado contra Devir y Spree. Primer ciclo solicitado.",
+      message:
+        "Bootstrap validado contra Devir y Spree. Primer ciclo solicitado.",
     });
   }
 
@@ -6759,7 +7862,10 @@ async function operatorAction(
     Boolean(config.worker_token_hash) &&
     (await sha256(maintenanceToken)) === config.worker_token_hash;
 
-  if (!maintenanceAuthorized && !(await operatorAuthorized(config, providedKey))) {
+  if (
+    !maintenanceAuthorized &&
+    !(await operatorAuthorized(config, providedKey))
+  ) {
     return json({ error: "unauthorized" }, 401);
   }
 
@@ -6767,9 +7873,11 @@ async function operatorAction(
     if (!(await operatorAuthorized(config, providedKey))) {
       return json({ error: "unauthorized" }, 401);
     }
-    const username = typeof body.username === "string" ? body.username.trim() : "";
+    const username =
+      typeof body.username === "string" ? body.username.trim() : "";
     const password = typeof body.password === "string" ? body.password : "";
-    if (!username || !password) return json({ error: "credentials_required" }, 400);
+    if (!username || !password)
+      return json({ error: "credentials_required" }, 400);
 
     const { data: previousCredentials, error: previousError } =
       await supabase.rpc("devir_sync_get_credentials");
@@ -6841,7 +7949,7 @@ async function operatorAction(
       .limit(5);
     if (cyclesError) throw cyclesError;
 
-    let jobs = {
+    const jobs = {
       pending: 0,
       done: 0,
       error: 0,
@@ -6857,7 +7965,11 @@ async function operatorAction(
 
       for (const row of grouped ?? []) {
         const kind = row.kind === "category" ? "categories" : "products";
-        const status = row.status as "pending" | "done" | "error" | "processing";
+        const status = row.status as
+          | "pending"
+          | "done"
+          | "error"
+          | "processing";
         if (status === "pending" || status === "done" || status === "error") {
           jobs[kind][status] += 1;
           jobs[status] += 1;
@@ -6875,9 +7987,15 @@ async function operatorAction(
         interval_hours: config.interval_hours,
         batch_size: config.batch_size,
         max_pages: config.max_pages,
-        last_attempt_at: (config as ConfigRow & { last_attempt_at?: string | null }).last_attempt_at ?? null,
-        last_success_at: (config as ConfigRow & { last_success_at?: string | null }).last_success_at ?? null,
-        last_error: (config as ConfigRow & { last_error?: string | null }).last_error ?? null,
+        last_attempt_at:
+          (config as ConfigRow & { last_attempt_at?: string | null })
+            .last_attempt_at ?? null,
+        last_success_at:
+          (config as ConfigRow & { last_success_at?: string | null })
+            .last_success_at ?? null,
+        last_error:
+          (config as ConfigRow & { last_error?: string | null }).last_error ??
+          null,
       },
       jobs,
       cycles: cycles ?? [],
@@ -6921,7 +8039,10 @@ async function operatorAction(
   }
 
   if (action === "catalog-ingest") {
-    return json({ ok: true, ...(await ingestCatalogItemsAction(config, body)) });
+    return json({
+      ok: true,
+      ...(await ingestCatalogItemsAction(config, body)),
+    });
   }
 
   if (action === "catalog-complete-run") {
@@ -6958,7 +8079,9 @@ async function operatorAction(
     const categories = await spreeCategories(config);
     const defs = await definitions(config);
     const variantIds = Array.from(
-      new Set((data ?? []).map((row) => String(row.variant_id)).filter(Boolean)),
+      new Set(
+        (data ?? []).map((row) => String(row.variant_id)).filter(Boolean),
+      ),
     );
     const results: Array<{
       variant_id: string;
@@ -7018,7 +8141,11 @@ async function operatorAction(
       .order("priority")
       .order("code");
     if (suppliersError) throw suppliersError;
-    const { data: variants, error: variantsError, count } = await supabase
+    const {
+      data: variants,
+      error: variantsError,
+      count,
+    } = await supabase
       .from("catalog_selected_supply")
       .select("*", { count: "exact" })
       .order("product_name")
@@ -7144,12 +8271,17 @@ async function operatorAction(
 
   if (action === "inspect-devir-source") {
     const url = typeof body.url === "string" ? body.url.trim() : "";
-    if (!url || !url.startsWith(config.base_url)) return json({ error: "invalid_devir_url" }, 400);
+    if (!url || !url.startsWith(config.base_url))
+      return json({ error: "invalid_devir_url" }, 400);
     const html = await devirFetch(config, url);
     const product = parseProduct(html, url);
     const snippets = Array.from(
       new Set(
-        Array.from(html.matchAll(/.{0,180}(?:Disponibilidad|stock|is_in_stock|isInStock|tocart|AddToCart|salable|saleable|data-price|price-box|old-price|special-price|regular-price).{0,320}/gi))
+        Array.from(
+          html.matchAll(
+            /.{0,180}(?:Disponibilidad|stock|is_in_stock|isInStock|tocart|AddToCart|salable|saleable|data-price|price-box|old-price|special-price|regular-price).{0,320}/gi,
+          ),
+        )
           .map((match) => stripHtml(match[0]).slice(0, 500))
           .filter(Boolean),
       ),
@@ -7158,7 +8290,10 @@ async function operatorAction(
       ok: true,
       final_url: url,
       product,
-      has_add_to_cart: /tocart|AddToCart|product-add-form|action\s+primary\s+tocart/i.test(html),
+      has_add_to_cart:
+        /tocart|AddToCart|product-add-form|action\s+primary\s+tocart/i.test(
+          html,
+        ),
       snippets,
     });
   }
@@ -7166,7 +8301,10 @@ async function operatorAction(
   if (action === "verify-devir-batch") {
     const offset = Math.max(0, Number(body.offset ?? 0) || 0);
     const limit = Math.min(100, Math.max(1, Number(body.limit ?? 50) || 50));
-    return json({ ok: true, ...(await verifyDevirBatch(config, offset, limit)) });
+    return json({
+      ok: true,
+      ...(await verifyDevirBatch(config, offset, limit)),
+    });
   }
 
   if (action === "repair-categories") {
@@ -7194,6 +8332,26 @@ async function operatorAction(
     });
   }
 
+  if (action === "repair-tcgfactory-sellability") {
+    const offset = Math.max(0, Number(body.offset ?? 0) || 0);
+    const limit = Math.min(100, Math.max(1, Number(body.limit ?? 50) || 50));
+    return json({
+      ok: true,
+      ...(await repairTcgFactorySellabilityBatch(config, offset, limit)),
+    });
+  }
+
+  if (action === "repair-retail-unit-products") {
+    return json({ ok: true, ...(await repairRetailUnitProducts(config)) });
+  }
+
+  if (action === "hide-catalog-policy-violations") {
+    return json({
+      ok: true,
+      ...(await hideCatalogPolicyViolations(config)),
+    });
+  }
+
   if (action === "clean-catalog-titles") {
     const limit = Math.min(100, Math.max(1, Number(body.limit ?? 50) || 50));
     return json({
@@ -7203,12 +8361,17 @@ async function operatorAction(
   }
 
   if (action === "special-pricing-setup") {
-    const code = typeof body.code === "string" ? body.code.trim().toUpperCase() : "BISON3";
-    return json({ ok: true, ...(await syncSpecialPricingProgram(config, code, true)) });
+    const code =
+      typeof body.code === "string" ? body.code.trim().toUpperCase() : "BISON3";
+    return json({
+      ok: true,
+      ...(await syncSpecialPricingProgram(config, code, true)),
+    });
   }
 
   if (action === "special-pricing-status") {
-    const code = typeof body.code === "string" ? body.code.trim().toUpperCase() : "BISON3";
+    const code =
+      typeof body.code === "string" ? body.code.trim().toUpperCase() : "BISON3";
     const program = await getSpecialProgram(code);
     const { data: requests, error } = await supabase
       .from("special_pricing_requests")
@@ -7219,10 +8382,15 @@ async function operatorAction(
     return json({ ok: true, program, requests: requests ?? [] });
   }
 
-  if (action === "special-pricing-approve" || action === "special-pricing-reject") {
-    const requestId = typeof body.requestId === "string" ? body.requestId.trim() : "";
+  if (
+    action === "special-pricing-approve" ||
+    action === "special-pricing-reject"
+  ) {
+    const requestId =
+      typeof body.requestId === "string" ? body.requestId.trim() : "";
     if (!requestId) return json({ error: "request_id_required" }, 400);
-    const status = action === "special-pricing-approve" ? "approved" : "rejected";
+    const status =
+      action === "special-pricing-approve" ? "approved" : "rejected";
     const { data: requestRow, error } = await supabase
       .from("special_pricing_requests")
       .update({
@@ -7238,14 +8406,23 @@ async function operatorAction(
     return json({
       ok: true,
       status,
-      ...(await syncSpecialPricingProgram(config, String(requestRow.program_code), false)),
+      ...(await syncSpecialPricingProgram(
+        config,
+        String(requestRow.program_code),
+        false,
+      )),
     });
   }
 
   if (action === "special-pricing-set-margin") {
-    const code = typeof body.code === "string" ? body.code.trim().toUpperCase() : "BISON3";
+    const code =
+      typeof body.code === "string" ? body.code.trim().toUpperCase() : "BISON3";
     const targetMargin = Number(body.targetMargin);
-    if (!Number.isFinite(targetMargin) || targetMargin < 0 || targetMargin >= 0.95) {
+    if (
+      !Number.isFinite(targetMargin) ||
+      targetMargin < 0 ||
+      targetMargin >= 0.95
+    ) {
       return json({ error: "invalid_target_margin" }, 400);
     }
     const { error } = await supabase
@@ -7256,7 +8433,10 @@ async function operatorAction(
       })
       .eq("code", code);
     if (error) throw error;
-    return json({ ok: true, ...(await syncSpecialPricingProgram(config, code, true)) });
+    return json({
+      ok: true,
+      ...(await syncSpecialPricingProgram(config, code, true)),
+    });
   }
 
   if (action === "catalog-pricing-setup") {
@@ -7325,10 +8505,7 @@ async function operatorAction(
         results.push({
           ok: false,
           group_key: groupKey,
-          error:
-            error instanceof Error
-              ? error.message
-              : JSON.stringify(error),
+          error: error instanceof Error ? error.message : JSON.stringify(error),
         });
       }
     }
@@ -7341,14 +8518,19 @@ async function operatorAction(
   if (action === "regroup-preview") {
     const { data, error } = await supabase
       .from("devir_sync_catalog")
-      .select("group_key,group_name,variant_position,variant_label,spree_product_id")
+      .select(
+        "group_key,group_name,variant_position,variant_label,spree_product_id",
+      )
       .eq("item_kind", "variant_candidate")
       .eq("grouping_confidence", "high")
       .not("group_key", "is", null)
       .order("group_key");
     if (error) throw error;
 
-    const groups = new Map<string, { name: string; count: number; positions: Map<number, number> }>();
+    const groups = new Map<
+      string,
+      { name: string; count: number; positions: Map<number, number> }
+    >();
     for (const row of data ?? []) {
       const key = String(row.group_key);
       const current = groups.get(key) ?? {
@@ -7369,7 +8551,9 @@ async function operatorAction(
           group_key,
           group_name: value.name,
           variants: value.count,
-          duplicate_positions: Array.from(value.positions.entries()).filter(([, count]) => count > 1).map(([position]) => position),
+          duplicate_positions: Array.from(value.positions.entries())
+            .filter(([, count]) => count > 1)
+            .map(([position]) => position),
         })),
     });
   }
@@ -7408,20 +8592,37 @@ async function startCycle(config: ConfigRow): Promise<string> {
     .select("id")
     .single();
   if (cycleError) throw cycleError;
-  const rows = categories.map((url) => ({ cycle_id: cycle.id, kind: "category", url, page: 1, status: "pending" }));
+  const rows = categories.map((url) => ({
+    cycle_id: cycle.id,
+    kind: "category",
+    url,
+    page: 1,
+    status: "pending",
+  }));
   if (rows.length) {
-    const { error } = await supabase.from("devir_sync_jobs").upsert(rows, { onConflict: "cycle_id,kind,url,page", ignoreDuplicates: true });
+    const { error } = await supabase.from("devir_sync_jobs").upsert(rows, {
+      onConflict: "cycle_id,kind,url,page",
+      ignoreDuplicates: true,
+    });
     if (error) throw error;
   }
   const { error: configError } = await supabase
     .from("devir_sync_config")
-    .update({ phase: "categories", active_cycle_id: cycle.id, last_error: null, updated_at: new Date().toISOString() })
+    .update({
+      phase: "categories",
+      active_cycle_id: cycle.id,
+      last_error: null,
+      updated_at: new Date().toISOString(),
+    })
     .eq("id", "primary");
   if (configError) throw configError;
   return cycle.id;
 }
 
-async function processCategories(config: ConfigRow, cycleId: string): Promise<{ done: boolean; processed: number }> {
+async function processCategories(
+  config: ConfigRow,
+  cycleId: string,
+): Promise<{ done: boolean; processed: number }> {
   const { data: jobs, error } = await supabase
     .from("devir_sync_jobs")
     .select("id,cycle_id,kind,url,page,attempts")
@@ -7435,7 +8636,14 @@ async function processCategories(config: ConfigRow, cycleId: string): Promise<{ 
 
   let processed = 0;
   for (const job of jobs as JobRow[]) {
-    await supabase.from("devir_sync_jobs").update({ status: "processing", attempts: job.attempts + 1, updated_at: new Date().toISOString() }).eq("id", job.id);
+    await supabase
+      .from("devir_sync_jobs")
+      .update({
+        status: "processing",
+        attempts: job.attempts + 1,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", job.id);
     try {
       const url = new URL(job.url);
       if (job.page > 1) url.searchParams.set("p", String(job.page));
@@ -7449,27 +8657,55 @@ async function processCategories(config: ConfigRow, cycleId: string): Promise<{ 
           page: 1,
           status: "pending",
         }));
-        await supabase.from("devir_sync_jobs").upsert(productRows, { onConflict: "cycle_id,kind,url,page", ignoreDuplicates: true });
+        await supabase.from("devir_sync_jobs").upsert(productRows, {
+          onConflict: "cycle_id,kind,url,page",
+          ignoreDuplicates: true,
+        });
         if (job.page < config.max_pages) {
-          await supabase.from("devir_sync_jobs").upsert({
-            cycle_id: cycleId,
-            kind: "category",
-            url: job.url,
-            page: job.page + 1,
-            status: "pending",
-          }, { onConflict: "cycle_id,kind,url,page", ignoreDuplicates: true });
+          await supabase.from("devir_sync_jobs").upsert(
+            {
+              cycle_id: cycleId,
+              kind: "category",
+              url: job.url,
+              page: job.page + 1,
+              status: "pending",
+            },
+            { onConflict: "cycle_id,kind,url,page", ignoreDuplicates: true },
+          );
         }
       }
-      await supabase.from("devir_sync_jobs").update({ status: "done", payload: { links: links.length }, updated_at: new Date().toISOString() }).eq("id", job.id);
+      await supabase
+        .from("devir_sync_jobs")
+        .update({
+          status: "done",
+          payload: { links: links.length },
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", job.id);
       processed += 1;
     } catch (err) {
-      await supabase.from("devir_sync_jobs").update({ status: "error", error: String(err), updated_at: new Date().toISOString() }).eq("id", job.id);
+      await supabase
+        .from("devir_sync_jobs")
+        .update({
+          status: "error",
+          error: String(err),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", job.id);
     }
   }
   return { done: false, processed };
 }
 
-async function processProducts(config: ConfigRow, cycleId: string): Promise<{ done: boolean; processed: number; images: number; reviews: number }> {
+async function processProducts(
+  config: ConfigRow,
+  cycleId: string,
+): Promise<{
+  done: boolean;
+  processed: number;
+  images: number;
+  reviews: number;
+}> {
   const { data: jobs, error } = await supabase
     .from("devir_sync_jobs")
     .select("id,cycle_id,kind,url,page,attempts")
@@ -7488,7 +8724,14 @@ async function processProducts(config: ConfigRow, cycleId: string): Promise<{ do
   let reviews = 0;
 
   for (const job of jobs as JobRow[]) {
-    await supabase.from("devir_sync_jobs").update({ status: "processing", attempts: job.attempts + 1, updated_at: new Date().toISOString() }).eq("id", job.id);
+    await supabase
+      .from("devir_sync_jobs")
+      .update({
+        status: "processing",
+        attempts: job.attempts + 1,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", job.id);
     try {
       const html = await devirFetch(config, job.url);
       const product = parseProduct(html, job.url);
@@ -7504,67 +8747,86 @@ async function processProducts(config: ConfigRow, cycleId: string): Promise<{ do
         defs,
       );
       const now = new Date().toISOString();
-      const { error: catalogError } = await supabase.from("devir_sync_catalog").upsert({
-        supplier_sku: product.sku,
-        source_url: product.url,
-        name: product.name,
-        snapshot: product,
-        image_urls: product.imageUrls,
-        image_signature: signature,
-        spree_product_id: synced.productId,
-        spree_variant_id: synced.variantId,
-        ...(synced.lastAutoPrice !== null ? { last_auto_price: synced.lastAutoPrice } : {}),
-        supplier_status: product.availability,
-        missing_cycles: 0,
-        item_kind: grouping.itemKind,
-        group_key: grouping.groupKey,
-        group_name: grouping.groupName,
-        variant_label: grouping.variantLabel,
-        variant_position: grouping.variantPosition,
-        grouping_confidence: grouping.confidence,
-        ...(languageGroupingInfo(product)
-          ? {
-              language_group_key: languageGroupingInfo(product)!.groupKey,
-              language_label: languageGroupingInfo(product)!.language,
-              language_base_name: languageGroupingInfo(product)!.baseName,
-            }
-          : {
-              language_group_key: null,
-              language_label: null,
-              language_base_name: null,
-            }),
-        ...(product.availability === "available" ? { last_confirmed_available_at: now } : {}),
-        title_cleanup_version: "devir-title-v3",
-        last_seen_cycle_id: cycleId,
-        last_seen_at: now,
-        last_synced_at: now,
-        ...(packRequiresSplit
-          ? {
-              catalog_state: "review",
-              catalog_version: null,
-              catalog_prepared_at: null,
-              last_error: "REVIEW: pack_requires_operator_split",
-            }
-          : { last_error: null }),
-        updated_at: now,
-      }, { onConflict: "supplier_sku" });
+      const { error: catalogError } = await supabase
+        .from("devir_sync_catalog")
+        .upsert(
+          {
+            supplier_sku: product.sku,
+            source_url: product.url,
+            name: product.name,
+            snapshot: product,
+            image_urls: product.imageUrls,
+            image_signature: signature,
+            spree_product_id: synced.productId,
+            spree_variant_id: synced.variantId,
+            ...(synced.lastAutoPrice !== null
+              ? { last_auto_price: synced.lastAutoPrice }
+              : {}),
+            supplier_status: product.availability,
+            missing_cycles: 0,
+            item_kind: grouping.itemKind,
+            group_key: grouping.groupKey,
+            group_name: grouping.groupName,
+            variant_label: grouping.variantLabel,
+            variant_position: grouping.variantPosition,
+            grouping_confidence: grouping.confidence,
+            ...(languageGroupingInfo(product)
+              ? {
+                  language_group_key: languageGroupingInfo(product)!.groupKey,
+                  language_label: languageGroupingInfo(product)!.language,
+                  language_base_name: languageGroupingInfo(product)!.baseName,
+                }
+              : {
+                  language_group_key: null,
+                  language_label: null,
+                  language_base_name: null,
+                }),
+            ...(product.availability === "available"
+              ? { last_confirmed_available_at: now }
+              : {}),
+            title_cleanup_version: "devir-title-v3",
+            last_seen_cycle_id: cycleId,
+            last_seen_at: now,
+            last_synced_at: now,
+            ...(packRequiresSplit
+              ? {
+                  catalog_state: "review",
+                  catalog_version: null,
+                  catalog_prepared_at: null,
+                  last_error: "REVIEW: pack_requires_operator_split",
+                }
+              : { last_error: null }),
+            updated_at: now,
+          },
+          { onConflict: "supplier_sku" },
+        );
       if (catalogError) throw catalogError;
-      await supabase.from("devir_sync_jobs").update({
-        status: "done",
-        payload: {
-          sku: product.sku,
-          images: synced.images,
-          review: synced.review,
-          backorder_items: synced.backorderItems,
-          selected_supplier: synced.selectedSupplierCode,
-        },
-        updated_at: new Date().toISOString(),
-      }).eq("id", job.id);
+      await supabase
+        .from("devir_sync_jobs")
+        .update({
+          status: "done",
+          payload: {
+            sku: product.sku,
+            images: synced.images,
+            review: synced.review,
+            backorder_items: synced.backorderItems,
+            selected_supplier: synced.selectedSupplierCode,
+          },
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", job.id);
       processed += 1;
       images += synced.images;
       if (synced.review) reviews += 1;
     } catch (err) {
-      await supabase.from("devir_sync_jobs").update({ status: "error", error: String(err), updated_at: new Date().toISOString() }).eq("id", job.id);
+      await supabase
+        .from("devir_sync_jobs")
+        .update({
+          status: "error",
+          error: String(err),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", job.id);
     }
   }
   return { done: false, processed, images, reviews };
@@ -7651,30 +8913,40 @@ async function finishCycle(config: ConfigRow, cycleId: string): Promise<void> {
     .eq("status", "error");
   const now = new Date();
   const next = new Date(now.getTime() + config.interval_hours * 60 * 60 * 1000);
-  await supabase.from("devir_sync_cycles").update({
-    status: (errors ?? 0) > 0 ? "error" : "success",
-    finished_at: now.toISOString(),
-    product_count: products ?? 0,
-    error_count: errors ?? 0,
-  }).eq("id", cycleId);
-  await supabase.from("devir_sync_config").update({
-    phase: "idle",
-    active_cycle_id: null,
-    next_due_at: next.toISOString(),
-    last_success_at: (errors ?? 0) > 0 ? undefined : now.toISOString(),
-    last_error: (errors ?? 0) > 0 ? String(errors) + " jobs terminaron con error" : null,
-    updated_at: now.toISOString(),
-  }).eq("id", "primary");
+  await supabase
+    .from("devir_sync_cycles")
+    .update({
+      status: (errors ?? 0) > 0 ? "error" : "success",
+      finished_at: now.toISOString(),
+      product_count: products ?? 0,
+      error_count: errors ?? 0,
+    })
+    .eq("id", cycleId);
+  await supabase
+    .from("devir_sync_config")
+    .update({
+      phase: "idle",
+      active_cycle_id: null,
+      next_due_at: next.toISOString(),
+      last_success_at: (errors ?? 0) > 0 ? undefined : now.toISOString(),
+      last_error:
+        (errors ?? 0) > 0
+          ? String(errors) + " jobs terminaron con error"
+          : null,
+      updated_at: now.toISOString(),
+    })
+    .eq("id", "primary");
   const { error: supplierSyncError } = await supabase
     .from("catalog_suppliers")
     .update({
-    next_sync_at: next.toISOString(),
-    last_success_at: (errors ?? 0) > 0 ? undefined : now.toISOString(),
-    last_completed_run_id: cycleId,
-    last_error: (errors ?? 0) > 0
-      ? String(errors) + " jobs terminaron con error"
-      : null,
-    updated_at: now.toISOString(),
+      next_sync_at: next.toISOString(),
+      last_success_at: (errors ?? 0) > 0 ? undefined : now.toISOString(),
+      last_completed_run_id: cycleId,
+      last_error:
+        (errors ?? 0) > 0
+          ? String(errors) + " jobs terminaron con error"
+          : null,
+      updated_at: now.toISOString(),
     })
     .eq("code", "devir");
   if (supplierSyncError) throw supplierSyncError;
@@ -7685,7 +8957,7 @@ Deno.serve(async (req) => {
 
   let body: Record<string, unknown> = {};
   try {
-    body = await req.json() as Record<string, unknown>;
+    body = (await req.json()) as Record<string, unknown>;
   } catch {
     body = {};
   }
@@ -7695,7 +8967,8 @@ Deno.serve(async (req) => {
     .select("*")
     .eq("id", "primary")
     .single();
-  if (configError) return json({ error: "config", detail: configError.message }, 500);
+  if (configError)
+    return json({ error: "config", detail: configError.message }, 500);
   const config = configData as ConfigRow;
 
   const action = typeof body.action === "string" ? body.action : null;
@@ -7703,19 +8976,29 @@ Deno.serve(async (req) => {
     try {
       return await operatorAction(action, req, config, body);
     } catch (error) {
-      return json(
-        { ok: false, error: error instanceof Error ? error.message : String(error) },
-        400,
-      );
+      const detail =
+        error instanceof Error
+          ? error.message
+          : error && typeof error === "object"
+            ? JSON.stringify(error)
+            : String(error);
+      return json({ ok: false, error: detail }, 400);
     }
   }
 
   const token = req.headers.get("x-devir-worker-token") ?? "";
-  if (!token || !config.worker_token_hash || (await sha256(token)) !== config.worker_token_hash) {
+  if (
+    !token ||
+    !config.worker_token_hash ||
+    (await sha256(token)) !== config.worker_token_hash
+  ) {
     return json({ error: "unauthorized" }, 401);
   }
 
-  const { data: lock, error: lockError } = await supabase.rpc("devir_sync_acquire_lock", { p_seconds: 120 });
+  const { data: lock, error: lockError } = await supabase.rpc(
+    "devir_sync_acquire_lock",
+    { p_seconds: 120 },
+  );
   if (lockError) return json({ error: "lock", detail: lockError.message }, 500);
   if (!lock) return json({ ok: true, skipped: "locked" });
 
@@ -7757,7 +9040,11 @@ Deno.serve(async (req) => {
     let phase = config.phase;
     if (!cycleId) {
       if (new Date(config.next_due_at).getTime() > Date.now()) {
-        return json({ ok: true, skipped: "not_due", next_due_at: config.next_due_at });
+        return json({
+          ok: true,
+          skipped: "not_due",
+          next_due_at: config.next_due_at,
+        });
       }
       cycleId = await startCycle(config);
       phase = "categories";
@@ -7804,17 +9091,47 @@ Deno.serve(async (req) => {
       const result = await processProducts(config, cycleId);
       if (result.done) {
         await finishCycle(config, cycleId);
-        return json({ ok: true, cycle_id: cycleId, phase: "complete", tcgfactory: tcgFactoryResult });
+        return json({
+          ok: true,
+          cycle_id: cycleId,
+          phase: "complete",
+          tcgfactory: tcgFactoryResult,
+        });
       }
-      return json({ ok: true, cycle_id: cycleId, phase: "products", processed: result.processed, images: result.images, reviews: result.reviews, tcgfactory: tcgFactoryResult });
+      return json({
+        ok: true,
+        cycle_id: cycleId,
+        phase: "products",
+        processed: result.processed,
+        images: result.images,
+        reviews: result.reviews,
+        tcgfactory: tcgFactoryResult,
+      });
     }
 
-    return json({ ok: false, cycle_id: cycleId, phase, error: configData.last_error }, 409);
+    return json(
+      { ok: false, cycle_id: cycleId, phase, error: configData.last_error },
+      409,
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await supabase.from("devir_sync_config").update({ phase: "error", last_error: message, updated_at: new Date().toISOString() }).eq("id", "primary");
+    await supabase
+      .from("devir_sync_config")
+      .update({
+        phase: "error",
+        last_error: message,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", "primary");
     if (config.active_cycle_id) {
-      await supabase.from("devir_sync_cycles").update({ status: "error", error: message, finished_at: new Date().toISOString() }).eq("id", config.active_cycle_id);
+      await supabase
+        .from("devir_sync_cycles")
+        .update({
+          status: "error",
+          error: message,
+          finished_at: new Date().toISOString(),
+        })
+        .eq("id", config.active_cycle_id);
     }
     return json({ ok: false, error: message }, 500);
   } finally {
