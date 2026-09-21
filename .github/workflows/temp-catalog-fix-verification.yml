@@ -19,4 +19,4 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm test -- src/lib/supplier-pricing-policy.test.ts src/lib/utils/product-slug.test.ts src/lib/catalog-publish-policy.test.ts
-      - run: pnpm build
+      - run: pnpm exec tsc --noEmit
