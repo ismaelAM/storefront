@@ -86,6 +86,17 @@ describe("generic supplier pack split policy", () => {
     })).toBe(true);
   });
 
+  it("holds Devir Scene Box and Theme Deck supplier packs", () => {
+    expect(requiresManualPackSplitReview({
+      name: "MTG - STAR TREK SCENE BOX Inglés",
+      purchasePrice: 96,
+    })).toBe(true);
+    expect(requiresManualPackSplitReview({
+      name: "MTG LORWYN ECLIPSED THEME DECK Inglés",
+      purchasePrice: 107,
+    })).toBe(true);
+  });
+
   it("does not hold single prerelease kits or sealed booster displays", () => {
     expect(requiresManualPackSplitReview({
       name: "*MG IN.MIDNIGHT HUNT Presentación KIT SPANISH UNIT",
