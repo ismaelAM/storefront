@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
 
-export const dynamic = "force-dynamic";
-export const runtime = "nodejs";
 
 const SUPABASE_FUNCTION_URL =
   "https://ikglqbjlbkbaronbiryl.supabase.co/functions/v1/devir-sync";
