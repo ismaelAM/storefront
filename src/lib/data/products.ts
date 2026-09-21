@@ -2,7 +2,7 @@
 
 import type { ProductListParams } from "@spree/sdk";
 
-const CATALOG_CACHE_VERSION = "2026-09-21-vat27-manga-redirect-v4";
+const CATALOG_CACHE_VERSION = "2026-09-21-vat27-manga-redirect-v5";
 import { cacheLife, cacheTag } from "next/cache";
 import {
   cacheTagSuffix,

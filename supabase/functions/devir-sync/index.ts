@@ -2936,6 +2936,7 @@ async function rebuildMangaGroup(
 
   const created = await spreeRequest<SpreeProduct>(config, "POST", "/products", {
     name: groupName,
+    slug: groupKey,
     status: "draft",
     category_ids: [category.id],
     tags: ["devir", "devir-group", "devir-group-" + groupKey],
@@ -3216,6 +3217,8 @@ async function repairExistingMangaGroup(
     "PATCH",
     "/products/" + encodeURIComponent(existing.id),
     {
+      name: groupName,
+      slug: groupKey,
       status: anySellable ? "active" : "draft",
       category_ids: [category.id],
       tags: [
@@ -3252,6 +3255,96 @@ async function repairExistingMangaGroup(
     variants: rows.length,
     reused: true,
   };
+}
+
+async function normalizeMangaGroupProductMetadata(
+  config: ConfigRow,
+  groupKeys: string[],
+): Promise<Array<Record<string, unknown>>> {
+  const results: Array<Record<string, unknown>> = [];
+  for (const groupKey of groupKeys) {
+    try {
+      const { data, error } = await supabase
+        .from("devir_sync_catalog")
+        .select("group_name,spree_product_id,item_kind")
+        .eq("group_key", groupKey)
+        .eq("item_kind", "variant_candidate");
+      if (error) throw error;
+      const rows = data ?? [];
+      const productIds = Array.from(
+        new Set(
+          rows
+            .map((row) => String(row.spree_product_id ?? ""))
+            .filter(Boolean),
+        ),
+      );
+      if (rows.length < 2 || productIds.length !== 1) {
+        results.push({
+          group_key: groupKey,
+          ok: false,
+          skipped: "group_mapping_not_consolidated",
+          product_ids: productIds,
+        });
+        continue;
+      }
+
+      const groupName =
+        rows.find((row) => typeof row.group_name === "string" && row.group_name.trim())
+          ?.group_name ?? groupKey;
+      const productId = productIds[0];
+
+      const conflicts = await spreeList<SpreeProduct & { slug?: string }>(
+        config,
+        "/products?q[slug_eq]=" + encodeURIComponent(groupKey),
+      );
+      const released: string[] = [];
+      for (const conflict of conflicts) {
+        if (conflict.id === productId) continue;
+        const legacy =
+          conflict.status === "archived" ||
+          (conflict.tags ?? []).includes("devir-merged");
+        if (!legacy) {
+          throw new Error(
+            "slug_conflict_with_active_product:" + conflict.id,
+          );
+        }
+        const legacySlug =
+          groupKey + "-legacy-" + conflict.id.replace(/^prod_/, "").toLowerCase();
+        await spreeRequest(
+          config,
+          "PATCH",
+          "/products/" + encodeURIComponent(conflict.id),
+          { slug: legacySlug },
+        );
+        released.push(conflict.id);
+      }
+
+      const product = await spreeRequest<SpreeProduct & { slug?: string }>(
+        config,
+        "PATCH",
+        "/products/" + encodeURIComponent(productId),
+        {
+          name: groupName,
+          slug: groupKey,
+        },
+      );
+      results.push({
+        group_key: groupKey,
+        ok: true,
+        product_id: productId,
+        name: product.name,
+        slug: product.slug ?? groupKey,
+        released_legacy_products: released,
+      });
+    } catch (error) {
+      results.push({
+        group_key: groupKey,
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  return results;
 }
 
 async function migrateCatalogGroup(
@@ -7194,6 +7287,22 @@ async function operatorAction(
     return json({
       ok: true,
       ...(await repriceCommercialBooksBatch(config, offset, limit)),
+    });
+  }
+
+  if (action === "normalize-manga-group-metadata") {
+    const groupKeys = Array.isArray(body.groupKeys)
+      ? body.groupKeys
+          .filter((value): value is string => typeof value === "string")
+          .map((value) => value.trim())
+          .filter(Boolean)
+      : [];
+    if (!groupKeys.length) {
+      return json({ error: "groupKeys_required" }, 400);
+    }
+    return json({
+      ok: true,
+      results: await normalizeMangaGroupProductMetadata(config, groupKeys),
     });
   }
 
