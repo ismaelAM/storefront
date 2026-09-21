@@ -9,7 +9,8 @@ export const PRODUCT_PAGE_EXPAND = [
   "media",
   "custom_fields",
   "option_types",
-  "categories",
+  // Spree currently returns 500 for category expansion on a large subset of
+  // catalog-managed products. Load breadcrumb categories separately instead.
 ];
 
 export const PRODUCT_METADATA_EXPAND = ["primary_media", "default_variant"];

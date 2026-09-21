@@ -41,6 +41,15 @@ export async function generateMetadata({
   return generateProductMetadata({ country, locale, slug });
 }
 
+function isSpreeNotFound(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "status" in error &&
+    (error as { status?: unknown }).status === 404
+  );
+}
+
 function findBreadcrumbCategory(
   categories: Category[],
   categoryId?: string,
@@ -64,7 +73,9 @@ export default async function ProductPage({
   let product;
   try {
     product = await getCachedProduct(slug, PRODUCT_PAGE_EXPAND);
-  } catch {
+  } catch (error) {
+    if (!isSpreeNotFound(error)) throw error;
+
     const groupedSlug = legacyGroupedProductSlug(slug);
     let replacementSlug: string | null = null;
     if (groupedSlug) {
@@ -74,7 +85,9 @@ export default async function ProductPage({
           PRODUCT_PAGE_EXPAND,
         );
         replacementSlug = replacement.slug;
-      } catch {
+      } catch (replacementError) {
+        if (!isSpreeNotFound(replacementError)) throw replacementError;
+
         const replacementProductId =
           await getLegacyGroupedSpreeProductId(groupedSlug);
         if (replacementProductId) {
@@ -84,7 +97,10 @@ export default async function ProductPage({
               PRODUCT_PAGE_EXPAND,
             );
             replacementSlug = replacement.slug;
-          } catch {
+          } catch (replacementByIdError) {
+            if (!isSpreeNotFound(replacementByIdError)) {
+              throw replacementByIdError;
+            }
             replacementSlug = null;
           }
         }
