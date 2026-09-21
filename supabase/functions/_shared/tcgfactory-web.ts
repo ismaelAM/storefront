@@ -4,6 +4,19 @@ export const TCGFACTORY_BASE_URL = "https://tcgfactory.com";
 export const TCGFACTORY_ACCESSORIES_URL =
   "https://tcgfactory.com/es/distribucion-accesorios";
 
+export const TCGFACTORY_ACCESSORY_CATEGORY_SPECS = [
+  { key: "accesorios/albumes", name: "Álbumes", slug: "albumes" },
+  { key: "accesorios/cajas-mazo", name: "Cajas de mazo", slug: "cajas-mazo" },
+  { key: "accesorios/bolsas-comics", name: "Bolsas para cómics", slug: "bolsas-comics" },
+  { key: "accesorios/dados", name: "Dados", slug: "dados" },
+  { key: "accesorios/fundas-juegos-mesa", name: "Fundas para juegos de mesa", slug: "fundas-juegos-mesa" },
+  { key: "accesorios/fundas-standard", name: "Fundas Standard", slug: "fundas-standard" },
+  { key: "accesorios/fundas-small", name: "Fundas Small", slug: "fundas-small" },
+  { key: "accesorios/tapetes", name: "Tapetes", slug: "tapetes" },
+  { key: "accesorios/almacenaje", name: "Almacenaje", slug: "almacenaje" },
+  { key: "accesorios/otros", name: "Otros accesorios", slug: "otros" },
+] as const;
+
 export interface TcgFactoryPublicProduct {
   sourceUrl: string;
   externalProductId: string;
