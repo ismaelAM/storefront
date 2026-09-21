@@ -15,6 +15,11 @@ import {
   shouldAutoPublishCatalogProduct,
 } from "../_shared/catalog-publish-policy.ts";
 import {
+  paymentAwarePricingFloor,
+  roundUpProfessionalPrice,
+  supplierPricingVatRate,
+} from "../_shared/catalog-pricing-policy.ts";
+import {
   inferDevirCategoryKey,
   normalizeDevirCatalogTitle,
 } from "../_shared/devir-catalog-policy.ts";
@@ -2223,7 +2228,12 @@ async function syncProductToSpree(
   const category = key ? categoryForKey(categories, key) ?? null : null;
   const configuredMargin = await categoryMargin(config, category);
   const targetMargin = configuredMargin ?? DEFAULT_CATEGORY_MARGINS[key] ?? 0.05;
-  const pricing = competitivePricing(product, key, targetMargin);
+  const pricing = competitivePricing(
+    product,
+    key,
+    targetMargin,
+    catalogContext?.supplier.code ?? null,
+  );
   const shipping = shippingDefaults(key, product);
   const packRequiresSplit = isPack(product);
   const reasons: string[] = [];
@@ -3192,37 +3202,13 @@ function isBookProduct(product: DevirProduct, key: string): boolean {
   return /manual|gu[ií]a|libro|compendio|aventura|campaña|bestiario|suplemento|reglamento|pantalla de direcci[oó]n|d&d|dungeons|pathfinder|warhammer/i.test(product.name);
 }
 
-function roundUpToProfessionalPrice(value: number): number {
-  // Keep the profitability floor untouched: choose the first clean retail
-  // ending at or above it instead of mathematically rounding down.
-  const euros = Math.floor(value);
-  const endings = [0.50, 0.90, 0.95, 0.99, 1.00];
 
-  for (const ending of endings) {
-    const candidate = euros + ending;
-    if (candidate + 1e-9 >= value) {
-      return Math.round(candidate * 100) / 100;
-    }
-  }
-
-  return Math.ceil(value * 100 - 1e-9) / 100;
-}
-
-function paymentAwareFloor(
-  costNet: number,
-  vatRate: number,
-  targetProfitRate: number,
-): number {
-  const denominator =
-    (1 / (1 + vatRate)) - STANDARD_EEA_CARD_RATE - targetProfitRate;
-  if (denominator <= 0) throw new Error("Margen objetivo incompatible con IVA/comisiones");
-  return (costNet + STANDARD_EEA_CARD_FIXED_EUR) / denominator;
-}
 
 function competitivePricing(
   product: DevirProduct,
   key: string,
   targetProfitRate = DEFAULT_CATEGORY_MARGINS[key] ?? 0.05,
+  supplierCode?: string | null,
 ): {
   retail: number;
   vatRate: number;
@@ -3237,8 +3223,14 @@ function competitivePricing(
   }
 
   const book = isBookProduct(product, key);
-  const vatRate = book ? 0.04 : 0.21;
-  const floor = paymentAwareFloor(product.purchasePrice, vatRate, targetProfitRate);
+  const vatRate = supplierPricingVatRate({ supplierCode, book });
+  const floor = paymentAwarePricingFloor({
+    costNet: product.purchasePrice,
+    vatRate,
+    targetProfitRate,
+    cardRate: STANDARD_EEA_CARD_RATE,
+    cardFixed: STANDARD_EEA_CARD_FIXED_EUR,
+  });
   const referenceNet = Number(product.referencePriceNet);
   const hasReference = Number.isFinite(referenceNet) && referenceNet > product.purchasePrice;
   const referenceGross = hasReference ? referenceNet * (1 + vatRate) : null;
@@ -3269,12 +3261,12 @@ function competitivePricing(
     // Books keep the legal fixed-price ceiling, but customer-facing prices
     // should still look like normal retail prices (9.50, 9.90, 9.95, 9.99…)
     // instead of calculation artefacts such as 9.46 or 10.41.
-    retail = roundUpToProfessionalPrice(raw);
+    retail = roundUpProfessionalPrice(raw);
     // Never exceed the publisher/reference PVP automatically. If the next
     // commercial ending is above it, the PVP itself is the safe ceiling.
     retail = Math.min(retail, Math.round(referenceGross * 100) / 100);
   } else {
-    retail = roundUpToProfessionalPrice(raw);
+    retail = roundUpProfessionalPrice(raw);
   }
 
   const stripeFee = retail * STANDARD_EEA_CARD_RATE + STANDARD_EEA_CARD_FIXED_EUR;
@@ -3579,7 +3571,12 @@ async function categorizeDraftBatch(
     const margin = DEFAULT_CATEGORY_MARGINS[key];
     if (!category || !Number.isFinite(margin) || !product.purchasePrice || product.purchasePrice <= 0) return;
 
-    const pricing = competitivePricing(product, key, margin);
+    const pricing = competitivePricing(
+      product,
+      key,
+      margin,
+      selectedSupply.supplier_code,
+    );
 
     const patch = async () => {
       await spreeRequest(config, "PATCH", "/products/" + encodeURIComponent(productId), {
@@ -3757,6 +3754,7 @@ async function repriceCommercialBooksBatch(
         product,
         key,
         DEFAULT_CATEGORY_MARGINS[key] ?? 0.05,
+        selectedSupply.supplier_code,
       );
 
       let resolvedProductId = productId;
@@ -4397,7 +4395,12 @@ async function preparePublishBatch(
         availability: selectedSupply.availability ?? "unknown",
       };
       const targetMargin = DEFAULT_CATEGORY_MARGINS[key] ?? 0.05;
-      const pricing = competitivePricing(selectedProduct, key, targetMargin);
+      const pricing = competitivePricing(
+        selectedProduct,
+        key,
+        targetMargin,
+        selectedSupply.supplier_code,
+      );
       if (pricing.reviewReason) productReasons.add(pricing.reviewReason);
 
       const reconciled = await reconcileSpreeVariantFromCatalog(
