@@ -3032,6 +3032,175 @@ async function rebuildMangaGroup(
   };
 }
 
+async function repairExistingMangaGroup(
+  config: ConfigRow,
+  groupKey: string,
+): Promise<{
+  ok: boolean;
+  group_key: string;
+  product_id?: string;
+  variants?: number;
+  skipped?: string;
+  reused?: boolean;
+}> {
+  const { data, error } = await supabase
+    .from("devir_sync_catalog")
+    .select("supplier_sku,name,source_url,snapshot,image_urls,spree_product_id,spree_variant_id,supplier_status,last_auto_price,group_key,group_name,variant_label,variant_position,grouping_confidence")
+    .eq("group_key", groupKey)
+    .eq("item_kind", "variant_candidate")
+    .order("variant_position", { ascending: true })
+    .order("supplier_sku", { ascending: true });
+  if (error) throw error;
+  const rows = (data ?? []) as CatalogGroupRow[];
+  if (rows.length < 2) {
+    return { ok: true, group_key: groupKey, skipped: "needs_at_least_two_variants" };
+  }
+
+  const groupName = rows.find((row) => row.group_name)?.group_name ?? groupKey;
+  const candidates = await spreeList<SpreeProduct>(
+    config,
+    "/products?q[search]=" + encodeURIComponent(groupName),
+  );
+  const tag = "devir-group-" + groupKey;
+  const existing = candidates.find((product) =>
+    product.status !== "archived" && (product.tags ?? []).includes(tag)
+  );
+  if (!existing) return await rebuildMangaGroup(config, groupKey);
+
+  const category = categoryForKey(await spreeCategories(config), "manga-comic");
+  if (!category) throw new Error("No existe la categoría Manga y cómic");
+
+  const positions = new Map<number, number>();
+  for (const row of rows) {
+    const position = Number(row.variant_position ?? -1);
+    positions.set(position, (positions.get(position) ?? 0) + 1);
+  }
+  const hasEditionDimension =
+    rows.some((row) => Boolean(variantEdition(row.variant_label))) ||
+    Array.from(positions.values()).some((count) => count > 1);
+
+  const displayRows = [...rows].sort((a, b) =>
+    Number(a.variant_position ?? 0) - Number(b.variant_position ?? 0) ||
+    a.supplier_sku.localeCompare(b.supplier_sku)
+  );
+  const displayPosition = new Map(
+    displayRows.map((row, index) => [row.supplier_sku, index + 1]),
+  );
+
+  const currentVariants = await spreeList<SpreeVariant>(
+    config,
+    "/products/" + encodeURIComponent(existing.id) + "/variants",
+  );
+  const variantsBySku = new Map(
+    currentVariants
+      .filter((variant) => variant.sku?.trim())
+      .map((variant) => [variant.sku!.trim(), variant]),
+  );
+  const standardEditionCounts = new Map<number, number>();
+
+  for (const row of rows) {
+    const position = Number(row.variant_position ?? 0);
+    const duplicated = (positions.get(position) ?? 0) > 1;
+    const explicitEdition = variantEdition(row.variant_label);
+    const standardCopyIndex = standardEditionCounts.get(position) ?? 0;
+    const edition =
+      explicitEdition ??
+      (duplicated
+        ? standardEditionStorageValue(standardCopyIndex)
+        : "Estándar");
+    if (!explicitEdition) {
+      standardEditionCounts.set(position, standardCopyIndex + 1);
+    }
+
+    let variant = variantsBySku.get(row.supplier_sku);
+    if (!variant) {
+      variant = await createGroupedVariant(
+        config,
+        existing.id,
+        row,
+        [
+          { name: "tomo", value: String(position).padStart(2, "0") },
+          ...(hasEditionDimension ? [{ name: "edicion", value: edition }] : []),
+        ],
+        "manga-comic",
+        displayPosition.get(row.supplier_sku) ?? 1,
+      );
+      variantsBySku.set(row.supplier_sku, variant);
+    }
+
+    const state = row.supplier_status === "available"
+      ? "published"
+      : row.supplier_status === "preorder"
+        ? "preorder"
+        : "waiting_supplier";
+    const { error: updateError } = await supabase
+      .from("devir_sync_catalog")
+      .update({
+        spree_product_id: existing.id,
+        spree_variant_id: variant.id,
+        catalog_state: state,
+        catalog_version: "devir-taxonomy-v2",
+        sellability_version: "devir-stock-v1",
+        last_error: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("supplier_sku", row.supplier_sku);
+    if (updateError) throw updateError;
+
+    await repointCanonicalCatalogSku(
+      "devir",
+      row.supplier_sku,
+      existing.id,
+      variant.id,
+    );
+  }
+
+  const anyAvailable = rows.some((row) => row.supplier_status === "available");
+  const anyPreorder = rows.some((row) => row.supplier_status === "preorder");
+  const anySellable = anyAvailable || anyPreorder;
+  await spreeRequest(
+    config,
+    "PATCH",
+    "/products/" + encodeURIComponent(existing.id),
+    {
+      status: anySellable ? "active" : "draft",
+      category_ids: [category.id],
+      tags: [
+        "devir",
+        "devir-group",
+        tag,
+        ...(anySellable ? ["devir-ready", "devir-published"] : ["devir-waiting-stock"]),
+        ...(anyAvailable ? ["devir-buy-now"] : []),
+        ...(anyPreorder ? ["devir-preorder"] : []),
+      ],
+    },
+  );
+  await ensureProductsInCategories(config, [existing.id], [category.id]);
+  if (anySellable) await ensureProductsInDefaultChannel(config, [existing.id]);
+
+  const imageSource = rows.map(catalogRowProduct).find((product) => product.imageUrls.length);
+  if (imageSource) await syncImages(config, existing.id, imageSource);
+
+  const oldProductIds = Array.from(
+    new Set(
+      rows
+        .map((row) => row.spree_product_id)
+        .filter((id): id is string => Boolean(id) && id !== existing.id),
+    ),
+  );
+  for (const oldId of oldProductIds) {
+    await retireReplacementSource(config, oldId, existing.id);
+  }
+
+  return {
+    ok: true,
+    group_key: groupKey,
+    product_id: existing.id,
+    variants: rows.length,
+    reused: true,
+  };
+}
+
 async function migrateCatalogGroup(
   config: ConfigRow,
   groupKey: string,
@@ -3041,8 +3210,9 @@ async function migrateCatalogGroup(
   product_id?: string;
   variants?: number;
   skipped?: string;
+  reused?: boolean;
 }> {
-  return await rebuildMangaGroup(config, groupKey);
+  return await repairExistingMangaGroup(config, groupKey);
 }
 
 async function migrateLanguageGroup(
