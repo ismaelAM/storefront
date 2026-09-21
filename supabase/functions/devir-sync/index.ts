@@ -23,6 +23,7 @@ import {
   tcgFactoryRecordToCatalogItem,
   TCGFACTORY_SUPPLIER_CODE,
 } from "../_shared/tcgfactory-adapter.ts";
+import { vatRateForSupplier } from "../_shared/supplier-vat-policy.ts";
 import {
   parseTcgFactoryAuthenticatedPrice,
   parseTcgFactoryListing,
@@ -618,6 +619,19 @@ function normalizeGroupKey(value: string): string {
 
 function groupingInfo(product: DevirProduct): GroupingInfo {
   const raw = product.name.replace(/\s+/g, " ").trim();
+  // RPG volumes/tomes are distinct sellable books, not selectable variants
+  // of one parent product. Grouping them caused legitimate product pages to
+  // be held in draft as "ambiguous" and produced storefront 404s.
+  if (categoryKey(product).startsWith("rol/")) {
+    return {
+      itemKind: "standalone",
+      groupKey: null,
+      groupName: null,
+      variantLabel: null,
+      variantPosition: null,
+      confidence: "none",
+    };
+  }
   // Strong signal for manga/serial publishing. We deliberately do not group
   // arbitrary titles ending in a number (board games, expansions, etc.).
   const match = raw.match(
@@ -2223,7 +2237,12 @@ async function syncProductToSpree(
   const category = key ? categoryForKey(categories, key) ?? null : null;
   const configuredMargin = await categoryMargin(config, category);
   const targetMargin = configuredMargin ?? DEFAULT_CATEGORY_MARGINS[key] ?? 0.05;
-  const pricing = competitivePricing(product, key, targetMargin);
+  const pricing = competitivePricing(
+    product,
+    key,
+    targetMargin,
+    catalogContext?.supplier.code ?? null,
+  );
   const shipping = shippingDefaults(key, product);
   const packRequiresSplit = isPack(product);
   const reasons: string[] = [];
@@ -3223,6 +3242,7 @@ function competitivePricing(
   product: DevirProduct,
   key: string,
   targetProfitRate = DEFAULT_CATEGORY_MARGINS[key] ?? 0.05,
+  supplierCode?: string | null,
 ): {
   retail: number;
   vatRate: number;
@@ -3237,7 +3257,7 @@ function competitivePricing(
   }
 
   const book = isBookProduct(product, key);
-  const vatRate = book ? 0.04 : 0.21;
+  const vatRate = vatRateForSupplier({ supplierCode, isBook: book });
   const floor = paymentAwareFloor(product.purchasePrice, vatRate, targetProfitRate);
   const referenceNet = Number(product.referencePriceNet);
   const hasReference = Number.isFinite(referenceNet) && referenceNet > product.purchasePrice;
@@ -3579,7 +3599,12 @@ async function categorizeDraftBatch(
     const margin = DEFAULT_CATEGORY_MARGINS[key];
     if (!category || !Number.isFinite(margin) || !product.purchasePrice || product.purchasePrice <= 0) return;
 
-    const pricing = competitivePricing(product, key, margin);
+    const pricing = competitivePricing(
+      product,
+      key,
+      margin,
+      selectedSupply.supplier_code,
+    );
 
     const patch = async () => {
       await spreeRequest(config, "PATCH", "/products/" + encodeURIComponent(productId), {
@@ -3757,6 +3782,7 @@ async function repriceCommercialBooksBatch(
         product,
         key,
         DEFAULT_CATEGORY_MARGINS[key] ?? 0.05,
+        selectedSupply.supplier_code,
       );
 
       let resolvedProductId = productId;
@@ -4397,7 +4423,12 @@ async function preparePublishBatch(
         availability: selectedSupply.availability ?? "unknown",
       };
       const targetMargin = DEFAULT_CATEGORY_MARGINS[key] ?? 0.05;
-      const pricing = competitivePricing(selectedProduct, key, targetMargin);
+      const pricing = competitivePricing(
+        selectedProduct,
+        key,
+        targetMargin,
+        selectedSupply.supplier_code,
+      );
       if (pricing.reviewReason) productReasons.add(pricing.reviewReason);
 
       const reconciled = await reconcileSpreeVariantFromCatalog(
