@@ -2,7 +2,7 @@
 
 import type { ProductListParams } from "@spree/sdk";
 
-const CATALOG_CACHE_VERSION = "2026-09-21-pack-safety-v3";
+const CATALOG_CACHE_VERSION = "2026-09-21-catalog-404-v4";
 import { cacheLife, cacheTag } from "next/cache";
 import {
   cacheTagSuffix,
