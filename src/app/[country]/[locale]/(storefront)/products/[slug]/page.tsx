@@ -5,6 +5,7 @@ import { notFound, redirect } from "next/navigation";
 import { Breadcrumbs } from "@/components/navigation/Breadcrumbs";
 import { ProductPuckRenderer } from "@/components/puck/ProductPuckRenderer";
 import { JsonLd } from "@/components/seo/JsonLd";
+import { getLegacyGroupedSpreeProductId } from "@/lib/catalog/legacy-product";
 import {
   getCachedCategory,
   getCachedProduct,
@@ -74,16 +75,26 @@ export default async function ProductPage({
         );
         replacementSlug = replacement.slug;
       } catch {
-        replacementSlug = null;
+        const replacementProductId =
+          await getLegacyGroupedSpreeProductId(groupedSlug);
+        if (replacementProductId) {
+          try {
+            const replacement = await getCachedProduct(
+              replacementProductId,
+              PRODUCT_PAGE_EXPAND,
+            );
+            replacementSlug = replacement.slug;
+          } catch {
+            replacementSlug = null;
+          }
+        }
       }
     }
     if (replacementSlug) {
       const categoryQuery = category_id
         ? `?category_id=${encodeURIComponent(category_id)}`
         : "";
-      redirect(
-        `${basePath}/products/${replacementSlug}${categoryQuery}`,
-      );
+      redirect(`${basePath}/products/${replacementSlug}${categoryQuery}`);
     }
     notFound();
   }
