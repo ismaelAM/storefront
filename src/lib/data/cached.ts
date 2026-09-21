@@ -7,6 +7,7 @@ export const PRODUCT_PAGE_EXPAND = [
   "default_variant",
   "variants",
   "media",
+  "custom_fields",
 ];
 
 export const PRODUCT_METADATA_EXPAND = ["primary_media", "default_variant"];
