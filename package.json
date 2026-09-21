@@ -39,7 +39,8 @@
     "devir:cloud:enable": "tsx scripts/devir-cloud.ts enable",
     "devir:cloud:disable": "tsx scripts/devir-cloud.ts disable",
     "devir:cloud:run-now": "tsx scripts/devir-cloud.ts run-now",
-    "devir:cloud:credentials": "tsx scripts/devir-cloud.ts credentials"
+    "devir:cloud:credentials": "tsx scripts/devir-cloud.ts credentials",
+    "catalog:sourcing": "tsx scripts/catalog-sourcing.ts"
   },
   "dependencies": {
     "@adyen/adyen-web": "^6.33.0",
