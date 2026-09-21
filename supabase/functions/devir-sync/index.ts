@@ -10,6 +10,10 @@ import {
   selectBestOffer,
 } from "../_shared/catalog-sourcing.ts";
 import { requiresManualPackSplitReview } from "../_shared/mtg-precon-policy.ts";
+import {
+  inferDevirCategoryKey,
+  normalizeDevirCatalogTitle,
+} from "../_shared/devir-catalog-policy.ts";
 
 type Json = Record<string, unknown>;
 
@@ -252,22 +256,7 @@ function stripHtml(value: string): string {
 }
 
 function cleanDevirTitle(value: string): string {
-  return value
-    .replace(/^m[aá]s\s+vistas\s+/i, "")
-    .replace(
-      /\s*\((?:fecha\s+de\s+(?:venta(?:\s+en\s+tiendas)?|salida|puesta\s+a\s+la\s+venta)|a\s+la\s+venta(?:\s+el)?)\s*\d{1,2}[\/.-]\d{1,2}[\/.-]\d{4}\)\s*/gi,
-      " ",
-    )
-    .replace(
-      /\s*[-–—]?\s*(?:fecha\s+de\s+(?:venta(?:\s+en\s+tiendas)?|salida|puesta\s+a\s+la\s+venta)|a\s+la\s+venta(?:\s+el)?)\s*\d{1,2}[\/.-]\d{1,2}[\/.-]\d{4}\b/gi,
-      " ",
-    )
-    .replace(/\s+\d{1,2}[\/-]\d{1,2}[\/-]\d{4}\s*$/g, "")
-    .replace(/\s+-\s+(?=(?:ingl[eé]s|español|castellano|japon[eé]s)\b)/gi, " - ")
-    .replace(/\s{2,}/g, " ")
-    .replace(/\s+([,.;:])/g, "$1")
-    .replace(/[\s\-–—,:;]+$/g, "")
-    .trim();
+  return normalizeDevirCatalogTitle(value);
 }
 
 function absoluteUrl(value: string, sourceUrl: string): string | null {
@@ -686,57 +675,7 @@ function isPack(product: DevirProduct): boolean {
 }
 
 function categoryKey(product: DevirProduct): string {
-  if (product.categoryKeyOverride?.trim()) {
-    return product.categoryKeyOverride.trim();
-  }
-  const name = product.name.toLowerCase();
-  const url = product.url.toLowerCase();
-  const value = name + " " + url;
-
-  if (/accesorio|sleeves|fundas|deck\s*box|tapete|playmat|carpeta|album/.test(value)) {
-    return "accesorios";
-  }
-
-  if (/(?:n[uú]m\.?|num\.?|vol\.?|volumen)\s*0*\d{1,3}/i.test(product.name)) {
-    return "manga-comic";
-  }
-
-  // RPG brands are resolved before card-game keywords. A title containing
-  // "magia"/"magic items" must never become MTG just because of that word.
-  if (/pathfinder/.test(value)) return "rol/pathfinder";
-  if (/d&d|dungeons\s*&?\s*dragons|forgotten realms|dragonlance/.test(value)) {
-    return "rol/dungeons-dragons";
-  }
-  if (/warhammer/.test(value)) return "rol/warhammer";
-  if (
-    /vampiro|cthulhu|runequest|forbidden\s+lands|blade\s*runner|alien.*rol|candela\s+obscura|broken\s+tales|juego\s+de\s+rol|roleplaying|rpg\b|libro\s+b[aá]sico|pantalla\s+de\s+direcci[oó]n/.test(value)
-  ) {
-    return "rol/otros";
-  }
-
-  if (
-    /yugioh|yu-gi-oh|yu gi oh|quarter century|duelist|battles of legend|dueling (?:heroes|mirrors)/.test(value)
-  ) {
-    return "tcg/yugioh";
-  }
-
-  const explicitMagicBrand =
-    /^\s*magic\b/i.test(product.name) ||
-    /\/magic(?:-|$)/.test(url) ||
-    /\bmtg\b/.test(value);
-  const knownMagicSet =
-    /aetherdrift|tarkir|bloomburrow|duskmourn|innistrad|zendikar|modern horizons|foundations|strixhaven/.test(value);
-  if (explicitMagicBrand || knownMagicSet) {
-    return "tcg/mtg";
-  }
-
-  if (/expansi[oó]n|expansion|\bexp\.|ampliaci[oó]n|big\s*box/.test(value)) {
-    return "juegos-de-mesa/expansiones";
-  }
-  if (/junior|infantil|primaria|secundaria|kids|niñ[oa]s/.test(value)) {
-    return "juegos-de-mesa/infantil";
-  }
-  return "juegos-de-mesa/general";
+  return inferDevirCategoryKey(product);
 }
 
 function isFixedPriceCandidate(product: DevirProduct, key: string): boolean {
@@ -4679,7 +4618,7 @@ async function cleanCatalogTitlesBatch(
   categories_changed: number;
   remaining_products: number;
 }> {
-  const version = "devir-title-v2";
+  const version = "devir-title-v3";
   const categories = await spreeCategories(config);
   const { data, error } = await supabase
     .from("devir_sync_catalog")
