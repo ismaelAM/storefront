@@ -8,7 +8,6 @@ export const PRODUCT_PAGE_EXPAND = [
   "variants",
   "media",
   "custom_fields",
-  "option_types",
   "categories",
 ];
 
