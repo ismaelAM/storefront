@@ -73,7 +73,7 @@ export function requiresManualPackSplitReview(
     /\b\d+\s*\+\s*\d+\b/.test(value);
 
   const supplierUnitPack =
-    /\bventa\s+en\s+pack\s+de\s+\d+\s*(?:u|uds?|unidades?)\.?(?:\s|$|\))/.test(
+    /\bventa\s+en\s+pack\s+de\s+\d+\s*(?:u|un|ud|uds|unidad|unidades)\.?(?:\s|$|\))/.test(
       value,
     );
 
@@ -83,7 +83,7 @@ export function requiresManualPackSplitReview(
     );
 
   const explicitDeckCarton =
-    /\b(?:caja|carton|expositor)\s+de\s+(?:barajas|mazos|decks?|juegos?)\b.*\(\s*\d+\s*(?:u|uds?|unidades?)\.?(?:\s|\))/.test(
+    /\b(?:caja|carton|expositor)\s+de\s+(?:barajas|mazos|decks?|juegos?)\b.*\(\s*\d+\s*(?:u|un|ud|uds|unidad|unidades)\.?(?:\s|\))/.test(
       value,
     );
 
