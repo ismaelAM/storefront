@@ -1,5 +1,6 @@
 export interface MtgPreconReviewCandidate {
   name: string;
+  sku?: string | null;
   url?: string | null;
   purchasePrice?: number | null;
 }
@@ -61,9 +62,15 @@ export function requiresManualPackSplitReview(
 ): boolean {
   const value = normalize(`${candidate.name} ${candidate.url ?? ""}`);
 
+  const boardgamePresentationSku =
+    /^prbg/i.test(candidate.sku?.trim() ?? "");
+
+  const namedBoardgamePresentation =
+    /^\s*presentacion\s*:/.test(value);
+
   const promotionalPresentation =
     /\bpresentacion\b/.test(value) &&
-    /\(\s*\d+\s*\+\s*\d+\s*\)/.test(value);
+    /\b\d+\s*\+\s*\d+\b/.test(value);
 
   const supplierUnitPack =
     /\bventa\s+en\s+pack\s+de\s+\d+\s*(?:u|uds?|unidades?)\.?(?:\s|$|\))/.test(
@@ -87,7 +94,9 @@ export function requiresManualPackSplitReview(
     /\b(?:hero realms|star realms)\b/.test(value) &&
     /\bdisplay\b/.test(value);
 
-  return promotionalPresentation ||
+  return boardgamePresentationSku ||
+    namedBoardgamePresentation ||
+    promotionalPresentation ||
     supplierUnitPack ||
     explicitRetailCarton ||
     explicitDeckCarton ||

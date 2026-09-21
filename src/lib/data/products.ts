@@ -2,7 +2,7 @@
 
 import type { ProductListParams } from "@spree/sdk";
 
-const CATALOG_CACHE_VERSION = "2026-09-21-rotating-merchandising-v2";
+const CATALOG_CACHE_VERSION = "2026-09-21-pack-safety-v3";
 import { cacheLife, cacheTag } from "next/cache";
 import {
   cacheTagSuffix,
@@ -35,7 +35,7 @@ export async function cachedListProducts(
 ) {
   "use cache: remote";
   void cacheVersion;
-  cacheLife("tenMinutes");
+  cacheLife("catalogProducts");
   cacheTag(`products${cacheTagSuffix(surface)}`);
   return getClientForSurface(surface).products.list(params, {
     ...options,
@@ -77,9 +77,11 @@ export async function cachedGetProduct(
   options: { locale?: string; country?: string },
   surface: Surface,
   userToken?: string,
+  cacheVersion = CATALOG_CACHE_VERSION,
 ) {
   "use cache: remote";
-  cacheLife("tenMinutes");
+  void cacheVersion;
+  cacheLife("catalogProducts");
   cacheTag(
     `products${cacheTagSuffix(surface)}`,
     `product:${slugOrId}${cacheTagSuffix(surface)}`,
@@ -109,6 +111,7 @@ export async function getProduct(
     options,
     surface,
     userToken,
+    CATALOG_CACHE_VERSION,
   );
 }
 
@@ -117,9 +120,11 @@ async function cachedGetProductFilters(
   options: { locale?: string; country?: string },
   surface: Surface,
   userToken?: string,
+  cacheVersion = CATALOG_CACHE_VERSION,
 ) {
   "use cache: remote";
-  cacheLife("tenMinutes");
+  void cacheVersion;
+  cacheLife("catalogProducts");
   cacheTag(`product-filters${cacheTagSuffix(surface)}`);
   return getClientForSurface(surface).products.filters(params, {
     ...options,
