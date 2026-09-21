@@ -70,9 +70,9 @@ const productWithoutCustomVariants = {
 } as unknown as Product;
 
 describe("ProductDetails", () => {
-  it("requests the default variant for the product page", () => {
+  it("requests product detail data without the broken category expansion", () => {
     expect(PRODUCT_PAGE_EXPAND).toContain("default_variant");
-    expect(PRODUCT_PAGE_EXPAND).toContain("categories");
+    expect(PRODUCT_PAGE_EXPAND).not.toContain("categories");
   });
 
   it("shows the master SKU when a product has no custom variants", () => {
