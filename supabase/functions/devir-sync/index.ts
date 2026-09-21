@@ -11,6 +11,10 @@ import {
 } from "../_shared/catalog-sourcing.ts";
 import { requiresManualPackSplitReview } from "../_shared/mtg-precon-policy.ts";
 import {
+  canWriteManagedCatalogPrice,
+  shouldAutoPublishCatalogProduct,
+} from "../_shared/catalog-publish-policy.ts";
+import {
   inferDevirCategoryKey,
   normalizeDevirCatalogTitle,
 } from "../_shared/devir-catalog-policy.ts";
@@ -2226,6 +2230,7 @@ async function syncProductToSpree(
   if (!category) reasons.push("category_unclassified");
   else if (configuredMargin === null) reasons.push("category_margin_unconfigured");
   if (pricing.reviewReason) reasons.push(pricing.reviewReason);
+  if (!product.imageUrls.length) reasons.push("product_image_missing");
   if (packRequiresSplit) reasons.push("pack_requires_operator_split");
   const grouping = groupingInfo(product);
   const languageGrouping =
@@ -2409,11 +2414,14 @@ async function syncProductToSpree(
     const managed =
       (existing.product.tags ?? []).includes("devir") ||
       (existing.product.tags ?? []).includes("catalog-managed");
-    const active = existing.product.status === "active";
     const forceDraftForSplit = packRequiresSplit && managed;
-    const autoPrice = Number.isFinite(lastAuto) && currentPrice !== null && Math.abs(lastAuto - currentPrice) < 0.005;
-    const canWritePrice = createdVariant ||
-      (managed && (forceDraftForSplit || (!active && autoPrice)));
+    const canWritePrice = canWriteManagedCatalogPrice({
+      createdVariant,
+      managed,
+      forceDraftForSplit,
+      currentPrice,
+      lastAutoPrice: Number.isFinite(lastAuto) ? lastAuto : null,
+    });
     manualPrice = currentPrice !== null && !canWritePrice;
     const tags = Array.from(new Set([
       ...(existing.product.tags ?? []).filter((tag) =>
@@ -2509,6 +2517,22 @@ async function syncProductToSpree(
 
   const backorderItems = await syncBackorderability(config, variantId, product.availability);
   const images = await syncImages(config, productId, product);
+
+  const autoPublish = shouldAutoPublishCatalogProduct({
+    review,
+    availability: product.availability,
+  });
+  if (autoPublish) {
+    await spreeRequest(config, "PATCH", "/products/" + encodeURIComponent(productId), {
+      status: "active",
+    });
+    await ensureProductsInDefaultChannel(config, [productId]);
+  } else if (review) {
+    await spreeRequest(config, "PATCH", "/products/" + encodeURIComponent(productId), {
+      status: "draft",
+    });
+  }
+
   return {
     productId,
     variantId,
