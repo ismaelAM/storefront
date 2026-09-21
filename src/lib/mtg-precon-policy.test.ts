@@ -52,12 +52,18 @@ describe("MTG precon split policy", () => {
 describe("generic supplier pack split policy", () => {
   it("holds board-game presentation promos such as 5+1", () => {
     expect(requiresManualPackSplitReview({
+      sku: "PRBGAKROSP",
       name: "Presentación: Akropolis (5+1)",
       purchasePrice: 93,
     })).toBe(true);
     expect(requiresManualPackSplitReview({
-      name: "Presentación: Ethnos ( 5 + 1 )",
+      name: "Presentación: Ethnos 5 + 1",
       purchasePrice: 117.78,
+    })).toBe(true);
+    expect(requiresManualPackSplitReview({
+      sku: "PRBGNEWGAME",
+      name: "Oferta comercial juego de mesa",
+      purchasePrice: 80,
     })).toBe(true);
   });
 
