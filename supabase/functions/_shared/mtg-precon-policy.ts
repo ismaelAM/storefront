@@ -24,7 +24,7 @@ export function requiresMtgPreconSplitReview(
   candidate: MtgPreconReviewCandidate,
 ): boolean {
   const value = normalize(`${candidate.name} ${candidate.url ?? ""}`);
-  if (!/\b(?:mtg|magic)\b/.test(value)) return false;
+  if (!/\b(?:mtg|magic|mg)\b/.test(value)) return false;
 
   const preconFamily =
     /\bcommander\b/.test(value) ||
