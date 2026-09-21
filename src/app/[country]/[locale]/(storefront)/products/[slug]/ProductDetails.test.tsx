@@ -72,6 +72,7 @@ const productWithoutCustomVariants = {
 describe("ProductDetails", () => {
   it("requests the default variant for the product page", () => {
     expect(PRODUCT_PAGE_EXPAND).toContain("default_variant");
+    expect(PRODUCT_PAGE_EXPAND).toContain("categories");
   });
 
   it("shows the master SKU when a product has no custom variants", () => {
@@ -79,10 +80,25 @@ describe("ProductDetails", () => {
       <ProductDetails
         product={productWithoutCustomVariants}
         basePath="/us/en"
+        shortDescription="A concise product description."
       />,
     );
 
     expect(screen.getByText("sku")).toBeInTheDocument();
     expect(screen.getByText("MASTER-SKU-001")).toBeInTheDocument();
+  });
+
+  it("shows the concise product description near the title", () => {
+    render(
+      <ProductDetails
+        product={productWithoutCustomVariants}
+        basePath="/us/en"
+        shortDescription="A concise product description."
+      />,
+    );
+
+    expect(
+      screen.getByText("A concise product description."),
+    ).toBeInTheDocument();
   });
 });

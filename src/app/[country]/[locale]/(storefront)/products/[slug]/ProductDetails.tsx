@@ -1,7 +1,13 @@
 "use client";
 
 import type { Media, Product, Variant } from "@spree/sdk";
-import { CalendarClock, CircleCheckBig, CircleX, Loader2, ShoppingBag } from "lucide-react";
+import {
+  CalendarClock,
+  CircleCheckBig,
+  CircleX,
+  Loader2,
+  ShoppingBag,
+} from "lucide-react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { useEffect, useMemo, useState } from "react";
@@ -19,6 +25,7 @@ import { trackAddToCart, trackViewItem } from "@/lib/analytics/gtm";
 interface ProductDetailsProps {
   product: Product;
   basePath: string;
+  shortDescription: string;
 }
 
 function isIsbnLike(value: string | null | undefined): boolean {
@@ -37,7 +44,11 @@ function cleanOptionsText(value: string | null | undefined): string | null {
   return cleaned || null;
 }
 
-export function ProductDetails({ product, basePath }: ProductDetailsProps) {
+export function ProductDetails({
+  product,
+  basePath,
+  shortDescription,
+}: ProductDetailsProps) {
   const { addItem } = useCart();
   const { currency } = useStore();
   const t = useTranslations("products");
@@ -157,6 +168,9 @@ export function ProductDetails({ product, basePath }: ProductDetailsProps) {
         {/* Product Info */}
         <div>
           <h1 className="text-3xl font-bold text-gray-900">{product.name}</h1>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-gray-600 sm:text-base">
+            {shortDescription}
+          </p>
 
           {/* Price */}
           <div className="mt-4 flex items-center gap-4">

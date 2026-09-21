@@ -1,12 +1,15 @@
 import type { Product } from "@spree/sdk";
 import type { Metadata } from "next";
 import { HomePuckRenderer } from "@/components/puck/HomePuckRenderer";
+import { JsonLd } from "@/components/seo/JsonLd";
 import { PRODUCT_CARD_FIELDS } from "@/lib/data/cached";
 import { cachedListProducts } from "@/lib/data/products";
 import { generateHomeMetadata } from "@/lib/metadata/home";
 import { getHomePageData } from "@/lib/puck/get-home-data";
 import { buildHomeMerchandisingProducts } from "@/lib/puck/home-merchandising";
+import { buildCanonicalUrl, buildWebSiteJsonLd } from "@/lib/seo";
 import { getAccessToken } from "@/lib/spree";
+import { getStoreUrl } from "@/lib/store";
 
 interface HomePageProps {
   params: Promise<{
@@ -15,7 +18,9 @@ interface HomePageProps {
   }>;
 }
 
-export async function generateMetadata({ params }: HomePageProps): Promise<Metadata> {
+export async function generateMetadata({
+  params,
+}: HomePageProps): Promise<Metadata> {
   const { country, locale } = await params;
 
   return generateHomeMetadata({ country, locale });
@@ -57,10 +62,24 @@ export default async function HomePage({ params }: HomePageProps) {
       preorderResponse.data ?? [],
     );
   } catch (error) {
-    console.error("HomePuckRenderer: failed to build merchandising pool", error);
+    console.error(
+      "HomePuckRenderer: failed to build merchandising pool",
+      error,
+    );
   }
 
   const data = await getHomePageData();
+  const storeUrl = getStoreUrl();
+  const canonicalUrl = storeUrl
+    ? buildCanonicalUrl(storeUrl, `/${country}/${locale}`)
+    : undefined;
 
-  return <HomePuckRenderer products={products} basePath={basePath} data={data} />;
+  return (
+    <>
+      {canonicalUrl && (
+        <JsonLd data={buildWebSiteJsonLd(canonicalUrl, locale)} />
+      )}
+      <HomePuckRenderer products={products} basePath={basePath} data={data} />
+    </>
+  );
 }

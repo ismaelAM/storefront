@@ -5,7 +5,7 @@ import {
   buildLocalizedAlternates,
   translationFingerprint,
 } from "@/lib/metadata/alternates";
-import { stripHtml } from "@/lib/seo";
+import { buildProductShortDescription } from "@/lib/seo";
 import { DEFAULT_SURFACE } from "@/lib/spree";
 import { getStoreUrl } from "@/lib/store";
 
@@ -28,11 +28,7 @@ export async function generateProductMetadata({
   }
 
   const title = product.meta_title || product.name;
-  const description = product.meta_description
-    ? product.meta_description
-    : product.description
-      ? stripHtml(product.description).slice(0, 160)
-      : `Shop ${product.name}`;
+  const description = buildProductShortDescription(product, locale);
 
   const storeUrl = getStoreUrl();
   const localizedAlternates = storeUrl
@@ -93,12 +89,26 @@ export async function generateProductMetadata({
       type: "website",
       ...(ogImage ? { images: [ogImage] } : {}),
     },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      ...(ogImage ? { images: [ogImage] } : {}),
+    },
     other: {
       ...(product.price?.amount
         ? { "product:price:amount": product.price.amount }
         : {}),
       ...(product.price?.currency
         ? { "product:price:currency": product.price.currency }
+        : {}),
+      "product:availability": product.preorder
+        ? "preorder"
+        : product.in_stock
+          ? "in stock"
+          : "out of stock",
+      ...(product.default_variant?.sku
+        ? { "product:retailer_item_id": product.default_variant.sku }
         : {}),
     },
   };

@@ -9,9 +9,10 @@ export const PRODUCT_PAGE_EXPAND = [
   "media",
   "custom_fields",
   "option_types",
+  "categories",
 ];
 
-export const PRODUCT_METADATA_EXPAND = ["primary_media"];
+export const PRODUCT_METADATA_EXPAND = ["primary_media", "default_variant"];
 
 /** Minimal fields used by cards, analytics and the Puck product filters. */
 export const PRODUCT_CARD_FIELDS = [

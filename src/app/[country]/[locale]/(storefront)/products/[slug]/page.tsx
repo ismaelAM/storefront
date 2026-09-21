@@ -1,5 +1,5 @@
-import type { Category } from "@spree/sdk";
 import type { Data } from "@puckeditor/core";
+import type { Category } from "@spree/sdk";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Breadcrumbs } from "@/components/navigation/Breadcrumbs";
@@ -16,6 +16,7 @@ import {
   buildBreadcrumbJsonLd,
   buildCanonicalUrl,
   buildProductJsonLd,
+  buildProductShortDescription,
 } from "@/lib/seo";
 import { getStoreUrl } from "@/lib/store";
 import { ProductDetails } from "./ProductDetails";
@@ -66,6 +67,7 @@ export default async function ProductPage({
   }
 
   const storeUrl = getStoreUrl();
+  const shortDescription = buildProductShortDescription(product, locale);
   const canonicalUrl = storeUrl
     ? buildCanonicalUrl(
         storeUrl,
@@ -93,7 +95,12 @@ export default async function ProductPage({
   return (
     <>
       {canonicalUrl && (
-        <JsonLd data={buildProductJsonLd(product, canonicalUrl)} />
+        <JsonLd
+          data={buildProductJsonLd(product, canonicalUrl, {
+            description: shortDescription,
+            locale,
+          })}
+        />
       )}
       {breadcrumbCategory && storeUrl && (
         <JsonLd
@@ -115,7 +122,11 @@ export default async function ProductPage({
       </div>
 
       <ProductPuckRenderer data={productPageData} />
-      <ProductDetails product={product} basePath={basePath} />
+      <ProductDetails
+        product={product}
+        basePath={basePath}
+        shortDescription={shortDescription}
+      />
     </>
   );
 }

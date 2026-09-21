@@ -3,6 +3,7 @@ import { getTranslations } from "next-intl/server";
 import { ProductDetails } from "@/app/[country]/[locale]/(storefront)/products/[slug]/ProductDetails";
 import { PRODUCT_PAGE_EXPAND } from "@/lib/data/cached";
 import { getWholesaleProduct } from "@/lib/data/wholesale";
+import { buildProductShortDescription } from "@/lib/seo";
 import { WHOLESALE_MIN_QUANTITY } from "@/lib/wholesale";
 import { WholesaleGate } from "../../_components/WholesaleGate";
 
@@ -68,7 +69,11 @@ async function WholesaleProductContent({
           {t("pdp.tradePriceHint", { min: WHOLESALE_MIN_QUANTITY })}
         </p>
       </div>
-      <ProductDetails product={product} basePath={basePath} />
+      <ProductDetails
+        product={product}
+        basePath={basePath}
+        shortDescription={buildProductShortDescription(product, locale)}
+      />
     </>
   );
 }
