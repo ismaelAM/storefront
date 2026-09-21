@@ -1,0 +1,76 @@
+name: One-time residual branch cleanup
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: contains(github.event.head_commit.message, 'One-time residual branch cleanup')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Delete audited residual branches
+        env:
+          BRANCHES: |
+            catalog-language-rpg-fix
+            catalog-pack-review
+            catalog-pack-safety
+            catalog-pack-safety-final
+            catalog-pack-unit-abbrev-fix
+            _cleanup_base_final
+            _cleanup_branch
+            _cleanup_devir_base
+            _cleanup_devir_base2
+            _cleanup_devir_base3
+            _cleanup_devir_target
+            _cleanup_devir_work
+            _cleanup_final
+            _cleanup_source
+            main_before_puck_editor
+            next_changes
+            puck_editor_audit_20260915
+            puck_editor_backup_20260915
+            puck_editor_fixcheck
+            puck_editor_tmp_cleanup
+            puck_editor_tmp_cleanup2
+            puck_editor
+            puck_editor2
+            puck_editor3
+            puck_editor-devir-sync
+            puck_editor-temp
+            puck_editor-work
+            puck-product-controls
+            stripe_checkout
+            tcgfactory-live-sync
+            tcgfactory-public-discovery
+            temp-z
+            unify-shipping
+            cleanup-residual-branches
+        run: |
+          set -euo pipefail
+          while IFS= read -r branch; do
+            [ -z "$branch" ] && continue
+            if git ls-remote --exit-code --heads origin "refs/heads/$branch" >/dev/null 2>&1; then
+              echo "Deleting $branch"
+              git push origin --delete "$branch"
+            fi
+          done <<< "$BRANCHES"
+
+      - name: Remove this one-time workflow
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/one-time-residual-branch-cleanup.yml
+          git commit -m "Remove one-time branch cleanup workflow"
+          git push origin HEAD:main
