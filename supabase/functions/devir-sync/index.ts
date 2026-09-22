@@ -2,6 +2,7 @@ import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import {
   canWriteManagedCatalogPrice,
   catalogReviewFingerprint,
+  effectiveCatalogFulfillmentMode,
   type CatalogFulfillmentMode,
   type CatalogReviewDecision,
   shouldAllowSupplierBackorder,
@@ -2829,8 +2830,11 @@ async function syncProductToSpree(
     decision: catalogContext?.reviewDecision ?? "pending",
     approvedFingerprint: catalogContext?.approvedReviewFingerprint ?? null,
   });
-  const fulfillmentMode =
-    catalogContext?.fulfillmentMode ?? "supplier_or_physical";
+  const fulfillmentMode = effectiveCatalogFulfillmentMode({
+    fulfillmentMode:
+      catalogContext?.fulfillmentMode ?? "supplier_or_physical",
+    requiresPackSplit: packRequiresSplit,
+  });
   const supplierSellable = shouldAllowSupplierBackorder({
     availability: product.availability,
     fulfillmentMode,
@@ -5957,7 +5961,8 @@ async function preparePublishBatch(
       if (!legacyProduct.imageUrls.length) {
         productReasons.add("product_image_missing");
       }
-      if (isPack(legacyProduct)) {
+      const packRequiresSplit = isPack(legacyProduct);
+      if (packRequiresSplit) {
         productReasons.add("pack_requires_operator_split");
       }
       if (isCatalanCatalogProduct(legacyProduct)) {
@@ -5980,8 +5985,11 @@ async function preparePublishBatch(
         continue;
       }
 
-      const fulfillmentMode =
-        fulfillmentModeByVariant.get(variant.id) ?? "supplier_or_physical";
+      const fulfillmentMode = effectiveCatalogFulfillmentMode({
+        fulfillmentMode:
+          fulfillmentModeByVariant.get(variant.id) ?? "supplier_or_physical",
+        requiresPackSplit: packRequiresSplit,
+      });
       const physicalStockOnHand = Math.max(
         0,
         Number(variant.total_on_hand ?? 0),
@@ -10098,6 +10106,21 @@ async function operatorAction(
       )
     ) {
       return json({ error: "invalid_fulfillment_mode" }, 400);
+    }
+
+    if (
+      action === "catalog-review-approve" &&
+      reasons.has("pack_requires_operator_split") &&
+      requestedFulfillmentMode === "supplier_or_physical"
+    ) {
+      return json(
+        {
+          error: "unsafe_fulfillment_mode_for_supplier_pack",
+          detail:
+            "Un pack pendiente de split no puede habilitar backorder de proveedor. Usa physical_only o disabled.",
+        },
+        409,
+      );
     }
 
     const defaultFulfillmentMode: CatalogFulfillmentMode | null =
