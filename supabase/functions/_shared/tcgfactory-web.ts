@@ -296,15 +296,17 @@ function images(html: string, sourceUrl: string): string[] {
 
 export function parseTcgFactoryMinimumOrderQuantity(html: string): number | null {
   const patterns = [
-    /(?:minimal[_-]?quantity|minimum[_-]?quantity|min[_-]?order[_-]?quantity|minimumOrderQuantity)\s*[:=]\s*["']?(\d+)/i,
+    /(?:minimal[_-]?quantity|minimum[_-]?quantity|min[_-]?order[_-]?quantity|minimumOrderQuantity)["']?\s*[:=]\s*["']?(\d+)/i,
     /(?:cantidad|compra|pedido)\s+m[ií]nima(?:\s+de\s+compra)?\s*:?\s*(\d+)/i,
     /m[ií]nimo(?:\s+de\s+compra)?\s*:?\s*(\d+)\s+unidades?/i,
     /m[uú]ltiplo(?:\s+de\s+compra)?\s*:?\s*(\d+)/i,
   ];
 
-  for (const pattern of patterns) {
-    const quantity = Number(html.match(pattern)?.[1]);
-    if (Number.isInteger(quantity) && quantity > 1) return quantity;
+  for (const source of [html, stripHtml(html)]) {
+    for (const pattern of patterns) {
+      const quantity = Number(source.match(pattern)?.[1]);
+      if (Number.isInteger(quantity) && quantity > 1) return quantity;
+    }
   }
   return null;
 }
