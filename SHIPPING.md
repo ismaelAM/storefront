@@ -40,28 +40,36 @@ Las escrituras usan la Admin API de Spree. La Secret API Key se obtiene de
 
 ## Correos
 
-La integración server-only está en `src/lib/shipping/correos.ts`. Se han
-modelado las APIs cuya especificación se había validado:
+La integración server-only está en `src/lib/shipping/correos.ts`. El flujo
+operativo usa las APIs vigentes verificadas en el portal de Correos:
 
-- **Trackpub**: consulta de tracking;
+- **Preregister**: validación y prerregistro/creación del envío; la creación se
+  realiza con `POST /delivery`;
 - **Labels**: generación de etiquetas;
-- **Requests**: solicitudes de recogida;
-- **BoxEntry**: registro de cajas/pallets;
-- **Preregister**: permanece desactivada por defecto porque figura como
-  deprecada y no debe asumirse como API válida para nuevos envíos.
+- **Trackpub**: consulta de tracking;
+- **Requests**: creación y gestión de solicitudes de recogida.
 
-El cliente aplica por API la combinación correspondiente de Bearer de Correos
-ID, Client ID/Client Secret y subscription key, rechaza endpoints no HTTPS,
-impide rutas que escapen del host configurado y no incluye respuestas privadas
-del proveedor en los errores.
+**BoxEntry no forma parte del flujo operativo**: es la API deprecada y no se
+usa como sustituto de Preregister.
+
+La autenticación se aplica por API según el contrato vigente:
+
+- Preregister y Labels: `Authorization: Bearer <Correos ID token>`;
+- Trackpub y Requests: Bearer más `client_id` y `client_secret`;
+- Requests no usa una subscription key en el contrato actual.
+
+Todos los endpoints configurados deben ser HTTPS. El cliente impide rutas que
+escapen del host/base configurado y no incluye respuestas privadas del
+proveedor en los errores.
 
 ### Correos ID
 
-No se ha inventado un flujo OAuth. Mientras Correos no facilite/valide el
-mecanismo de emisión y renovación para la cuenta contratada, las operaciones
-que necesitan Bearer usan `CORREOS_ID_ACCESS_TOKEN`. Si el proveedor devuelve
-401, la operación falla de forma segura y obliga a renovar ese token; no intenta
-un grant desconocido.
+No se inventa un grant OAuth. La ficha pública confirma Correos ID, token y
+OAuth 2.0, pero la emisión/renovación concreta de esta cuenta depende de la
+documentación contractual. Hasta recibir esa información de soporte, las
+operaciones que necesitan Bearer usan `CORREOS_ID_ACCESS_TOKEN`. Si Correos
+devuelve 401, la operación falla de forma segura y obliga a renovar el token;
+no intenta un grant no documentado.
 
 ## Ruta interna
 
@@ -74,38 +82,43 @@ un grant desconocido.
 - `spree-save-tracking`
 - `spree-fulfill`
 - `spree-mark-delivered`
+- `correos-preregister`
 - `correos-track`
 - `correos-labels`
 - `correos-pickup`
-- `correos-box-entry`
 
 Esta API es de back-office. No debe llamarse directamente desde componentes
 públicos ni usar el token en código cliente.
 
 ## Flujo operativo disponible ya
 
-Sin acceso completo a las APIs de Correos se puede trabajar sin cambiar el
-modelo comercial:
+Spree continúa siendo la fuente de verdad del fulfillment. Cuando el Bearer de
+Correos ID sea utilizable, la secuencia técnica disponible es:
 
 1. El pedido y su método de entrega se crean en Spree.
-2. El envío se tramita manualmente en Mi Oficina de Correos.
-3. Se guarda el tracking en el fulfillment de Spree.
-4. Se marca el fulfillment como enviado.
-5. El storefront sigue leyendo estado/tracking de Spree.
-6. Cuando las credenciales de Correos estén activas, tracking, etiquetas y
-   recogidas se pueden ejecutar con la misma capa sin cambiar el checkout.
+2. Preregister valida/prerregistra el envío con `POST /delivery`.
+3. Labels genera la etiqueta para el código de envío creado.
+4. Se guarda el tracking en el fulfillment de Spree.
+5. Trackpub consulta el estado cuando sea necesario.
+6. Requests crea una recogida solo cuando la operativa lo requiera.
+7. Spree marca el fulfillment como enviado/entregado y el storefront muestra
+   ese estado al cliente.
+
+Crear un envío, una etiqueta o una recogida puede producir un efecto externo o
+facturable. La ruta interna no ejecuta ninguna de esas operaciones por sí sola:
+cada llamada debe iniciarse de forma explícita por el operador.
+
+Si el Bearer de Correos ID no está disponible o ha caducado, se mantiene la
+operativa manual en Mi Oficina de Correos y se guarda tracking/estado en Spree.
 
 ## Lo que falta para automatización completa de Correos
 
-- contrato/acceso API de transporte activo;
-- endpoints y credenciales definitivos en Vercel;
-- mecanismo oficial de emisión/renovación del token de Correos ID;
-- confirmar con Correos la alternativa soportada a `Preregister` para crear
-  o prerregistrar envíos nuevos;
-- prueba real controlada de etiqueta, tracking y recogida.
-
-Hasta entonces no se debe fingir que un envío ha sido creado en Correos solo
-porque Spree tenga un fulfillment.
+- recibir de Correos la documentación contractual de emisión/renovación del
+  Bearer de Correos ID (endpoint, grant y scopes aplicables);
+- confirmar el modo de prueba/sandbox o procedimiento controlado sin cargos;
+- validar Preregister, Labels, Trackpub y Requests con datos de prueba o una
+  operación real expresamente autorizada;
+- comprobar el ciclo completo contra un fulfillment real de Spree.
 
 ## Variables privadas
 
@@ -115,13 +128,10 @@ SPREE_ADMIN_API_KEY
 CORREOS_CLIENT_ID
 CORREOS_CLIENT_SECRET
 CORREOS_ID_ACCESS_TOKEN
+CORREOS_PREREGISTER_BASE_URL
 CORREOS_LABELS_BASE_URL
 CORREOS_TRACKPUB_BASE_URL
 CORREOS_REQUESTS_BASE_URL
-CORREOS_REQUESTS_SUBSCRIPTION_KEY
-CORREOS_BOXENTRY_BASE_URL
-CORREOS_PREREGISTER_BASE_URL
-CORREOS_ALLOW_DEPRECATED_PREREGISTER
 ```
 
 Ninguna credencial de Correos o Spree debe llevar prefijo `NEXT_PUBLIC_`.
@@ -133,5 +143,6 @@ Ninguna credencial de Correos o Spree debe llevar prefijo `NEXT_PUBLIC_`.
 - [ ] Confirmar un fulfillment real en un pedido.
 - [ ] Guardar un tracking real y comprobarlo en Spree/storefront.
 - [ ] Marcar un envío real como enviado.
-- [ ] Cuando Correos entregue credenciales, probar Trackpub/Labels/Requests
-      contra un envío controlado.
+- [ ] Cuando el Bearer de Correos ID esté disponible, probar
+      Preregister/Labels/Trackpub/Requests contra un envío controlado y
+      expresamente autorizado.
