@@ -14,20 +14,6 @@ import { getPuckSectionPaddingClass, type PuckDensity } from "@/puck/utils";
    TYPES
    ========================================================= */
 
-type HeroProps = {
-  title: string;
-  text: string;
-  backgroundColor: string;
-  titleColor: string;
-  textColor: string;
-  backgroundImage: string;
-  buttonText: string;
-  buttonUrl: string;
-  contentPosition: "left" | "center" | "right";
-  height: "small" | "medium" | "large";
-  overlay: string;
-};
-
 type TextProps = {
   text: string;
   color: string;
