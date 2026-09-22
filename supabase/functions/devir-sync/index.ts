@@ -20,7 +20,10 @@ import {
   normalizeDevirRetailUnit,
 } from "../_shared/devir-catalog-policy.ts";
 import { requiresManualPackSplitReview } from "../_shared/mtg-precon-policy.ts";
-import { supplierVatRate } from "../_shared/supplier-pricing-policy.ts";
+import {
+  supplierMinimumOrderRiskSurcharge,
+  supplierVatRate,
+} from "../_shared/supplier-pricing-policy.ts";
 import {
   requireTcgFactoryCredentials,
   TCGFACTORY_SUPPLIER_CODE,
@@ -4300,12 +4303,14 @@ function minimumOrderRiskSurcharge(
   }
   const config = tcgFactoryMoqPricingConfig(supplierConfig);
   if (quantity < config.threshold) return 0;
-  const excessExposure =
-    (quantity - 1) * product.purchasePrice * config.excessCoverageRate;
-  return Math.min(
-    excessExposure,
-    product.purchasePrice * config.maxUnitCostShare,
-  );
+  return supplierMinimumOrderRiskSurcharge({
+    supplierCode,
+    unitCostNet: product.purchasePrice,
+    minimumOrderQuantity: quantity,
+    threshold: config.threshold,
+    excessCoverageRate: config.excessCoverageRate,
+    maxUnitCostShare: config.maxUnitCostShare,
+  });
 }
 
 function competitivePricing(
