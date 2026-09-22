@@ -6756,6 +6756,56 @@ function reviewReasonsFromLastError(value: unknown): string[] {
     .filter(Boolean);
 }
 
+async function currentCatalogReviewReasonsForSpreeProduct(
+  spreeProductId: string,
+): Promise<Set<string>> {
+  const { data, error } = await supabase
+    .from("devir_sync_catalog")
+    .select(
+      "supplier_sku,source_url,name,snapshot,image_urls,spree_product_id,spree_variant_id,supplier_status,item_kind,grouping_confidence,last_error,catalog_state",
+    )
+    .eq("spree_product_id", spreeProductId)
+    .order("supplier_sku");
+  if (error) throw error;
+
+  const reasons = new Set<string>();
+  for (const row of (data ?? []) as CatalogAuditRow[]) {
+    if (
+      row.catalog_state === "review" ||
+      /^REVIEW:/i.test(String(row.last_error ?? ""))
+    ) {
+      for (const reason of reviewReasonsFromLastError(row.last_error)) {
+        reasons.add(reason);
+      }
+    }
+
+    const product = productFromCatalogRow(row);
+    if (!product.imageUrls.length) reasons.add("product_image_missing");
+    if (isPack(product)) reasons.add("pack_requires_operator_split");
+    if (isCatalanCatalogProduct(product)) {
+      reasons.add("catalan_requires_operator_review");
+    }
+    if (row.grouping_confidence === "ambiguous") {
+      reasons.add("grouping_requires_operator_review");
+    }
+  }
+
+  return reasons;
+}
+
+async function markCatalogProductDirty(spreeProductId: string): Promise<void> {
+  const { error } = await supabase
+    .from("devir_sync_catalog")
+    .update({
+      catalog_version: null,
+      catalog_prepared_at: null,
+      review_marker_version: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("spree_product_id", spreeProductId);
+  if (error) throw error;
+}
+
 async function refreshHumanReviewMarkersBatch(
   config: ConfigRow,
   limit = 40,
