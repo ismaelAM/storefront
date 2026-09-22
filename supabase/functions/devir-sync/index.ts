@@ -30,6 +30,7 @@ import {
   tcgFactoryRecordToCatalogItem,
 } from "../_shared/tcgfactory-adapter.ts";
 import {
+  isTcgFactoryKnownPollutionMediaReference,
   isTcgFactoryProductImageReference,
   parseTcgFactoryAuthenticatedPrice,
   parseTcgFactoryListing,
@@ -6284,11 +6285,16 @@ async function repairTcgFactoryImagesBatch(
       );
       const invalid = media.filter((item) => {
         const reference = spreeMediaReference(item);
+        if (
+          typeof item.id !== "string" ||
+          reference === null ||
+          isTcgFactoryProductImageReference(reference, product.sourceUrl)
+        ) {
+          return false;
+        }
         return (
-          typeof item.id === "string" &&
-          reference !== null &&
-          supplierImportedFilenames.has(mediaFilename(reference)) &&
-          !isTcgFactoryProductImageReference(reference, product.sourceUrl)
+          supplierImportedFilenames.has(mediaFilename(reference)) ||
+          isTcgFactoryKnownPollutionMediaReference(reference)
         );
       });
       const valid = media.filter((item) => {
