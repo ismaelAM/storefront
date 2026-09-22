@@ -145,7 +145,9 @@ export function ShippingOperationsPanel() {
       );
     } catch (error) {
       setMessage(
-        error instanceof Error ? error.message : "No se pudo guardar el cambio.",
+        error instanceof Error
+          ? error.message
+          : "No se pudo guardar el cambio.",
       );
     } finally {
       setBusy(false);
@@ -228,7 +230,8 @@ export function ShippingOperationsPanel() {
 
             {selected ? (
               <div className="rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
-                Estado actual: <strong>{selected.status || "sin estado"}</strong>
+                Estado actual:{" "}
+                <strong>{selected.status || "sin estado"}</strong>
                 {selected.fulfilled_at
                   ? ` · enviado ${new Date(selected.fulfilled_at).toLocaleString("es-ES")}`
                   : ""}

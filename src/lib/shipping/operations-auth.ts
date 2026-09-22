@@ -38,7 +38,9 @@ export function getShippingOperationsSessionValue(
 ): string | undefined {
   const token = configuredToken(env);
   if (!token) return undefined;
-  return createHmac("sha256", token).update(SESSION_PURPOSE).digest("base64url");
+  return createHmac("sha256", token)
+    .update(SESSION_PURPOSE)
+    .digest("base64url");
 }
 
 export function isShippingOperationsSessionValue(

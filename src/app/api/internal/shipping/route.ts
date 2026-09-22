@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import {
-  getConfiguredCorreosClient,
-  getCorreosConfigurationStatus,
   type CorreosLabelRequest,
   type CorreosPickupRequest,
   type CorreosPreregisterRequest,
+  getConfiguredCorreosClient,
+  getCorreosConfigurationStatus,
 } from "@/lib/shipping/correos";
 import { isShippingOperationsAuthorized } from "@/lib/shipping/operations-auth";
 import {
@@ -19,10 +19,7 @@ function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 }
 
-function requiredString(
-  body: Record<string, unknown>,
-  key: string,
-): string {
+function requiredString(body: Record<string, unknown>, key: string): string {
   const value = typeof body[key] === "string" ? body[key].trim() : "";
   if (!value) throw new Error(`Falta ${key}`);
   return value;
@@ -115,9 +112,7 @@ export async function POST(request: Request) {
     if (action === "correos-track") {
       const result = await correos.trackShipment(
         requiredString(body, "tracking"),
-        typeof body.languageCode === "string"
-          ? body.languageCode
-          : "ES",
+        typeof body.languageCode === "string" ? body.languageCode : "ES",
       );
       return NextResponse.json(result);
     }
@@ -146,9 +141,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error:
-          error instanceof Error
-            ? error.message
-            : "Shipping operation failed",
+          error instanceof Error ? error.message : "Shipping operation failed",
       },
       { status: 400 },
     );
