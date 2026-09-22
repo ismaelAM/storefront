@@ -86,7 +86,6 @@ export async function createOrUpdateStripePaymentIntent(params: {
   body.set("automatic_payment_methods[enabled]", "true");
   body.set("metadata[spree_cart_id]", params.cartId);
   body.set("metadata[source]", "bisontcg-storefront");
-  if (params.email) body.set("receipt_email", params.email);
 
   if (params.paymentIntentId) {
     const existing = await getStripePaymentIntent(params.paymentIntentId);
@@ -94,6 +93,7 @@ export async function createOrUpdateStripePaymentIntent(params: {
       throw new Error("PaymentIntent no pertenece a este carrito");
     }
     if (["succeeded", "canceled"].includes(existing.status)) return existing;
+    if (params.email) body.set("receipt_email", params.email);
     return stripeRequest<StripePaymentIntent>(
       "POST",
       `/payment_intents/${encodeURIComponent(params.paymentIntentId)}`,
@@ -101,11 +101,26 @@ export async function createOrUpdateStripePaymentIntent(params: {
     );
   }
 
-  return stripeRequest<StripePaymentIntent>(
+  // Keep the idempotent create request limited to stable parameters. The
+  // checkout email can appear/change after the first render; including it in
+  // this request made Stripe reject a replay of the same key with different
+  // parameters. v2 also avoids collisions with keys already cached by Stripe
+  // under the previous request shape.
+  const created = await stripeRequest<StripePaymentIntent>(
     "POST",
     "/payment_intents",
     body,
-    `bisontcg:${params.cartId}:${params.amount}:${params.currency.toLowerCase()}`,
+    `bisontcg:v2:${params.cartId}:${params.amount}:${params.currency.toLowerCase()}`,
+  );
+
+  if (!params.email) return created;
+
+  const emailBody = new URLSearchParams();
+  emailBody.set("receipt_email", params.email);
+  return stripeRequest<StripePaymentIntent>(
+    "POST",
+    `/payment_intents/${encodeURIComponent(created.id)}`,
+    emailBody,
   );
 }
 
