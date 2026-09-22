@@ -5052,6 +5052,7 @@ async function repriceCommercialBooksBatch(
         key,
         DEFAULT_CATEGORY_MARGINS[key] ?? 0.05,
         selectedSupply.supplier_code,
+        selectedSupply.supplier_config,
       );
 
       let resolvedProductId = productId;
@@ -5775,6 +5776,7 @@ async function preparePublishBatch(
         key,
         targetMargin,
         selectedSupply.supplier_code,
+        selectedSupply.supplier_config,
       );
       if (pricing.reviewReason) productReasons.add(pricing.reviewReason);
 
