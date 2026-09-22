@@ -32,5 +32,7 @@ export default async function AppearanceEditorPage({ params }: Props) {
   const { country, locale } = await params;
   const basePath = `/${country}/${locale}`;
   const initialData = await getSitePageData("appearance", fallbackData);
-  return <AppearanceEditorClient initialData={initialData} basePath={basePath} />;
+  return (
+    <AppearanceEditorClient initialData={initialData} basePath={basePath} />
+  );
 }

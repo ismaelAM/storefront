@@ -1,25 +1,25 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import {
-  CATEGORY_FIELDS,
-  PRODUCT_FIELDS,
-  SpreeAdminError,
   attachCategoryMargins,
   boolField,
+  CATEGORY_FIELDS,
+  type Category,
+  type CustomFieldDefinition,
   customFields,
   ensureFields,
   list,
   numberField,
-  productIndex,
-  request,
-  scopeHint,
-  upsertFields,
-  variantPrice,
-  type Category,
-  type CustomFieldDefinition,
+  PRODUCT_FIELDS,
   type PricingRuleLike,
   type Product,
+  productIndex,
+  request,
+  SpreeAdminError,
+  scopeHint,
+  upsertFields,
   type Variant,
+  variantPrice,
 } from "./spree-admin";
 
 interface PriceProposal {
@@ -50,7 +50,11 @@ interface PlanItem {
 
 interface Plan {
   generatedAt: string;
-  pricingPolicy: { currency: string; costIncludesVat: boolean; vatRate: number };
+  pricingPolicy: {
+    currency: string;
+    costIncludesVat: boolean;
+    vatRate: number;
+  };
   decisionsPath?: string;
   items: PlanItem[];
 }
@@ -70,10 +74,15 @@ interface Decisions {
   >;
 }
 
-const planPath = resolve(process.env.DEVIR_B2B_IMPORT_PLAN ?? ".local/devir-b2b-import-plan.json");
-const pricingPath = resolve(process.env.DEVIR_B2B_PRICING_CONFIG ?? ".local/devir-pricing-rules.json");
+const planPath = resolve(
+  process.env.DEVIR_B2B_IMPORT_PLAN ?? ".local/devir-b2b-import-plan.json",
+);
+const pricingPath = resolve(
+  process.env.DEVIR_B2B_PRICING_CONFIG ?? ".local/devir-pricing-rules.json",
+);
 const pricingTemplate = resolve(
-  process.env.DEVIR_B2B_PRICING_TEMPLATE ?? "config/devir-pricing-rules.example.json",
+  process.env.DEVIR_B2B_PRICING_TEMPLATE ??
+    "config/devir-pricing-rules.example.json",
 );
 
 async function readJson<T>(path: string): Promise<T> {
@@ -81,16 +90,18 @@ async function readJson<T>(path: string): Promise<T> {
 }
 
 async function readJsonOr<T>(path: string, fallback: T): Promise<T> {
-  try { return await readJson<T>(path); }
-  catch (error) {
+  try {
+    return await readJson<T>(path);
+  } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return fallback;
     throw error;
   }
 }
 
 async function pricingConfig(): Promise<PricingConfig> {
-  try { return await readJson<PricingConfig>(pricingPath); }
-  catch (error) {
+  try {
+    return await readJson<PricingConfig>(pricingPath);
+  } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     return await readJson<PricingConfig>(pricingTemplate);
   }
@@ -114,8 +125,14 @@ function money(value: number | null, currency = "EUR"): string {
   return value === null ? "—" : value.toFixed(2) + " " + currency;
 }
 
-function effectiveMargin(cost: number, price: number | null, vat: number, includesVat: boolean): number | null {
-  if (!Number.isFinite(cost) || cost <= 0 || price === null || price <= 0) return null;
+function effectiveMargin(
+  cost: number,
+  price: number | null,
+  vat: number,
+  includesVat: boolean,
+): number | null {
+  if (!Number.isFinite(cost) || cost <= 0 || price === null || price <= 0)
+    return null;
   const grossCost = includesVat ? cost : cost * (1 + vat);
   return (price - grossCost) / price;
 }
@@ -131,8 +148,11 @@ function fieldValues(item: PlanItem, plan: Plan): Record<string, unknown> {
     "devir.category_key": item.category ?? undefined,
     "devir.availability": item.availability,
     "devir.release_date": item.releaseDate ?? undefined,
-    "devir.review_status": item.status === "review_required" ? "review_required" : "ready",
-    "devir.review_reasons": item.reviewReasons.length ? item.reviewReasons.join(", ") : "none",
+    "devir.review_status":
+      item.status === "review_required" ? "review_required" : "ready",
+    "devir.review_reasons": item.reviewReasons.length
+      ? item.reviewReasons.join(", ")
+      : "none",
     "devir.last_sync_at": new Date().toISOString(),
     "pricing.applied_margin": item.pricing?.targetMargin,
     "pricing.effective_margin": item.pricing?.effectiveMargin,
@@ -146,7 +166,8 @@ function inlineFields(
   definitions: Map<string, CustomFieldDefinition>,
   values: Record<string, unknown>,
 ): Array<{ custom_field_definition_id: string; value: unknown }> {
-  const output: Array<{ custom_field_definition_id: string; value: unknown }> = [];
+  const output: Array<{ custom_field_definition_id: string; value: unknown }> =
+    [];
   for (const [key, value] of Object.entries(values)) {
     if (value === undefined || value === null || value === "") continue;
     const def = definitions.get("Spree::Product:" + key);
@@ -181,7 +202,9 @@ function createVariant(item: PlanItem): Record<string, unknown> {
     cost_price: item.pricing.purchasePrice,
     cost_currency: item.pricing.currency,
     track_inventory: true,
-    prices: [{ currency: item.pricing.currency, amount: item.pricing.retailPrice }],
+    prices: [
+      { currency: item.pricing.currency, amount: item.pricing.retailPrice },
+    ],
   };
 }
 
@@ -199,7 +222,10 @@ async function createDraft(
   return await request<Product>("POST", "/products", {
     name: item.name,
     status: "draft",
-    tags: ["devir", item.status === "review_required" ? "devir-review" : "devir-ready"],
+    tags: [
+      "devir",
+      item.status === "review_required" ? "devir-review" : "devir-ready",
+    ],
     ...(item.spreeCategoryId ? { category_ids: [item.spreeCategoryId] } : {}),
     variants: [createVariant(item)],
     custom_fields: inlineFields(defs, values),
@@ -221,7 +247,8 @@ async function updateExisting(
   const forceActive = ["1", "true", "yes"].includes(
     (process.env.DEVIR_B2B_UPDATE_ACTIVE ?? "").toLowerCase(),
   );
-  const automaticPrice = managed && !active && closeEnough(currentPrice, lastAutoPrice);
+  const automaticPrice =
+    managed && !active && closeEnough(currentPrice, lastAutoPrice);
   const canWritePrice = forceActive || automaticPrice;
   const manualOverride = currentPrice !== null && !canWritePrice;
 
@@ -232,7 +259,9 @@ async function updateExisting(
       item.status === "review_required" ? "devir-review" : "devir-ready",
     ]),
   ).filter((tag) =>
-    item.status === "review_required" ? tag !== "devir-ready" : tag !== "devir-review",
+    item.status === "review_required"
+      ? tag !== "devir-ready"
+      : tag !== "devir-review",
   );
 
   const variantPatch: Record<string, unknown> = {
@@ -253,7 +282,9 @@ async function updateExisting(
     ...(!active && managed ? { name: item.name } : {}),
   });
 
-  const resultingPrice = canWritePrice ? item.pricing.retailPrice : currentPrice;
+  const resultingPrice = canWritePrice
+    ? item.pricing.retailPrice
+    : currentPrice;
   await upsertFields(
     "products",
     match.product.id,
@@ -268,7 +299,9 @@ async function updateExisting(
         plan.pricingPolicy.costIncludesVat,
       ),
       "pricing.manual_price_override": manualOverride,
-      ...(canWritePrice ? { "pricing.last_synced_price": item.pricing.retailPrice } : {}),
+      ...(canWritePrice
+        ? { "pricing.last_synced_price": item.pricing.retailPrice }
+        : {}),
     },
     fields,
   );
@@ -284,18 +317,34 @@ async function archiveSplitParents(
   if (!plan.decisionsPath) return 0;
   const decisions = await readJsonOr<Decisions>(plan.decisionsPath, {});
   let count = 0;
-  for (const [parentSku, decision] of Object.entries(decisions.decisions ?? {})) {
-    if (!decision.approved || decision.mode !== "split" || !decision.children?.length) continue;
-    if (!decision.children.every((child) => existing.has(child.sku) || synced.has(child.sku))) continue;
+  for (const [parentSku, decision] of Object.entries(
+    decisions.decisions ?? {},
+  )) {
+    if (
+      !decision.approved ||
+      decision.mode !== "split" ||
+      !decision.children?.length
+    )
+      continue;
+    if (
+      !decision.children.every(
+        (child) => existing.has(child.sku) || synced.has(child.sku),
+      )
+    )
+      continue;
     const parent = existing.get(parentSku);
     if (!parent || parent.product.status !== "draft") continue;
-    await request("PATCH", "/products/" + parent.product.id, { status: "archived" });
+    await request("PATCH", "/products/" + parent.product.id, {
+      status: "archived",
+    });
     await upsertFields("products", parent.product.id, defs, "Spree::Product", {
       "devir.review_status": "split_archived",
       "devir.review_reasons": "replaced_by_split_children",
       "devir.last_sync_at": new Date().toISOString(),
     });
-    console.log("ARCHIVED " + parentSku + " — pack sustituido por productos hijo");
+    console.log(
+      "ARCHIVED " + parentSku + " — pack sustituido por productos hijo",
+    );
     count += 1;
   }
   return count;
@@ -307,7 +356,10 @@ async function sync(): Promise<void> {
   const duplicates = plan.items
     .map((item) => item.sku)
     .filter((sku, index, all) => all.indexOf(sku) !== index);
-  if (duplicates.length) throw new Error("SKUs duplicados en plan: " + Array.from(new Set(duplicates)).join(", "));
+  if (duplicates.length)
+    throw new Error(
+      "SKUs duplicados en plan: " + Array.from(new Set(duplicates)).join(", "),
+    );
 
   const defs = await setup();
   const existing = await productIndex();
@@ -322,7 +374,12 @@ async function sync(): Promise<void> {
     try {
       if (item.action === "skip" || !item.pricing) {
         skipped += 1;
-        console.log("SKIP     " + item.sku + " — " + (item.action === "skip" ? "operador" : "sin pricing"));
+        console.log(
+          "SKIP     " +
+            item.sku +
+            " — " +
+            (item.action === "skip" ? "operador" : "sin pricing"),
+        );
         continue;
       }
       const match = existing.get(item.sku);
@@ -348,16 +405,25 @@ async function sync(): Promise<void> {
           console.log("PROTECT  " + item.sku + " — PVP manual preservado");
         } else {
           updated += 1;
-          console.log("UPDATED  " + item.sku + " — " + (match.product.status ?? "draft"));
+          console.log(
+            "UPDATED  " + item.sku + " — " + (match.product.status ?? "draft"),
+          );
         }
       }
     } catch (error) {
       failed += 1;
-      console.error("FAILED   " + item.sku + " — " + (error instanceof Error ? error.message : String(error)));
+      console.error(
+        "FAILED   " +
+          item.sku +
+          " — " +
+          (error instanceof Error ? error.message : String(error)),
+      );
     }
   }
 
-  const archived = failed ? 0 : await archiveSplitParents(plan, defs, existing, synced);
+  const archived = failed
+    ? 0
+    : await archiveSplitParents(plan, defs, existing, synced);
   console.log(
     "Spree: " +
       created +
@@ -381,11 +447,17 @@ async function status(): Promise<void> {
   const seen = new Set<string>();
   let count = 0;
   for (const [sku, match] of index) {
-    if (seen.has(match.product.id) || !(match.product.tags ?? []).includes("devir")) continue;
+    if (
+      seen.has(match.product.id) ||
+      !(match.product.tags ?? []).includes("devir")
+    )
+      continue;
     seen.add(match.product.id);
     count += 1;
     const fields = await customFields("products", match.product.id);
-    const review = String(fields.find((f) => f.key === "devir.review_status")?.value ?? "?");
+    const review = String(
+      fields.find((f) => f.key === "devir.review_status")?.value ?? "?",
+    );
     const cost = Number(match.variant.cost_price);
     const price = variantPrice(match.variant);
     const margin = effectiveMargin(
@@ -429,21 +501,25 @@ async function margin(args: string[]): Promise<void> {
   if (!rule) throw new Error("Categoría Devir desconocida: " + ruleKey);
   await attachCategoryMargins([rule]);
   if (!rule.spreeCategoryId) {
-    throw new Error("No se pudo asociar " + ruleKey + " con una categoría Spree. Ejecuta pnpm devir:spree:categories.");
+    throw new Error(
+      "No se pudo asociar " +
+        ruleKey +
+        " con una categoría Spree. Ejecuta pnpm devir:spree:categories.",
+    );
   }
   await upsertFields("categories", rule.spreeCategoryId, defs, "Spree::Taxon", {
     "pricing.target_margin": value,
   });
-  console.log("Spree: " + (rule.spreeCategoryName ?? ruleKey) + " → margen " + pct(value));
+  console.log(
+    "Spree: " + (rule.spreeCategoryName ?? ruleKey) + " → margen " + pct(value),
+  );
 }
 
 async function marginProduct(args: string[]): Promise<void> {
   const [sku, raw] = args;
   const value = parseMarginInput(raw);
   if (!sku || value === null) {
-    throw new Error(
-      "Uso: pnpm devir:spree:margin-product <SKU> <25%|25|0.25>",
-    );
+    throw new Error("Uso: pnpm devir:spree:margin-product <SKU> <25%|25|0.25>");
   }
   const defs = await setup();
   const match = (await productIndex()).get(sku);
@@ -455,19 +531,29 @@ async function marginProduct(args: string[]): Promise<void> {
 }
 
 async function activate(args: string[]): Promise<void> {
-  if (!args.length) throw new Error("Uso: pnpm devir:spree:activate <SKU> [SKU...]");
+  if (!args.length)
+    throw new Error("Uso: pnpm devir:spree:activate <SKU> [SKU...]");
   const index = await productIndex();
   for (const sku of args) {
     const match = index.get(sku);
     if (!match) throw new Error("No existe SKU en Spree: " + sku);
     const fields = await customFields("products", match.product.id);
-    const review = String(fields.find((f) => f.key === "devir.review_status")?.value ?? "");
-    const reasons = String(fields.find((f) => f.key === "devir.review_reasons")?.value ?? "");
+    const review = String(
+      fields.find((f) => f.key === "devir.review_status")?.value ?? "",
+    );
+    const reasons = String(
+      fields.find((f) => f.key === "devir.review_reasons")?.value ?? "",
+    );
     if (review === "review_required" || (reasons && reasons !== "none")) {
-      throw new Error(sku + " sigue requiriendo revisión: " + (reasons || review));
+      throw new Error(
+        sku + " sigue requiriendo revisión: " + (reasons || review),
+      );
     }
-    if (match.product.status === "archived") throw new Error(sku + " está archivado.");
-    await request("PATCH", "/products/" + match.product.id, { status: "active" });
+    if (match.product.status === "archived")
+      throw new Error(sku + " está archivado.");
+    await request("PATCH", "/products/" + match.product.id, {
+      status: "active",
+    });
     console.log("ACTIVE   " + sku + " — " + match.product.name);
   }
 }
@@ -490,7 +576,14 @@ async function categories(): Promise<void> {
   }
   console.log("Categorías Spree:");
   for (const category of await list<Category>("/categories")) {
-    console.log("  " + category.id + " · " + category.name + " · " + (category.permalink ?? ""));
+    console.log(
+      "  " +
+        category.id +
+        " · " +
+        category.name +
+        " · " +
+        (category.permalink ?? ""),
+    );
   }
 }
 

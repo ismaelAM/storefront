@@ -1,11 +1,11 @@
 "use client";
 
+import type { Data } from "@puckeditor/core";
 import { Puck } from "@puckeditor/core";
 import type { Category } from "@spree/sdk";
-import type { Data } from "@puckeditor/core";
 import { EditorSectionNav } from "@/components/puck/EditorSectionNav";
-import { createNavigationConfig } from "@/puck/navigation-config";
 import { saveSitePageData } from "@/lib/puck/save-site-page-data";
+import { createNavigationConfig } from "@/puck/navigation-config";
 
 export function NavigationEditorClient({
   categories,
@@ -25,9 +25,7 @@ export function NavigationEditorClient({
         <Puck
           config={config}
           data={initialData}
-          onPublish={async (data) =>
-            saveSitePageData("navigation", data)
-          }
+          onPublish={async (data) => saveSitePageData("navigation", data)}
         />
       </div>
     </div>

@@ -4,8 +4,8 @@ import {
   fulfillFulfillment,
   getSpreeShippingConfigurationStatus,
   markFulfillmentDelivered,
-  spreeShippingRequest,
   SpreeShippingApiError,
+  spreeShippingRequest,
   updateFulfillmentTracking,
 } from "@/lib/shipping/spree-fulfillment";
 
@@ -45,13 +45,10 @@ describe("Spree fulfillment shipping operations", () => {
     });
 
     await expect(
-      updateFulfillmentTracking(
-        "or_1",
-        "ful_1",
-        "PQ123",
-        "correos",
-        { env, fetcher },
-      ),
+      updateFulfillmentTracking("or_1", "ful_1", "PQ123", "correos", {
+        env,
+        fetcher,
+      }),
     ).resolves.toMatchObject({ id: "ful_1", tracking: "PQ123" });
   });
 
@@ -89,12 +86,10 @@ describe("Spree fulfillment shipping operations", () => {
     });
 
     await expect(
-      markFulfillmentDelivered(
-        "or_1",
-        "ful_1",
-        "2026-09-21T12:00:00.000Z",
-        { env, fetcher },
-      ),
+      markFulfillmentDelivered("or_1", "ful_1", "2026-09-21T12:00:00.000Z", {
+        env,
+        fetcher,
+      }),
     ).resolves.toMatchObject({ status: "delivered" });
   });
 
@@ -102,12 +97,10 @@ describe("Spree fulfillment shipping operations", () => {
     const fetcher = vi.fn<typeof fetch>();
 
     await expect(
-      spreeShippingRequest(
-        "GET",
-        "https://example.com/steal",
-        undefined,
-        { env, fetcher },
-      ),
+      spreeShippingRequest("GET", "https://example.com/steal", undefined, {
+        env,
+        fetcher,
+      }),
     ).rejects.toThrow("debe ser relativa");
 
     await expect(

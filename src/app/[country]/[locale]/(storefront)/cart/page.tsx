@@ -11,12 +11,14 @@ const fallbackData: Data = {
 export default async function CartPage() {
   await connection();
   const data = await getSitePageData("cart", fallbackData);
-  const props = data.content.find((item) => item.type === "CartChrome")?.props as Partial<CartVisualConfig> | undefined;
+  const props = data.content.find((item) => item.type === "CartChrome")
+    ?.props as Partial<CartVisualConfig> | undefined;
 
   const config: CartVisualConfig = {
     title: props?.title ?? "Carrito",
     emptyTitle: props?.emptyTitle ?? "Tu carrito está vacío",
-    emptyDescription: props?.emptyDescription ?? "Añade productos para verlos aquí.",
+    emptyDescription:
+      props?.emptyDescription ?? "Añade productos para verlos aquí.",
     backgroundColor: props?.backgroundColor ?? "#ffffff",
     cardBackgroundColor: props?.cardBackgroundColor ?? "#ffffff",
     textColor: props?.textColor ?? "#111827",

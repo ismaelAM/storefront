@@ -63,11 +63,7 @@ export function ProductEditorialBlock({
         : "justify-center";
 
   const paddingClass =
-    padding === "small"
-      ? "py-8"
-      : padding === "large"
-        ? "py-20"
-        : "py-12";
+    padding === "small" ? "py-8" : padding === "large" ? "py-20" : "py-12";
 
   const radiusClass =
     borderRadius === "none"
@@ -86,13 +82,19 @@ export function ProductEditorialBlock({
   const textContent = (
     <div className={`flex flex-col ${alignmentClass}`}>
       {title && (
-        <h2 className="text-3xl font-bold tracking-tight md:text-4xl" style={{ color: titleColor }}>
+        <h2
+          className="text-3xl font-bold tracking-tight md:text-4xl"
+          style={{ color: titleColor }}
+        >
           {title}
         </h2>
       )}
 
       {text && (
-        <p className="mt-4 max-w-3xl whitespace-pre-line text-base leading-7 md:text-lg" style={{ color: textColor }}>
+        <p
+          className="mt-4 max-w-3xl whitespace-pre-line text-base leading-7 md:text-lg"
+          style={{ color: textColor }}
+        >
           {text}
         </p>
       )}
@@ -119,7 +121,9 @@ export function ProductEditorialBlock({
 
   return (
     <section className={`w-full ${paddingClass}`} style={{ backgroundColor }}>
-      <div className={`mx-auto flex min-h-[220px] ${positionClass} px-4 sm:px-6 lg:px-8`}>
+      <div
+        className={`mx-auto flex min-h-[220px] ${positionClass} px-4 sm:px-6 lg:px-8`}
+      >
         <div className={`w-full ${widthClass}`}>
           <div className={imageClass}>
             {imagePosition === "left" && imageElement}

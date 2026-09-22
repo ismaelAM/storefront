@@ -1,5 +1,5 @@
-import type { Category, Product } from "@spree/sdk";
 import { FieldLabel } from "@puckeditor/core";
+import type { Category, Product } from "@spree/sdk";
 import { useMemo, useState } from "react";
 import { usePuckProducts } from "@/components/puck/PuckProductsContext";
 import { PALETTE_COLOR_OPTIONS } from "@/puck/palette";
@@ -68,7 +68,9 @@ function MultiSelectField({
                 className="mt-0.5 size-3.5 shrink-0"
               />
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-gray-800">{item.label}</span>
+                <span className="block truncate text-gray-800">
+                  {item.label}
+                </span>
                 {item.hint && (
                   <span className="block truncate text-[10px] text-gray-400">
                     {item.hint}
@@ -119,7 +121,8 @@ interface VariantRecord {
 function getVariantItems(products: Product[]) {
   const items: Array<{ id: string; label: string; hint?: string }> = [];
   for (const product of products) {
-    const variants = (product as unknown as { variants?: VariantRecord[] }).variants ?? [];
+    const variants =
+      (product as unknown as { variants?: VariantRecord[] }).variants ?? [];
     for (const variant of variants) {
       const options =
         variant.options_text ||

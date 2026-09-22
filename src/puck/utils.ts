@@ -1,4 +1,7 @@
-export function resolvePuckUrl(url: string | undefined, basePath: string): string {
+export function resolvePuckUrl(
+  url: string | undefined,
+  basePath: string,
+): string {
   const value = url?.trim() ?? "";
   if (!value) return "#";
 
@@ -9,7 +12,10 @@ export function resolvePuckUrl(url: string | undefined, basePath: string): strin
   const normalizedBase = basePath.replace(/\/$/, "");
   const relativePath = value.startsWith("/") ? value : `/${value}`;
 
-  if (relativePath === normalizedBase || relativePath.startsWith(`${normalizedBase}/`)) {
+  if (
+    relativePath === normalizedBase ||
+    relativePath.startsWith(`${normalizedBase}/`)
+  ) {
     return relativePath;
   }
 
@@ -32,9 +38,7 @@ export function getPuckGridColumnsClass(columns: "2" | "3" | "4"): string {
   }
 }
 
-export function getPuckAspectClass(
-  aspect: "square" | "4/3" | "16/9",
-): string {
+export function getPuckAspectClass(aspect: "square" | "4/3" | "16/9"): string {
   switch (aspect) {
     case "4/3":
       return "aspect-[4/3]";
@@ -59,7 +63,6 @@ export function getPuckRadiusClass(
       return "rounded-lg";
   }
 }
-
 
 export type PuckDensity = "compact" | "normal" | "airy";
 

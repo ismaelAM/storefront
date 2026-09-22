@@ -3,10 +3,10 @@
 import type { Config } from "@puckeditor/core";
 import { useEffect, useState } from "react";
 import { PuckProductGrid } from "@/components/puck/PuckProductGrid";
+import { colorField } from "@/puck/fields";
 import { HomeFeaturedProductsBlock } from "@/puck/HomeFeaturedProductsBlock";
 import { HomeHeroBlock } from "@/puck/HomeHeroBlock";
 import { HomeWholesaleBlock } from "@/puck/HomeWholesaleBlock";
-import { colorField } from "@/puck/fields";
 import { DEFAULT_PALETTE_VALUES } from "@/puck/palette";
 import { getPuckSectionPaddingClass, type PuckDensity } from "@/puck/utils";
 

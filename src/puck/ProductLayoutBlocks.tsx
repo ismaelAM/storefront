@@ -23,7 +23,11 @@ export function ProductLayoutBlock({
   Content,
 }: ProductLayoutProps & { Content: ComponentType }) {
   const widthClass =
-    width === "medium" ? "max-w-3xl" : width === "large" ? "max-w-5xl" : "max-w-none";
+    width === "medium"
+      ? "max-w-3xl"
+      : width === "large"
+        ? "max-w-5xl"
+        : "max-w-none";
   const alignmentClass =
     alignment === "left"
       ? "mr-auto"
@@ -35,7 +39,9 @@ export function ProductLayoutBlock({
 
   return (
     <section className={`w-full ${paddingClass}`} style={{ backgroundColor }}>
-      <div className={`w-full px-4 sm:px-6 lg:px-8 ${widthClass} ${alignmentClass}`}>
+      <div
+        className={`w-full px-4 sm:px-6 lg:px-8 ${widthClass} ${alignmentClass}`}
+      >
         <Content />
       </div>
     </section>
@@ -52,13 +58,16 @@ export function ProductColumnsBlock({
   Left: ComponentType;
   Right: ComponentType;
 }) {
-  const gapClass = gap === "small" ? "gap-4" : gap === "large" ? "gap-12" : "gap-8";
+  const gapClass =
+    gap === "small" ? "gap-4" : gap === "large" ? "gap-12" : "gap-8";
   const paddingClass =
     padding === "small" ? "py-6" : padding === "large" ? "py-16" : "py-10";
 
   return (
     <section className={`w-full ${paddingClass}`} style={{ backgroundColor }}>
-      <div className={`mx-auto grid w-full max-w-6xl grid-cols-1 px-4 sm:px-6 md:grid-cols-2 lg:px-8 ${gapClass}`}>
+      <div
+        className={`mx-auto grid w-full max-w-6xl grid-cols-1 px-4 sm:px-6 md:grid-cols-2 lg:px-8 ${gapClass}`}
+      >
         <Left />
         <Right />
       </div>

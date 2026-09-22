@@ -222,8 +222,6 @@ const policies: Record<string, () => LocalLegalPolicy> = {
   }),
 };
 
-export function getSpanishLegalPolicy(
-  slug: string,
-): LocalLegalPolicy | null {
+export function getSpanishLegalPolicy(slug: string): LocalLegalPolicy | null {
   return policies[slug]?.() ?? null;
 }

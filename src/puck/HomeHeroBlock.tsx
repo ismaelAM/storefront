@@ -85,8 +85,14 @@ export function HomeHeroBlock({
             {secondaryButtonText && (
               <Link
                 href={secondaryUrl}
-                target={isExternalPuckUrl(secondaryButtonUrl) ? "_blank" : undefined}
-                rel={isExternalPuckUrl(secondaryButtonUrl) ? "noopener noreferrer" : undefined}
+                target={
+                  isExternalPuckUrl(secondaryButtonUrl) ? "_blank" : undefined
+                }
+                rel={
+                  isExternalPuckUrl(secondaryButtonUrl)
+                    ? "noopener noreferrer"
+                    : undefined
+                }
                 className="inline-flex w-full items-center justify-center rounded-md border border-gray-300 bg-white px-6 py-3 text-base font-semibold text-gray-900 transition-opacity hover:opacity-80 sm:w-auto sm:text-lg"
               >
                 {secondaryButtonText}
@@ -96,8 +102,14 @@ export function HomeHeroBlock({
             {tertiaryButtonText && (
               <Link
                 href={tertiaryUrl}
-                target={isExternalPuckUrl(tertiaryButtonUrl) ? "_blank" : undefined}
-                rel={isExternalPuckUrl(tertiaryButtonUrl) ? "noopener noreferrer" : undefined}
+                target={
+                  isExternalPuckUrl(tertiaryButtonUrl) ? "_blank" : undefined
+                }
+                rel={
+                  isExternalPuckUrl(tertiaryButtonUrl)
+                    ? "noopener noreferrer"
+                    : undefined
+                }
                 className="inline-flex w-full items-center justify-center rounded-md border border-gray-300 bg-white px-6 py-3 text-base font-semibold text-gray-900 transition-opacity hover:opacity-80 sm:w-auto sm:text-lg"
               >
                 {tertiaryButtonText} →

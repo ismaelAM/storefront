@@ -45,18 +45,24 @@ const fallbackAppearance: SiteAppearance = {
 
 export const getSiteAppearance = cache(async (): Promise<SiteAppearance> => {
   const data = await getSitePageData("appearance", {
-    content: [{ type: "Appearance", props: { id: "appearance", ...fallbackAppearance } }],
+    content: [
+      {
+        type: "Appearance",
+        props: { id: "appearance", ...fallbackAppearance },
+      },
+    ],
     root: {},
   });
-  const props = data.content.find((item) => item.type === "Appearance")?.props as
-    | Partial<SiteAppearance>
-    | undefined;
+  const props = data.content.find((item) => item.type === "Appearance")
+    ?.props as Partial<SiteAppearance> | undefined;
 
   return {
-    headerBackground: props?.headerBackground ?? fallbackAppearance.headerBackground,
+    headerBackground:
+      props?.headerBackground ?? fallbackAppearance.headerBackground,
     headerText: props?.headerText ?? fallbackAppearance.headerText,
     headerBorder: props?.headerBorder ?? fallbackAppearance.headerBorder,
-    footerBackground: props?.footerBackground ?? fallbackAppearance.footerBackground,
+    footerBackground:
+      props?.footerBackground ?? fallbackAppearance.footerBackground,
     footerText: props?.footerText ?? fallbackAppearance.footerText,
     footerHeading: props?.footerHeading ?? fallbackAppearance.footerHeading,
     pageBackground: props?.pageBackground ?? fallbackAppearance.pageBackground,
@@ -67,7 +73,8 @@ export const getSiteAppearance = cache(async (): Promise<SiteAppearance> => {
     secondaryColor: props?.secondaryColor ?? fallbackAppearance.secondaryColor,
     secondaryText: props?.secondaryText ?? fallbackAppearance.secondaryText,
     surfaceColor: props?.surfaceColor ?? fallbackAppearance.surfaceColor,
-    surfaceAltColor: props?.surfaceAltColor ?? fallbackAppearance.surfaceAltColor,
+    surfaceAltColor:
+      props?.surfaceAltColor ?? fallbackAppearance.surfaceAltColor,
     textColor: props?.textColor ?? fallbackAppearance.textColor,
     mutedTextColor: props?.mutedTextColor ?? fallbackAppearance.mutedTextColor,
     borderColor: props?.borderColor ?? fallbackAppearance.borderColor,

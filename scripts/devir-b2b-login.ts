@@ -1,6 +1,10 @@
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { randomBytes } from "node:crypto";
 import { mkdir } from "node:fs/promises";
+import {
+  createServer,
+  type IncomingMessage,
+  type ServerResponse,
+} from "node:http";
 import { dirname, resolve } from "node:path";
 import { chromium, type Page } from "@playwright/test";
 import { loadLocalEnv } from "./load-local-env";
@@ -35,32 +39,38 @@ async function getLoginDiagnostics(page: Page): Promise<string[]> {
       ".mage-error",
     ];
     const messages = selectors.flatMap((selector) =>
-      Array.from(document.querySelectorAll<HTMLElement>(selector)).map((node) =>
-        node.textContent?.replace(/\s+/g, " ").trim() ?? "",
+      Array.from(document.querySelectorAll<HTMLElement>(selector)).map(
+        (node) => node.textContent?.replace(/\s+/g, " ").trim() ?? "",
       ),
     );
     const uniqueMessages = Array.from(new Set(messages.filter(Boolean)));
     if (uniqueMessages.length > 0) return uniqueMessages;
 
-    const bodyText = document.body?.innerText?.replace(/\s+/g, " ").trim() ?? "";
+    const bodyText =
+      document.body?.innerText?.replace(/\s+/g, " ").trim() ?? "";
     return bodyText ? [bodyText.slice(0, 1000)] : [];
   });
 }
 
 async function hasAuthenticatedCustomer(page: Page): Promise<boolean> {
   const hasLogoutLink =
-    (await page.locator(
-      'a[href*="/customer/account/logout"], a[href*="/customer/account/logout/"]',
-    ).count()) > 0;
+    (await page
+      .locator(
+        'a[href*="/customer/account/logout"], a[href*="/customer/account/logout/"]',
+      )
+      .count()) > 0;
   if (hasLogoutLink) return true;
 
   const hasCustomerSection = await page.evaluate(async () => {
     try {
-      const response = await fetch("/customer/section/load/?sections=customer", {
-        credentials: "include",
-        cache: "no-store",
-        headers: { Accept: "application/json" },
-      });
+      const response = await fetch(
+        "/customer/section/load/?sections=customer",
+        {
+          credentials: "include",
+          cache: "no-store",
+          headers: { Accept: "application/json" },
+        },
+      );
       if (!response.ok) return false;
       const payload = (await response.json()) as {
         customer?: {
@@ -85,7 +95,9 @@ async function hasAuthenticatedCustomer(page: Page): Promise<boolean> {
 }
 
 async function waitForAuthenticatedSession(page: Page): Promise<boolean> {
-  await page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => undefined);
+  await page
+    .waitForLoadState("networkidle", { timeout: 10000 })
+    .catch(() => undefined);
 
   for (let attempt = 0; attempt < 10; attempt += 1) {
     if (await hasAuthenticatedCustomer(page)) return true;
@@ -104,7 +116,9 @@ async function waitForAuthenticatedSession(page: Page): Promise<boolean> {
     waitUntil: "domcontentloaded",
     timeout: 30000,
   });
-  await page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => undefined);
+  await page
+    .waitForLoadState("networkidle", { timeout: 10000 })
+    .catch(() => undefined);
 
   return await hasAuthenticatedCustomer(page);
 }
@@ -124,7 +138,11 @@ function readRequestBody(request: IncomingMessage): Promise<string> {
   });
 }
 
-function writeJson(response: ServerResponse, status: number, payload: unknown): void {
+function writeJson(
+  response: ServerResponse,
+  status: number,
+  payload: unknown,
+): void {
   response.writeHead(status, {
     "Content-Type": "application/json; charset=utf-8",
     "Cache-Control": "no-store",
@@ -215,7 +233,10 @@ async function startLoginControl(page: Page): Promise<void> {
 
   const server = createServer(async (request, response) => {
     try {
-      const requestUrl = new URL(request.url ?? "/", `http://127.0.0.1:${controlPort}`);
+      const requestUrl = new URL(
+        request.url ?? "/",
+        `http://127.0.0.1:${controlPort}`,
+      );
       if (request.method === "GET" && requestUrl.pathname === "/") {
         if (requestUrl.searchParams.get("token") !== token) {
           response.writeHead(302, {
@@ -226,7 +247,10 @@ async function startLoginControl(page: Page): Promise<void> {
           return;
         }
 
-        response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+        response.writeHead(200, {
+          "Content-Type": "text/html; charset=utf-8",
+          "Cache-Control": "no-store",
+        });
         response.end(loginControlHtml(token));
         return;
       }
@@ -237,9 +261,15 @@ async function startLoginControl(page: Page): Promise<void> {
         return;
       }
 
-      if (request.method === "GET" && requestUrl.pathname === "/api/screenshot") {
+      if (
+        request.method === "GET" &&
+        requestUrl.pathname === "/api/screenshot"
+      ) {
         const screenshot = await page.screenshot({ type: "png" });
-        response.writeHead(200, { "Content-Type": "image/png", "Cache-Control": "no-store" });
+        response.writeHead(200, {
+          "Content-Type": "image/png",
+          "Cache-Control": "no-store",
+        });
         response.end(screenshot);
         return;
       }
@@ -294,13 +324,21 @@ async function startLoginControl(page: Page): Promise<void> {
   console.log(localUrl);
   if (forwardedUrl) console.log(`URL directa del Codespace: ${forwardedUrl}`);
   console.log("");
-  console.log("Si la URL del Codespace no abre todavía, ve a Puertos → 8787 → Vista previa/Abrir en navegador.");
-  console.log("Después haz el login manualmente y pulsa «He terminado el login».");
-  console.log("No se registran usuario, contraseña ni texto escrito en el servidor.");
+  console.log(
+    "Si la URL del Codespace no abre todavía, ve a Puertos → 8787 → Vista previa/Abrir en navegador.",
+  );
+  console.log(
+    "Después haz el login manualmente y pulsa «He terminado el login».",
+  );
+  console.log(
+    "No se registran usuario, contraseña ni texto escrito en el servidor.",
+  );
   console.log("");
 
   await finished;
-  await new Promise<void>((resolvePromise) => server.close(() => resolvePromise()));
+  await new Promise<void>((resolvePromise) =>
+    server.close(() => resolvePromise()),
+  );
 }
 
 async function main(): Promise<void> {
@@ -310,7 +348,8 @@ async function main(): Promise<void> {
   const hasDisplay = Boolean(process.env.DISPLAY);
   const forceHeadless = process.env.DEVIR_B2B_HEADLESS === "true";
   const headless = forceHeadless || !hasDisplay;
-  const channel = process.env.DEVIR_B2B_BROWSER === "chrome" ? "chrome" : undefined;
+  const channel =
+    process.env.DEVIR_B2B_BROWSER === "chrome" ? "chrome" : undefined;
 
   const context = await chromium.launchPersistentContext(profilePath, {
     headless,

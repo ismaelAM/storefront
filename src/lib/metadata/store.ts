@@ -20,14 +20,20 @@ function normalizeOpenGraphLocale(locale: string): string {
   return `${parts[0].toLowerCase()}_${parts[1].toUpperCase()}`;
 }
 
-function getPathSuffix(pathname: string | null, country: string, locale: string): string {
+function getPathSuffix(
+  pathname: string | null,
+  country: string,
+  locale: string,
+): string {
   if (!pathname) return "";
   const prefix = `/${country.toLowerCase()}/${locale.toLowerCase()}`;
   if (pathname.toLowerCase().startsWith(prefix)) {
     return pathname.slice(prefix.length) || "";
   }
 
-  const match = pathname.match(/^\/[a-z]{2}\/[a-z]{2,3}(?:-[a-z0-9]{2,8})*(\/.*)?$/i);
+  const match = pathname.match(
+    /^\/[a-z]{2}\/[a-z]{2,3}(?:-[a-z0-9]{2,8})*(\/.*)?$/i,
+  );
   return match?.[1] ?? "";
 }
 
@@ -41,19 +47,23 @@ async function buildLocaleAlternates(
     const pathname = requestHeaders.get("x-spree-request-pathname");
     const suffix = getPathSuffix(pathname, country, locale);
     const base = storeUrl.replace(/\/$/, "");
-    const markets = await getMarkets({ country, locale }).then((res) => res.data);
+    const markets = await getMarkets({ country, locale }).then(
+      (res) => res.data,
+    );
     const currentMarket = findMarketForCountry(markets, country);
 
     if (!currentMarket) return undefined;
 
     const languages: Record<string, string> = {};
     for (const marketLocale of getMarketLocales(currentMarket)) {
-      languages[marketLocale] = `${base}/${country.toLowerCase()}/${marketLocale}${suffix}`;
+      languages[marketLocale] =
+        `${base}/${country.toLowerCase()}/${marketLocale}${suffix}`;
     }
 
     const defaultTarget = getDefaultMarketLocaleTarget(markets);
     if (defaultTarget) {
-      languages["x-default"] = `${base}/${defaultTarget.country}/${defaultTarget.locale}${suffix}`;
+      languages["x-default"] =
+        `${base}/${defaultTarget.country}/${defaultTarget.locale}${suffix}`;
     }
 
     return {

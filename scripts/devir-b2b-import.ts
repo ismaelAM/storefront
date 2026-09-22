@@ -1,7 +1,12 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { loadLocalEnv } from "./load-local-env";
-import { attachCategoryMargins, customFields, numberField, request as spreeAdminRequest } from "./spree-admin";
+import {
+  attachCategoryMargins,
+  customFields,
+  numberField,
+  request as spreeAdminRequest,
+} from "./spree-admin";
 
 loadLocalEnv();
 
@@ -149,18 +154,25 @@ const reviewQueuePath = resolve(
   process.env.DEVIR_B2B_REVIEW_QUEUE ?? ".local/devir-b2b-review-queue.json",
 );
 const decisionsPath = resolve(
-  process.env.DEVIR_B2B_OPERATOR_DECISIONS ?? ".local/devir-b2b-operator-decisions.json",
+  process.env.DEVIR_B2B_OPERATOR_DECISIONS ??
+    ".local/devir-b2b-operator-decisions.json",
 );
 const pricingConfigPath = resolve(
   process.env.DEVIR_B2B_PRICING_CONFIG ?? ".local/devir-pricing-rules.json",
 );
 const pricingTemplatePath = resolve(
-  process.env.DEVIR_B2B_PRICING_TEMPLATE ?? "config/devir-pricing-rules.example.json",
+  process.env.DEVIR_B2B_PRICING_TEMPLATE ??
+    "config/devir-pricing-rules.example.json",
 );
 const pageSize = readIntegerEnv("DEVIR_SPREE_PAGE_SIZE", 100, 1, 100);
 const maxPages = readIntegerEnv("DEVIR_SPREE_MAX_PAGES", 100, 1, 10_000);
 
-function readIntegerEnv(name: string, fallback: number, min: number, max: number): number {
+function readIntegerEnv(
+  name: string,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
   const raw = process.env[name];
   if (!raw) return fallback;
   const value = Number(raw);
@@ -170,12 +182,19 @@ function readIntegerEnv(name: string, fallback: number, min: number, max: number
   return value;
 }
 
-function readRatioEnv(name: string, fallback: number, min: number, maxExclusive: number): number {
+function readRatioEnv(
+  name: string,
+  fallback: number,
+  min: number,
+  maxExclusive: number,
+): number {
   const raw = process.env[name];
   if (!raw) return fallback;
   const value = Number(raw);
   if (!Number.isFinite(value) || value < min || value >= maxExclusive) {
-    throw new Error(`${name} debe estar entre ${min} y menos de ${maxExclusive}.`);
+    throw new Error(
+      `${name} debe estar entre ${min} y menos de ${maxExclusive}.`,
+    );
   }
   return value;
 }
@@ -188,7 +207,11 @@ function readBooleanEnv(name: string, fallback: boolean): boolean {
   throw new Error(`${name} debe ser true/false (o 1/0).`);
 }
 
-function assertRatio(name: string, value: number, maxExclusive: number): number {
+function assertRatio(
+  name: string,
+  value: number,
+  maxExclusive: number,
+): number {
   if (!Number.isFinite(value) || value < 0 || value >= maxExclusive) {
     throw new Error(`${name} debe estar entre 0 y menos de ${maxExclusive}.`);
   }
@@ -210,11 +233,17 @@ function parseMoney(
   fallbackCurrency: string | null = null,
 ): { amount: number | null; currency: string | null } {
   if (typeof price === "number") {
-    return { amount: Number.isFinite(price) ? price : null, currency: fallbackCurrency };
+    return {
+      amount: Number.isFinite(price) ? price : null,
+      currency: fallbackCurrency,
+    };
   }
   if (typeof price === "string") {
     const amount = Number(price);
-    return { amount: Number.isFinite(amount) ? amount : null, currency: fallbackCurrency };
+    return {
+      amount: Number.isFinite(amount) ? amount : null,
+      currency: fallbackCurrency,
+    };
   }
   if (!price) return { amount: null, currency: fallbackCurrency };
 
@@ -232,8 +261,9 @@ function getVariantMoney(
   const direct = parseMoney(variant.price, variant.currency ?? null);
   if (direct.amount !== null) return direct;
   const preferred =
-    variant.prices?.find((price) => price.currency?.toUpperCase() === currency) ??
-    variant.prices?.[0];
+    variant.prices?.find(
+      (price) => price.currency?.toUpperCase() === currency,
+    ) ?? variant.prices?.[0];
   return parseMoney(preferred ?? null, preferred?.currency ?? null);
 }
 
@@ -254,16 +284,24 @@ function isPackCandidate(product: DevirProduct): boolean {
   );
 }
 
-function inferCategory(product: DevirProduct, config: PricingConfig): PricingCategoryRule | null {
+function inferCategory(
+  product: DevirProduct,
+  config: PricingConfig,
+): PricingCategoryRule | null {
   const haystack = `${product.name} ${product.url ?? ""}`.toLocaleLowerCase();
   return (
     config.categories.find((rule) =>
-      (rule.match ?? []).some((needle) => haystack.includes(needle.toLocaleLowerCase())),
+      (rule.match ?? []).some((needle) =>
+        haystack.includes(needle.toLocaleLowerCase()),
+      ),
     ) ?? null
   );
 }
 
-function findCategory(config: PricingConfig, key: string | undefined): PricingCategoryRule | null {
+function findCategory(
+  config: PricingConfig,
+  key: string | undefined,
+): PricingCategoryRule | null {
   if (!key) return null;
   return config.categories.find((rule) => rule.key === key) ?? null;
 }
@@ -285,10 +323,16 @@ function calculateRetailPrice({
   ruleSource: string;
   manualRetailPrice?: number | null;
 }): PriceProposal | null {
-  if (purchasePrice === null || !Number.isFinite(purchasePrice) || purchasePrice <= 0) {
+  if (
+    purchasePrice === null ||
+    !Number.isFinite(purchasePrice) ||
+    purchasePrice <= 0
+  ) {
     return null;
   }
-  const costWithVat = costIncludesVat ? purchasePrice : purchasePrice * (1 + vatRate);
+  const costWithVat = costIncludesVat
+    ? purchasePrice
+    : purchasePrice * (1 + vatRate);
   const retailPrice =
     manualRetailPrice !== null && manualRetailPrice !== undefined
       ? roundCurrency(manualRetailPrice)
@@ -303,7 +347,8 @@ function calculateRetailPrice({
     targetMargin,
     currency,
     ruleSource,
-    manualRetailPrice: manualRetailPrice !== null && manualRetailPrice !== undefined,
+    manualRetailPrice:
+      manualRetailPrice !== null && manualRetailPrice !== undefined,
   };
 }
 
@@ -319,17 +364,25 @@ async function readJsonIfExists<T>(path: string, fallback: T): Promise<T> {
 async function loadPricingConfig(): Promise<PricingConfig> {
   let raw: PricingConfig;
   try {
-    raw = JSON.parse(await readFile(pricingConfigPath, "utf8")) as PricingConfig;
+    raw = JSON.parse(
+      await readFile(pricingConfigPath, "utf8"),
+    ) as PricingConfig;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    raw = JSON.parse(await readFile(pricingTemplatePath, "utf8")) as PricingConfig;
+    raw = JSON.parse(
+      await readFile(pricingTemplatePath, "utf8"),
+    ) as PricingConfig;
     await mkdir(dirname(pricingConfigPath), { recursive: true });
     await writeFile(pricingConfigPath, JSON.stringify(raw, null, 2));
-    console.log(`Configuración privada de márgenes creada en ${pricingConfigPath}`);
+    console.log(
+      `Configuración privada de márgenes creada en ${pricingConfigPath}`,
+    );
   }
 
   const config: PricingConfig = {
-    currency: (process.env.DEVIR_PRICE_CURRENCY ?? raw.currency ?? "EUR").trim().toUpperCase(),
+    currency: (process.env.DEVIR_PRICE_CURRENCY ?? raw.currency ?? "EUR")
+      .trim()
+      .toUpperCase(),
     vatRate: readRatioEnv("DEVIR_PRICE_VAT_RATE", raw.vatRate ?? 0.21, 0, 1),
     costIncludesVat: readBooleanEnv(
       "DEVIR_PRICE_COST_INCLUDES_VAT",
@@ -344,7 +397,8 @@ async function loadPricingConfig(): Promise<PricingConfig> {
     requireCategoryMargin: raw.requireCategoryMargin ?? true,
     categories: raw.categories ?? [],
   };
-  if (!config.currency) throw new Error("La moneda de precios no puede estar vacía.");
+  if (!config.currency)
+    throw new Error("La moneda de precios no puede estar vacía.");
   for (const category of config.categories) {
     if (category.targetMargin !== null) {
       assertRatio(`Margen de ${category.key}`, category.targetMargin, 0.95);
@@ -368,10 +422,15 @@ function addVariant(
   bySku.set(sku, { product, variant });
 }
 
-async function loadProductVariants(product: SpreeProduct): Promise<SpreeVariant[]> {
+async function loadProductVariants(
+  product: SpreeProduct,
+): Promise<SpreeVariant[]> {
   const variants: SpreeVariant[] = [];
   for (let page = 1; page <= maxPages; page += 1) {
-    const params = new URLSearchParams({ page: String(page), limit: String(pageSize) });
+    const params = new URLSearchParams({
+      page: String(page),
+      limit: String(pageSize),
+    });
     const response = await spreeGet<SpreeListResponse<SpreeVariant>>(
       `/products/${encodeURIComponent(product.id)}/variants?${params}`,
     );
@@ -385,11 +444,19 @@ async function loadProductVariants(product: SpreeProduct): Promise<SpreeVariant[
 async function loadSpreeVariants(): Promise<
   Map<string, { product: SpreeProduct; variant: SpreeVariant }>
 > {
-  const bySku = new Map<string, { product: SpreeProduct; variant: SpreeVariant }>();
+  const bySku = new Map<
+    string,
+    { product: SpreeProduct; variant: SpreeVariant }
+  >();
   let productCount = 0;
   for (let page = 1; page <= maxPages; page += 1) {
-    const params = new URLSearchParams({ page: String(page), limit: String(pageSize) });
-    const response = await spreeGet<SpreeListResponse<SpreeProduct>>(`/products?${params}`);
+    const params = new URLSearchParams({
+      page: String(page),
+      limit: String(pageSize),
+    });
+    const response = await spreeGet<SpreeListResponse<SpreeProduct>>(
+      `/products?${params}`,
+    );
     for (const product of response.data ?? []) {
       productCount += 1;
       const variants = await loadProductVariants(product);
@@ -424,12 +491,13 @@ function resolvePricing({
   }
 
   const categoryMargin = category?.targetMargin ?? null;
-  const targetMargin = explicitMargin ?? categoryMargin ?? config.defaultTargetMargin;
+  const targetMargin =
+    explicitMargin ?? categoryMargin ?? config.defaultTargetMargin;
   const ruleSource =
     explicitMargin !== null && explicitMargin !== undefined
-      ? explicitMarginSource ?? "operator_margin"
+      ? (explicitMarginSource ?? "operator_margin")
       : categoryMargin !== null
-        ? category?.marginSource ?? `category:${category?.key}`
+        ? (category?.marginSource ?? `category:${category?.key}`)
         : "default_reference";
 
   if (!category) reasons.push("category_unclassified");
@@ -442,7 +510,8 @@ function resolvePricing({
   ) {
     reasons.push("category_margin_unconfigured");
   }
-  if (!purchasePrice || purchasePrice <= 0) reasons.push("missing_purchase_price");
+  if (!purchasePrice || purchasePrice <= 0)
+    reasons.push("missing_purchase_price");
 
   const pricing = calculateRetailPrice({
     purchasePrice,
@@ -481,13 +550,20 @@ function makePlanItem({
 }): ImportPlanItem {
   const match = spreeBySku.get(sku);
   const approved = decision?.approved === true && reasons.length === 0;
-  const status: ReviewStatus = approved ? "approved" : reasons.length > 0 ? "review_required" : "auto";
-  const current = match ? getVariantMoney(match.variant, config.currency) : null;
+  const status: ReviewStatus = approved
+    ? "approved"
+    : reasons.length > 0
+      ? "review_required"
+      : "auto";
+  const current = match
+    ? getVariantMoney(match.variant, config.currency)
+    : null;
 
   return {
     status,
     reviewReasons: reasons,
-    action: decision?.mode === "skip" ? "skip" : match ? "update" : "create_draft",
+    action:
+      decision?.mode === "skip" ? "skip" : match ? "update" : "create_draft",
     supplierSku: supplier.sku,
     sku,
     name,
@@ -497,7 +573,10 @@ function makePlanItem({
     availability: supplier.availability,
     releaseDate: supplier.releaseDate,
     pricing: pricing
-      ? { ...pricing, purchasePrice: roundCurrency(purchasePrice ?? pricing.purchasePrice) }
+      ? {
+          ...pricing,
+          purchasePrice: roundCurrency(purchasePrice ?? pricing.purchasePrice),
+        }
       : null,
     spree: match
       ? {
@@ -521,41 +600,58 @@ async function productMarginOverride(
   if (!match) return { margin: null };
   if (cache.has(match.product.id)) {
     const margin = cache.get(match.product.id) ?? null;
-    return { margin, ...(margin === null ? {} : { source: "spree_product:" + match.product.id }) };
+    return {
+      margin,
+      ...(margin === null
+        ? {}
+        : { source: "spree_product:" + match.product.id }),
+    };
   }
   try {
     const margin = numberField(
       await customFields("products", match.product.id),
       "pricing.target_margin",
     );
-    const valid = margin !== null && margin >= 0 && margin < 0.95 ? margin : null;
+    const valid =
+      margin !== null && margin >= 0 && margin < 0.95 ? margin : null;
     cache.set(match.product.id, valid);
-    return { margin: valid, ...(valid === null ? {} : { source: "spree_product:" + match.product.id }) };
+    return {
+      margin: valid,
+      ...(valid === null
+        ? {}
+        : { source: "spree_product:" + match.product.id }),
+    };
   } catch {
     cache.set(match.product.id, null);
     return { margin: null };
   }
 }
 
-function validateSplitDecision(product: DevirProduct, decision: OperatorDecision): string[] {
+function validateSplitDecision(
+  product: DevirProduct,
+  decision: OperatorDecision,
+): string[] {
   const reasons: string[] = [];
   const children = decision.children ?? [];
   if (children.length < 2) reasons.push("split_children_missing");
   const childSkus = new Set<string>();
   let allocated = 0;
   for (const child of children) {
-    if (!child.sku.trim() || !child.name.trim()) reasons.push("split_child_identity_missing");
+    if (!child.sku.trim() || !child.name.trim())
+      reasons.push("split_child_identity_missing");
     if (!Number.isFinite(child.allocatedCost) || child.allocatedCost <= 0) {
       reasons.push("split_child_cost_invalid");
     } else {
       allocated += child.allocatedCost;
     }
-    if (child.sku && childSkus.has(child.sku)) reasons.push("split_child_sku_duplicated");
+    if (child.sku && childSkus.has(child.sku))
+      reasons.push("split_child_sku_duplicated");
     childSkus.add(child.sku);
   }
   if (
     product.purchasePrice !== null &&
-    Math.abs(roundCurrency(allocated) - roundCurrency(product.purchasePrice)) > 0.01
+    Math.abs(roundCurrency(allocated) - roundCurrency(product.purchasePrice)) >
+      0.01
   ) {
     reasons.push("split_cost_total_mismatch");
   }
@@ -565,14 +661,20 @@ function validateSplitDecision(product: DevirProduct, decision: OperatorDecision
 async function main(): Promise<void> {
   const config = await loadPricingConfig();
   await attachCategoryMargins(config.categories);
-  const catalog = JSON.parse(await readFile(catalogPath, "utf8")) as { products: DevirProduct[] };
+  const catalog = JSON.parse(await readFile(catalogPath, "utf8")) as {
+    products: DevirProduct[];
+  };
   const products = catalog.products ?? [];
-  if (!products.length) throw new Error(`El catálogo Devir está vacío: ${catalogPath}`);
+  if (!products.length)
+    throw new Error(`El catálogo Devir está vacío: ${catalogPath}`);
 
-  const decisions = await readJsonIfExists<OperatorDecisionFile>(decisionsPath, {
-    version: 1,
-    decisions: {},
-  });
+  const decisions = await readJsonIfExists<OperatorDecisionFile>(
+    decisionsPath,
+    {
+      version: 1,
+      decisions: {},
+    },
+  );
   const decisionBySku = decisions.decisions ?? {};
 
   const seenDevirSkus = new Set<string>();
@@ -592,7 +694,9 @@ async function main(): Promise<void> {
   console.log(
     `Precio base: coste Devir ${config.costIncludesVat ? "con IVA" : "sin IVA"}; IVA ${formatPercent(config.vatRate)}; margen fallback ${formatPercent(config.defaultTargetMargin)}; redondeo al siguiente .99; moneda ${config.currency}.`,
   );
-  console.log("Prioridad: operador → override de producto en Spree → categoría Spree/local → fallback de referencia.\n");
+  console.log(
+    "Prioridad: operador → override de producto en Spree → categoría Spree/local → fallback de referencia.\n",
+  );
 
   for (const supplier of products) {
     const inferredCategory = inferCategory(supplier, config);
@@ -605,8 +709,13 @@ async function main(): Promise<void> {
       const splitPlan: ImportPlanItem[] = [];
       for (const child of children) {
         const category =
-          findCategory(config, child.category ?? decision.category) ?? inferredCategory;
-        const productOverride = await productMarginOverride(child.sku, spreeBySku, productMarginCache);
+          findCategory(config, child.category ?? decision.category) ??
+          inferredCategory;
+        const productOverride = await productMarginOverride(
+          child.sku,
+          spreeBySku,
+          productMarginCache,
+        );
         const inheritedMargin = child.targetMargin ?? decision.targetMargin;
         const childDecision: OperatorDecision = {
           approved: decision.approved,
@@ -622,7 +731,9 @@ async function main(): Promise<void> {
           decision: childDecision,
           config,
           explicitMarginSource:
-            inheritedMargin != null ? "operator_margin" : productOverride.source,
+            inheritedMargin != null
+              ? "operator_margin"
+              : productOverride.source,
         });
         const allReasons = Array.from(new Set([...splitReasons, ...reasons]));
         const item = makePlanItem({
@@ -666,8 +777,13 @@ async function main(): Promise<void> {
       continue;
     }
 
-    const category = findCategory(config, decision?.category) ?? inferredCategory;
-    const productOverride = await productMarginOverride(supplier.sku, spreeBySku, productMarginCache);
+    const category =
+      findCategory(config, decision?.category) ?? inferredCategory;
+    const productOverride = await productMarginOverride(
+      supplier.sku,
+      spreeBySku,
+      productMarginCache,
+    );
     const effectiveDecision: OperatorDecision | undefined =
       decision?.targetMargin != null || productOverride.margin == null
         ? decision
@@ -678,9 +794,12 @@ async function main(): Promise<void> {
       decision: effectiveDecision,
       config,
       explicitMarginSource:
-        decision?.targetMargin != null ? "operator_margin" : productOverride.source,
+        decision?.targetMargin != null
+          ? "operator_margin"
+          : productOverride.source,
     });
-    if (packCandidate && !decision?.approved) reasons.unshift("pack_requires_operator_split");
+    if (packCandidate && !decision?.approved)
+      reasons.unshift("pack_requires_operator_split");
     if (decision?.mode === "skip" && decision.approved) reasons.length = 0;
 
     const item = makePlanItem({
@@ -723,7 +842,8 @@ async function main(): Promise<void> {
   }
 
   for (const item of plan) {
-    const prefix = item.status === "review_required" ? "REVIEW" : item.status.toUpperCase();
+    const prefix =
+      item.status === "review_required" ? "REVIEW" : item.status.toUpperCase();
     console.log(`${prefix.padEnd(8)} ${item.sku} — ${item.name}`);
     console.log(
       `  ${item.action.toUpperCase()} · categoría ${item.category ?? "sin clasificar"}${item.reviewReasons.length ? ` · ${item.reviewReasons.join(", ")}` : ""}`,
@@ -743,7 +863,8 @@ async function main(): Promise<void> {
   const summary = {
     auto: plan.filter((item) => item.status === "auto").length,
     approved: plan.filter((item) => item.status === "approved").length,
-    reviewRequired: plan.filter((item) => item.status === "review_required").length,
+    reviewRequired: plan.filter((item) => item.status === "review_required")
+      .length,
     createDraft: plan.filter((item) => item.action === "create_draft").length,
     update: plan.filter((item) => item.action === "update").length,
     skip: plan.filter((item) => item.action === "skip").length,
@@ -794,7 +915,9 @@ async function main(): Promise<void> {
   console.log(`Plan: ${planPath}`);
   console.log(`Cola de revisión: ${reviewQueuePath}`);
   if (reviewQueue.length > 0) {
-    console.log("Ejecuta `pnpm devir:review` para preparar/actualizar tus decisiones de operador.");
+    console.log(
+      "Ejecuta `pnpm devir:review` para preparar/actualizar tus decisiones de operador.",
+    );
   }
   console.log(
     "No se han enviado PATCH/POST/DELETE y no se han escrito productos, precios, stock ni estados.",

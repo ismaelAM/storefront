@@ -9,19 +9,23 @@ export function shouldAutoPublishCatalogProduct(input: {
   review: boolean;
   availability: CatalogAvailability;
 }): boolean {
-  return !input.review &&
-    (input.availability === "available" || input.availability === "preorder");
+  return (
+    !input.review &&
+    (input.availability === "available" || input.availability === "preorder")
+  );
 }
 
 export function isAutoManagedPrice(input: {
   currentPrice: number | null;
   lastAutoPrice: number | null;
 }): boolean {
-  return input.currentPrice !== null &&
+  return (
+    input.currentPrice !== null &&
     input.lastAutoPrice !== null &&
     Number.isFinite(input.currentPrice) &&
     Number.isFinite(input.lastAutoPrice) &&
-    Math.abs(input.currentPrice - input.lastAutoPrice) < 0.005;
+    Math.abs(input.currentPrice - input.lastAutoPrice) < 0.005
+  );
 }
 
 export function canWriteManagedCatalogPrice(input: {
@@ -33,9 +37,11 @@ export function canWriteManagedCatalogPrice(input: {
 }): boolean {
   if (input.createdVariant) return true;
   if (!input.managed) return false;
-  return input.forceDraftForSplit ||
+  return (
+    input.forceDraftForSplit ||
     isAutoManagedPrice({
       currentPrice: input.currentPrice,
       lastAutoPrice: input.lastAutoPrice,
-    });
+    })
+  );
 }

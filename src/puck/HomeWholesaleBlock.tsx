@@ -67,8 +67,14 @@ export function HomeWholesaleBlock({
               {primaryButtonText && (
                 <Link
                   href={primaryUrl}
-                  target={isExternalPuckUrl(primaryButtonUrl) ? "_blank" : undefined}
-                  rel={isExternalPuckUrl(primaryButtonUrl) ? "noopener noreferrer" : undefined}
+                  target={
+                    isExternalPuckUrl(primaryButtonUrl) ? "_blank" : undefined
+                  }
+                  rel={
+                    isExternalPuckUrl(primaryButtonUrl)
+                      ? "noopener noreferrer"
+                      : undefined
+                  }
                   className="inline-flex w-full items-center justify-center rounded-md bg-white px-6 py-3 font-semibold text-slate-900 transition-opacity hover:opacity-80 sm:w-auto"
                 >
                   {primaryButtonText}
@@ -78,8 +84,14 @@ export function HomeWholesaleBlock({
               {secondaryButtonText && (
                 <Link
                   href={secondaryUrl}
-                  target={isExternalPuckUrl(secondaryButtonUrl) ? "_blank" : undefined}
-                  rel={isExternalPuckUrl(secondaryButtonUrl) ? "noopener noreferrer" : undefined}
+                  target={
+                    isExternalPuckUrl(secondaryButtonUrl) ? "_blank" : undefined
+                  }
+                  rel={
+                    isExternalPuckUrl(secondaryButtonUrl)
+                      ? "noopener noreferrer"
+                      : undefined
+                  }
                   className="inline-flex w-full items-center justify-center rounded-md border border-slate-600 bg-transparent px-6 py-3 font-semibold text-slate-100 transition-opacity hover:opacity-80 sm:w-auto"
                 >
                   {secondaryButtonText}
@@ -101,7 +113,9 @@ export function HomeWholesaleBlock({
                   className="rounded-lg border border-slate-800 bg-slate-800/40 px-5 py-4"
                 >
                   {benefit.title && (
-                    <h3 className="font-semibold text-white">{benefit.title}</h3>
+                    <h3 className="font-semibold text-white">
+                      {benefit.title}
+                    </h3>
                   )}
                   {benefit.description && (
                     <p className="mt-1 text-sm leading-6 text-slate-300">

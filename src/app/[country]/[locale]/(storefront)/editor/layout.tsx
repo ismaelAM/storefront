@@ -1,4 +1,7 @@
-import { authenticatePuckEditor, isPuckEditorAuthenticated } from "@/lib/puck/editor-auth";
+import {
+  authenticatePuckEditor,
+  isPuckEditorAuthenticated,
+} from "@/lib/puck/editor-auth";
 
 async function login(formData: FormData): Promise<void> {
   "use server";
@@ -19,7 +22,9 @@ export default async function EditorLayout({
       <main className="flex min-h-screen items-center justify-center bg-background px-6">
         <div className="w-full max-w-sm rounded-2xl border bg-card p-6 shadow-sm">
           <div className="mb-6">
-            <p className="text-sm font-medium text-muted-foreground">BisonTCG</p>
+            <p className="text-sm font-medium text-muted-foreground">
+              BisonTCG
+            </p>
             <h1 className="mt-1 text-2xl font-semibold">Editor protegido</h1>
             <p className="mt-2 text-sm text-muted-foreground">
               Introduce la contraseña de administrador para acceder a Puck.

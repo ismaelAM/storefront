@@ -9,7 +9,9 @@ interface PuckProductsContextValue {
   basePath: string;
 }
 
-const PuckProductsContext = createContext<PuckProductsContextValue | null>(null);
+const PuckProductsContext = createContext<PuckProductsContextValue | null>(
+  null,
+);
 
 interface PuckProductsProviderProps {
   products: Product[];
@@ -18,7 +20,12 @@ interface PuckProductsProviderProps {
   children: ReactNode;
 }
 
-export function PuckProductsProvider({ products, categories = [], basePath, children }: PuckProductsProviderProps) {
+export function PuckProductsProvider({
+  products,
+  categories = [],
+  basePath,
+  children,
+}: PuckProductsProviderProps) {
   return (
     <PuckProductsContext.Provider value={{ products, categories, basePath }}>
       {children}
@@ -28,6 +35,7 @@ export function PuckProductsProvider({ products, categories = [], basePath, chil
 
 export function usePuckProducts() {
   const context = useContext(PuckProductsContext);
-  if (!context) throw new Error("usePuckProducts must be used inside PuckProductsProvider");
+  if (!context)
+    throw new Error("usePuckProducts must be used inside PuckProductsProvider");
   return context;
 }

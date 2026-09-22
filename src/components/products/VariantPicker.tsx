@@ -242,10 +242,7 @@ export function VariantPicker({
     const displayValue =
       label && !TECHNICAL_ISBN_VALUE.test(label) ? label : optionValueName;
 
-    if (
-      /tomo|volumen/i.test(optionType.label) &&
-      /^\d+$/.test(displayValue)
-    ) {
+    if (/tomo|volumen/i.test(optionType.label) && /^\d+$/.test(displayValue)) {
       return String(Number(displayValue));
     }
 

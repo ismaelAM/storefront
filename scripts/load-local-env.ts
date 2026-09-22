@@ -1,5 +1,5 @@
-import { loadEnvFile } from "node:process";
 import { resolve } from "node:path";
+import { loadEnvFile } from "node:process";
 
 export function loadLocalEnv(): string | null {
   const envPath = resolve(process.env.DEVIR_ENV_FILE ?? ".env.local");

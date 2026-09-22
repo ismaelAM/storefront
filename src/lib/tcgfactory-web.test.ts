@@ -25,18 +25,24 @@ describe("TcgFactory public web parser", () => {
   });
 
   it("maps the supplier accessory taxonomy to storefront categories", () => {
-    expect(tcgFactoryAccessoryCategory("Fundas Standard Matte", "Fundas Standard"))
-      .toBe("accesorios/fundas-standard");
-    expect(tcgFactoryAccessoryCategory("Caja de mazo Charizard", "Caja de mazo"))
-      .toBe("accesorios/cajas-mazo");
-    expect(tcgFactoryAccessoryCategory("Tapete Pikachu", "Tapetes"))
-      .toBe("accesorios/tapetes");
-    expect(tcgFactoryAccessoryCategory("Set d20", "Dados"))
-      .toBe("accesorios/dados");
+    expect(
+      tcgFactoryAccessoryCategory("Fundas Standard Matte", "Fundas Standard"),
+    ).toBe("accesorios/fundas-standard");
+    expect(
+      tcgFactoryAccessoryCategory("Caja de mazo Charizard", "Caja de mazo"),
+    ).toBe("accesorios/cajas-mazo");
+    expect(tcgFactoryAccessoryCategory("Tapete Pikachu", "Tapetes")).toBe(
+      "accesorios/tapetes",
+    );
+    expect(tcgFactoryAccessoryCategory("Set d20", "Dados")).toBe(
+      "accesorios/dados",
+    );
   });
 
   it("treats replenishment as unavailable instead of inventing stock", () => {
-    expect(mapTcgFactoryPublicAvailability("En reposición")).toBe("unavailable");
+    expect(mapTcgFactoryPublicAvailability("En reposición")).toBe(
+      "unavailable",
+    );
     expect(mapTcgFactoryPublicAvailability("Disponible")).toBe("available");
     expect(mapTcgFactoryPublicAvailability("Preventa")).toBe("preorder");
   });

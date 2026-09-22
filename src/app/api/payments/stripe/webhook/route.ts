@@ -5,11 +5,13 @@ import {
   reconcileStripePaymentToSpree,
 } from "@/lib/payments/stripe-live";
 
-function verifyStripeSignature(payload: string, header: string, secret: string) {
+function verifyStripeSignature(
+  payload: string,
+  header: string,
+  secret: string,
+) {
   const parts = header.split(",");
-  const timestamp = parts
-    .find((part) => part.startsWith("t="))
-    ?.slice(2);
+  const timestamp = parts.find((part) => part.startsWith("t="))?.slice(2);
   const signatures = parts
     .filter((part) => part.startsWith("v1="))
     .map((part) => part.slice(3));
@@ -59,7 +61,10 @@ export async function POST(request: Request) {
         await reconcileStripePaymentToSpree(intent);
       } catch (error) {
         console.error("Stripe webhook reconciliation failed", error);
-        return NextResponse.json({ error: "Reconciliation failed" }, { status: 500 });
+        return NextResponse.json(
+          { error: "Reconciliation failed" },
+          { status: 500 },
+        );
       }
     }
   }

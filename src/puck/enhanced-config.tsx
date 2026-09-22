@@ -7,16 +7,16 @@ import {
 } from "@/components/puck/PuckProductGrid";
 import { config as baseConfig } from "@/puck/config";
 import {
-  RealProductShowcase,
-  type RealProductShowcaseProps,
-} from "@/puck/RealProductBlocks";
-import {
   categoryPickerField,
   colorField,
   productPickerField,
   variantPickerField,
 } from "@/puck/fields";
 import { DEFAULT_PALETTE_VALUES } from "@/puck/palette";
+import {
+  RealProductShowcase,
+  type RealProductShowcaseProps,
+} from "@/puck/RealProductBlocks";
 
 const {
   Carousel: _Carousel,

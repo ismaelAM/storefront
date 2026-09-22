@@ -106,10 +106,10 @@ export function FulfillmentBlock({
           </Alert>
         )}
         {fulfillment.status !== "canceled" && !fulfillment.tracking && (
-            <div className="mt-3 p-3 bg-gray-50 rounded-xl text-sm text-gray-500 text-center">
-              {t("noTrackingInfo")}
-            </div>
-          )}
+          <div className="mt-3 p-3 bg-gray-50 rounded-xl text-sm text-gray-500 text-center">
+            {t("noTrackingInfo")}
+          </div>
+        )}
       </div>
 
       <div className="divide-y divide-gray-200">

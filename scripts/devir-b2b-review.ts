@@ -45,7 +45,8 @@ const reviewQueuePath = resolve(
   process.env.DEVIR_B2B_REVIEW_QUEUE ?? ".local/devir-b2b-review-queue.json",
 );
 const decisionsPath = resolve(
-  process.env.DEVIR_B2B_OPERATOR_DECISIONS ?? ".local/devir-b2b-operator-decisions.json",
+  process.env.DEVIR_B2B_OPERATOR_DECISIONS ??
+    ".local/devir-b2b-operator-decisions.json",
 );
 
 async function readJsonIfExists<T>(path: string, fallback: T): Promise<T> {
@@ -58,7 +59,9 @@ async function readJsonIfExists<T>(path: string, fallback: T): Promise<T> {
 }
 
 async function main(): Promise<void> {
-  const queue = JSON.parse(await readFile(reviewQueuePath, "utf8")) as ReviewQueueFile;
+  const queue = JSON.parse(
+    await readFile(reviewQueuePath, "utf8"),
+  ) as ReviewQueueFile;
   const pending = queue.pending ?? [];
   const decisions = await readJsonIfExists<DecisionFile>(decisionsPath, {
     version: 1,
@@ -78,16 +81,30 @@ async function main(): Promise<void> {
   await writeFile(decisionsPath, JSON.stringify(decisions, null, 2));
 
   console.log(`Decisiones de operador: ${decisionsPath}`);
-  console.log(`${pending.length} producto(s) requieren revisión; ${created} entrada(s) nuevas preparadas.`);
+  console.log(
+    `${pending.length} producto(s) requieren revisión; ${created} entrada(s) nuevas preparadas.`,
+  );
   console.log("");
   console.log("Flujo:");
-  console.log("  1. Abre el JSON de decisiones y, para márgenes globales, `.local/devir-pricing-rules.json`.");
-  console.log("  2. Para un producto normal, ajusta category/targetMargin o retailPrice y pon approved=true.");
-  console.log("  3. Para un pack, deja mode=split y rellena children con SKU, nombre y allocatedCost.");
-  console.log("  4. La suma de allocatedCost debe coincidir con el coste del pack de Devir.");
-  console.log("  5. Ejecuta otra vez `pnpm devir:import:dry-run` para validar el plan.");
+  console.log(
+    "  1. Abre el JSON de decisiones y, para márgenes globales, `.local/devir-pricing-rules.json`.",
+  );
+  console.log(
+    "  2. Para un producto normal, ajusta category/targetMargin o retailPrice y pon approved=true.",
+  );
+  console.log(
+    "  3. Para un pack, deja mode=split y rellena children con SKU, nombre y allocatedCost.",
+  );
+  console.log(
+    "  4. La suma de allocatedCost debe coincidir con el coste del pack de Devir.",
+  );
+  console.log(
+    "  5. Ejecuta otra vez `pnpm devir:import:dry-run` para validar el plan.",
+  );
   console.log("");
-  console.log("`approved=true` solo aprueba la propuesta; este flujo todavía NO escribe en Spree.");
+  console.log(
+    "`approved=true` solo aprueba la propuesta; este flujo todavía NO escribe en Spree.",
+  );
 }
 
 main().catch((error) => {

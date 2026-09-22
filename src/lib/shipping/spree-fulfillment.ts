@@ -46,10 +46,7 @@ function usableEnv(
 export function getSpreeShippingConfigurationStatus(
   env: SpreeAdminEnvironment = process.env,
 ) {
-  const baseUrl = usableEnv(env, [
-    "SPREE_API_URL",
-    "DEVIR_B2B_SPREE_API_URL",
-  ]);
+  const baseUrl = usableEnv(env, ["SPREE_API_URL", "DEVIR_B2B_SPREE_API_URL"]);
   const apiKey = usableEnv(env, [
     "SPREE_ADMIN_API_KEY",
     "DEVIR_B2B_SPREE_ADMIN_API_KEY",
@@ -61,9 +58,10 @@ export function getSpreeShippingConfigurationStatus(
   };
 }
 
-function spreeAdminConfig(
-  env: SpreeAdminEnvironment = process.env,
-): { baseUrl: string; apiKey: string } {
+function spreeAdminConfig(env: SpreeAdminEnvironment = process.env): {
+  baseUrl: string;
+  apiKey: string;
+} {
   const rawBaseUrl =
     usableEnv(env, ["SPREE_API_URL", "DEVIR_B2B_SPREE_API_URL"]) ??
     "https://bisontcg.spree.sh";

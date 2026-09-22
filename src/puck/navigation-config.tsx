@@ -1,7 +1,7 @@
 "use client";
 
-import type { Category } from "@spree/sdk";
 import type { Config } from "@puckeditor/core";
+import type { Category } from "@spree/sdk";
 
 export type NavigationItem = {
   categoryPermalink: string;
@@ -29,11 +29,18 @@ function flattenCategories(categories: Category[], output: Category[] = []) {
   return output;
 }
 
-export function createNavigationConfig(categories: Category[]): Config<{ Navigation: NavigationProps }> {
-  const options = flattenCategories(categories).map((category) => ({ label: category.name, value: category.permalink }));
+export function createNavigationConfig(
+  categories: Category[],
+): Config<{ Navigation: NavigationProps }> {
+  const options = flattenCategories(categories).map((category) => ({
+    label: category.name,
+    value: category.permalink,
+  }));
 
   return {
-    categories: { content: { title: "Barra lateral", components: ["Navigation"] } },
+    categories: {
+      content: { title: "Barra lateral", components: ["Navigation"] },
+    },
     components: {
       Navigation: {
         label: "Barra lateral",
@@ -73,12 +80,31 @@ export function createNavigationConfig(categories: Category[]): Config<{ Navigat
           items: {
             type: "array",
             arrayFields: {
-              categoryPermalink: { type: "select", label: "Categoría", options },
-              labelOverride: { type: "text", label: "Nombre mostrado (opcional)" },
-              visible: { type: "radio", label: "Visible", options: [{ label: "Sí", value: true }, { label: "No", value: false }] },
+              categoryPermalink: {
+                type: "select",
+                label: "Categoría",
+                options,
+              },
+              labelOverride: {
+                type: "text",
+                label: "Nombre mostrado (opcional)",
+              },
+              visible: {
+                type: "radio",
+                label: "Visible",
+                options: [
+                  { label: "Sí", value: true },
+                  { label: "No", value: false },
+                ],
+              },
             },
-            getItemSummary: (item) => item.labelOverride || item.categoryPermalink || "Categoría",
-            defaultItemProps: { categoryPermalink: options[0]?.value ?? "", labelOverride: "", visible: true },
+            getItemSummary: (item) =>
+              item.labelOverride || item.categoryPermalink || "Categoría",
+            defaultItemProps: {
+              categoryPermalink: options[0]?.value ?? "",
+              labelOverride: "",
+              visible: true,
+            },
           },
         },
         defaultProps: {
@@ -89,20 +115,59 @@ export function createNavigationConfig(categories: Category[]): Config<{ Navigat
           width: "medium",
           itemRadius: "medium",
           itemSpacing: "normal",
-          items: categories.map((category) => ({ categoryPermalink: category.permalink, labelOverride: "", visible: true })),
+          items: categories.map((category) => ({
+            categoryPermalink: category.permalink,
+            labelOverride: "",
+            visible: true,
+          })),
         },
-        render: ({ items, backgroundColor, textColor, hoverBackgroundColor, hoverTextColor, width, itemRadius, itemSpacing }) => {
-          const widthClass = width === "small" ? "max-w-xs" : width === "large" ? "max-w-lg" : "max-w-md";
-          const radiusClass = itemRadius === "none" ? "rounded-none" : itemRadius === "small" ? "rounded-sm" : itemRadius === "large" ? "rounded-xl" : "rounded-md";
-          const spacingClass = itemSpacing === "compact" ? "gap-0.5" : itemSpacing === "large" ? "gap-3" : "gap-1.5";
+        render: ({
+          items,
+          backgroundColor,
+          textColor,
+          hoverBackgroundColor,
+          hoverTextColor,
+          width,
+          itemRadius,
+          itemSpacing,
+        }) => {
+          const widthClass =
+            width === "small"
+              ? "max-w-xs"
+              : width === "large"
+                ? "max-w-lg"
+                : "max-w-md";
+          const radiusClass =
+            itemRadius === "none"
+              ? "rounded-none"
+              : itemRadius === "small"
+                ? "rounded-sm"
+                : itemRadius === "large"
+                  ? "rounded-xl"
+                  : "rounded-md";
+          const spacingClass =
+            itemSpacing === "compact"
+              ? "gap-0.5"
+              : itemSpacing === "large"
+                ? "gap-3"
+                : "gap-1.5";
           return (
             <nav className={`${widthClass} rounded-xl border bg-white p-4`}>
               <div className={`flex flex-col ${spacingClass}`}>
-                {items.filter((item) => item.visible).map((item) => (
-                  <div key={item.categoryPermalink} className={`${radiusClass} px-3 py-2 text-sm`} style={{ color: textColor, backgroundColor: hoverBackgroundColor }}>
-                    {item.labelOverride || item.categoryPermalink}
-                  </div>
-                ))}
+                {items
+                  .filter((item) => item.visible)
+                  .map((item) => (
+                    <div
+                      key={item.categoryPermalink}
+                      className={`${radiusClass} px-3 py-2 text-sm`}
+                      style={{
+                        color: textColor,
+                        backgroundColor: hoverBackgroundColor,
+                      }}
+                    >
+                      {item.labelOverride || item.categoryPermalink}
+                    </div>
+                  ))}
               </div>
             </nav>
           );

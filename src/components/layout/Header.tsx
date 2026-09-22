@@ -8,8 +8,11 @@ import type { CSSProperties, ReactNode } from "react";
 import { CartButton } from "@/components/layout/CartButton";
 import { SearchToggle } from "@/components/layout/SearchToggle";
 import { Button } from "@/components/ui/button";
+import {
+  getSiteAppearance,
+  type SiteAppearance,
+} from "@/lib/puck/get-site-appearance";
 import { isWholesaleEnabled } from "@/lib/spree";
-import { getSiteAppearance, type SiteAppearance } from "@/lib/puck/get-site-appearance";
 import { getStoreName } from "@/lib/store";
 
 const LazyMobileMenu = dynamic(
@@ -48,7 +51,10 @@ interface HeaderMobileMenuProps {
   basePath: string;
 }
 
-export function HeaderMobileMenu({ rootCategories, basePath }: HeaderMobileMenuProps) {
+export function HeaderMobileMenu({
+  rootCategories,
+  basePath,
+}: HeaderMobileMenuProps) {
   return (
     <LazyMobileMenu
       rootCategories={rootCategories}
@@ -58,25 +64,36 @@ export function HeaderMobileMenu({ rootCategories, basePath }: HeaderMobileMenuP
   );
 }
 
-export async function Header({ basePath, locale, mobileNavigation, appearance }: HeaderProps) {
+export async function Header({
+  basePath,
+  locale,
+  mobileNavigation,
+  appearance,
+}: HeaderProps) {
   const t = await getTranslations({ locale, namespace: "header" });
   const wholesaleEnabled = isWholesaleEnabled();
   const colors = appearance ?? (await getSiteAppearance());
 
   return (
     <div
-      style={{
-        backgroundColor: colors.headerBackground,
-        color: colors.headerText,
-        borderBottom: `1px solid ${colors.headerBorder}`,
-        "--header-background": colors.headerBackground,
-      } as CSSProperties}
+      style={
+        {
+          backgroundColor: colors.headerBackground,
+          color: colors.headerText,
+          borderBottom: `1px solid ${colors.headerBorder}`,
+          "--header-background": colors.headerBackground,
+        } as CSSProperties
+      }
     >
       <SearchToggle
         basePath={basePath}
         left={mobileNavigation}
         center={
-          <Link href={basePath || "/"} className="flex items-center min-w-0" style={{ color: colors.headerText }}>
+          <Link
+            href={basePath || "/"}
+            className="flex items-center min-w-0"
+            style={{ color: colors.headerText }}
+          >
             <Image
               src="/spree.png"
               alt={storeName}
@@ -106,7 +123,12 @@ export async function Header({ basePath, locale, mobileNavigation, appearance }:
         rightEnd={
           <>
             <div className="hidden md:block">
-              <Button variant="ghost" size="icon-lg" asChild style={{ color: colors.headerText }}>
+              <Button
+                variant="ghost"
+                size="icon-lg"
+                asChild
+                style={{ color: colors.headerText }}
+              >
                 <Link href={`${basePath}/account`} aria-label={t("account")}>
                   <User className="size-5" />
                 </Link>

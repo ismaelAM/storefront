@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import { getTranslations } from "next-intl/server";
 import { redirect } from "next/navigation";
+import { getTranslations } from "next-intl/server";
 import { ProductListing } from "@/components/products/ProductListing";
 import { resolveCurrency } from "@/lib/data/markets";
 import { getProductFilters, getProducts } from "@/lib/data/products";

@@ -9,17 +9,24 @@ interface HomeFeaturedProductsBlockProps {
   columns: "2" | "3" | "4";
 }
 
-export function HomeFeaturedProductsBlock({ title, columns }: HomeFeaturedProductsBlockProps) {
+export function HomeFeaturedProductsBlock({
+  title,
+  columns,
+}: HomeFeaturedProductsBlockProps) {
   const { products, basePath } = usePuckProducts();
   const gridClass = getPuckGridColumnsClass(columns);
 
   return (
     <section className="featured-products container mx-auto px-4 py-10 sm:px-6 sm:py-14 lg:px-8 lg:py-16">
       <div className="mb-6 sm:mb-8">
-        <h2 className="text-xl font-bold tracking-tight text-gray-900 sm:text-2xl">{title}</h2>
+        <h2 className="text-xl font-bold tracking-tight text-gray-900 sm:text-2xl">
+          {title}
+        </h2>
       </div>
       {products.length === 0 ? (
-        <div className="py-10 text-center sm:py-12"><p className="text-sm text-gray-500">No hay productos disponibles.</p></div>
+        <div className="py-10 text-center sm:py-12">
+          <p className="text-sm text-gray-500">No hay productos disponibles.</p>
+        </div>
       ) : (
         <div className={`grid gap-3 sm:gap-5 lg:gap-6 ${gridClass}`}>
           {products.map((product) => {
@@ -30,7 +37,9 @@ export function HomeFeaturedProductsBlock({ title, columns }: HomeFeaturedProduc
               product.original_price.display_amount !== price
                 ? product.original_price.display_amount
                 : "");
-            const productUrl = product.slug ? `${basePath}/products/${product.slug}` : `${basePath}/products`;
+            const productUrl = product.slug
+              ? `${basePath}/products/${product.slug}`
+              : `${basePath}/products`;
             const badge = product.preorder
               ? "Prereserva"
               : product.in_stock && comparePrice
@@ -40,7 +49,19 @@ export function HomeFeaturedProductsBlock({ title, columns }: HomeFeaturedProduc
                   : comparePrice
                     ? "Oferta"
                     : "";
-            return <ProductCard key={product.id} name={product.name} image={product.thumbnail_url || ""} price={price} comparePrice={comparePrice} url={productUrl} badge={badge} radiusClass={getPuckRadiusClass("medium")} aspectClass="aspect-square" />;
+            return (
+              <ProductCard
+                key={product.id}
+                name={product.name}
+                image={product.thumbnail_url || ""}
+                price={price}
+                comparePrice={comparePrice}
+                url={productUrl}
+                badge={badge}
+                radiusClass={getPuckRadiusClass("medium")}
+                aspectClass="aspect-square"
+              />
+            );
           })}
         </div>
       )}

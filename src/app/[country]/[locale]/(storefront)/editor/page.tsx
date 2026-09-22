@@ -6,7 +6,9 @@ import { getProducts } from "@/lib/data/products";
 import { getHomePageData } from "@/lib/puck/get-home-data";
 import { EditorClient } from "./EditorClient";
 
-interface EditorPageProps { params: Promise<{ country: string; locale: string }> }
+interface EditorPageProps {
+  params: Promise<{ country: string; locale: string }>;
+}
 
 export default async function EditorPage({ params }: EditorPageProps) {
   await connection();
@@ -15,8 +17,14 @@ export default async function EditorPage({ params }: EditorPageProps) {
   let categories: Category[] = [];
   try {
     const [productsResponse, categoriesResponse] = await Promise.all([
-      getProducts({ limit: 100, fields: PRODUCT_CARD_FIELDS, expand: ["variants"] }, "dtc"),
-      getCategories({ depth_eq: 0, expand: ["children.children"] }, { country, locale }),
+      getProducts(
+        { limit: 100, fields: PRODUCT_CARD_FIELDS, expand: ["variants"] },
+        "dtc",
+      ),
+      getCategories(
+        { depth_eq: 0, expand: ["children.children"] },
+        { country, locale },
+      ),
     ]);
     products = productsResponse.data ?? [];
     categories = categoriesResponse.data ?? [];
@@ -24,5 +32,13 @@ export default async function EditorPage({ params }: EditorPageProps) {
     console.error("Editor: failed to load catalog options", error);
   }
   const initialData = await getHomePageData();
-  return <EditorClient products={products} categories={categories} country={country} locale={locale} initialData={initialData} />;
+  return (
+    <EditorClient
+      products={products}
+      categories={categories}
+      country={country}
+      locale={locale}
+      initialData={initialData}
+    />
+  );
 }

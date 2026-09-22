@@ -59,8 +59,7 @@ function hash(value: string): number {
 
 function rotateStable<T extends { id: string }>(items: T[], seed: number): T[] {
   return [...items].sort(
-    (left, right) =>
-      hash(`${seed}:${left.id}`) - hash(`${seed}:${right.id}`),
+    (left, right) => hash(`${seed}:${left.id}`) - hash(`${seed}:${right.id}`),
   );
 }
 
@@ -123,9 +122,7 @@ export function buildHomeMerchandisingProducts(
   const sales = dedupe(
     (saleProducts as HomeProduct[]).filter(
       (product) =>
-        isLandingSafe(product) &&
-        isActualSale(product) &&
-        !product.preorder,
+        isLandingSafe(product) && isActualSale(product) && !product.preorder,
     ),
   );
   const preorders = dedupe(

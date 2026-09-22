@@ -1,8 +1,4 @@
-export type CorreosApi =
-  | "preregister"
-  | "labels"
-  | "trackpub"
-  | "requests";
+export type CorreosApi = "preregister" | "labels" | "trackpub" | "requests";
 
 export type CorreosEnvironment = Record<string, string | undefined>;
 
@@ -398,7 +394,6 @@ export function getCorreosClient(
 ): CorreosClient {
   return new CorreosClient(loadCorreosConfig(), fetch, tokenProvider);
 }
-
 
 export class EnvironmentCorreosIdTokenProvider
   implements CorreosAccessTokenProvider

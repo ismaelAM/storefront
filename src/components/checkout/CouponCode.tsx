@@ -185,9 +185,7 @@ export function CouponCode({
         </form>
       )}
 
-      {notice && (
-        <p className="text-xs text-emerald-700 mt-1.5">{notice}</p>
-      )}
+      {notice && <p className="text-xs text-emerald-700 mt-1.5">{notice}</p>}
       {error && <p className="text-xs text-red-600 mt-1.5">{error}</p>}
     </div>
   );

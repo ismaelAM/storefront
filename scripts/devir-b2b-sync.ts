@@ -25,10 +25,14 @@ interface DevirProduct {
 const baseUrl = process.env.DEVIR_B2B_BASE_URL ?? "https://b2bdevir.es";
 const hyperMode =
   process.argv.includes("--hyper") ||
-  ["1", "true", "yes"].includes((process.env.DEVIR_B2B_DISCOVER_CATEGORIES ?? "").toLowerCase());
+  ["1", "true", "yes"].includes(
+    (process.env.DEVIR_B2B_DISCOVER_CATEGORIES ?? "").toLowerCase(),
+  );
 const resumeMode = process.argv.includes("--resume");
-const configuredCategoryUrls = (process.env.DEVIR_B2B_CATEGORIES ??
-  `${baseUrl}/juegos-de-cartas-coleccionables`)
+const configuredCategoryUrls = (
+  process.env.DEVIR_B2B_CATEGORIES ??
+  `${baseUrl}/juegos-de-cartas-coleccionables`
+)
   .split(",")
   .map((value) => value.trim())
   .filter(Boolean);
@@ -42,9 +46,12 @@ const outputPath = resolve(
   process.env.DEVIR_B2B_OUTPUT ?? ".local/devir-b2b-catalog.json",
 );
 const checkpointPath = resolve(
-  process.env.DEVIR_B2B_CHECKPOINT ?? ".local/devir-b2b-catalog.checkpoint.json",
+  process.env.DEVIR_B2B_CHECKPOINT ??
+    ".local/devir-b2b-catalog.checkpoint.json",
 );
-const maxPages = Number(process.env.DEVIR_B2B_MAX_PAGES ?? (hyperMode ? "200" : "50"));
+const maxPages = Number(
+  process.env.DEVIR_B2B_MAX_PAGES ?? (hyperMode ? "200" : "50"),
+);
 const maxProducts = Number(process.env.DEVIR_B2B_MAX_PRODUCTS ?? "0");
 const delayMs = Number(process.env.DEVIR_B2B_DELAY_MS ?? "1200");
 const timeoutMs = Number(process.env.DEVIR_B2B_TIMEOUT_MS ?? "30000");
@@ -149,24 +156,38 @@ function isLikelyCategoryUrl(value: string): boolean {
 }
 
 async function discoverCategoryUrls(page: Page): Promise<string[]> {
-  await page.goto(baseUrl + "/", { waitUntil: "domcontentloaded", timeout: timeoutMs });
+  await page.goto(baseUrl + "/", {
+    waitUntil: "domcontentloaded",
+    timeout: timeoutMs,
+  });
   const selectors = [
     '[data-action="navigation"] li.category-item a[href]',
-    'nav.navigation li.category-item a[href]',
-    '.navigation li.category-item a[href]',
+    "nav.navigation li.category-item a[href]",
+    ".navigation li.category-item a[href]",
   ];
   const found: string[] = [];
   for (const selector of selectors) {
-    const hrefs = await page.locator(selector).evaluateAll((anchors) =>
-      anchors.map((anchor) => (anchor as HTMLAnchorElement).href).filter(Boolean),
-    );
+    const hrefs = await page
+      .locator(selector)
+      .evaluateAll((anchors) =>
+        anchors
+          .map((anchor) => (anchor as HTMLAnchorElement).href)
+          .filter(Boolean),
+      );
     found.push(...hrefs);
   }
   if (!found.length) {
-    for (const selector of ['[data-action="navigation"] a[href]', 'nav.navigation a[href]']) {
-      const hrefs = await page.locator(selector).evaluateAll((anchors) =>
-        anchors.map((anchor) => (anchor as HTMLAnchorElement).href).filter(Boolean),
-      );
+    for (const selector of [
+      '[data-action="navigation"] a[href]',
+      "nav.navigation a[href]",
+    ]) {
+      const hrefs = await page
+        .locator(selector)
+        .evaluateAll((anchors) =>
+          anchors
+            .map((anchor) => (anchor as HTMLAnchorElement).href)
+            .filter(Boolean),
+        );
       found.push(...hrefs);
     }
   }
@@ -174,27 +195,39 @@ async function discoverCategoryUrls(page: Page): Promise<string[]> {
     new Set(
       found
         .map((href) => canonicalizeUrl(href, page.url()))
-        .filter((href): href is string => href !== null && isLikelyCategoryUrl(href)),
+        .filter(
+          (href): href is string => href !== null && isLikelyCategoryUrl(href),
+        ),
     ),
   );
-  console.log(`Hyper: ${categories.length} categorías descubiertas desde la navegación autenticada.`);
+  console.log(
+    `Hyper: ${categories.length} categorías descubiertas desde la navegación autenticada.`,
+  );
   for (const category of categories) console.log(`  + ${category}`);
   return categories;
 }
 
 async function collectProductLinks(page: Page): Promise<string[]> {
   const links = await page
-    .locator("a.product-item-link[href], .product-item a.product-item-link[href]")
+    .locator(
+      "a.product-item-link[href], .product-item a.product-item-link[href]",
+    )
     .evaluateAll((anchors) =>
-      anchors.map((anchor) => (anchor as HTMLAnchorElement).href).filter(Boolean),
+      anchors
+        .map((anchor) => (anchor as HTMLAnchorElement).href)
+        .filter(Boolean),
     );
 
   const fallbackLinks =
     links.length > 0
       ? links
-      : await page.locator(".product-item a[href]").evaluateAll((anchors) =>
-          anchors.map((anchor) => (anchor as HTMLAnchorElement).href).filter(Boolean),
-        );
+      : await page
+          .locator(".product-item a[href]")
+          .evaluateAll((anchors) =>
+            anchors
+              .map((anchor) => (anchor as HTMLAnchorElement).href)
+              .filter(Boolean),
+          );
 
   return Array.from(
     new Set(
@@ -205,7 +238,10 @@ async function collectProductLinks(page: Page): Promise<string[]> {
   );
 }
 
-async function readProduct(page: Page, url: string): Promise<DevirProduct | null> {
+async function readProduct(
+  page: Page,
+  url: string,
+): Promise<DevirProduct | null> {
   await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
   await page.waitForSelector(".product-info-stock-sku, .product-info-price", {
     timeout: timeoutMs,
@@ -232,17 +268,20 @@ async function readProduct(page: Page, url: string): Promise<DevirProduct | null
       null;
     const stockClass = stockRoot?.className ?? "";
     const releaseText =
-      document.querySelector(".product-item-dateavl")?.textContent?.trim() ?? null;
+      document.querySelector(".product-item-dateavl")?.textContent?.trim() ??
+      null;
 
     return {
       devirProductId:
         priceRoot
           ?.querySelector<HTMLElement>("[data-role=priceBox]")
           ?.getAttribute("data-product-id") ?? null,
-      sku: document.querySelector('[itemprop="sku"]')?.textContent?.trim() ?? "",
+      sku:
+        document.querySelector('[itemprop="sku"]')?.textContent?.trim() ?? "",
       name:
-        document.querySelector<HTMLElement>("h1.page-title")?.textContent?.trim() ??
-        document.title.trim(),
+        document
+          .querySelector<HTMLElement>("h1.page-title")
+          ?.textContent?.trim() ?? document.title.trim(),
       finalPrice: finalNode?.dataset.priceAmount ?? null,
       minPrice: minNode?.dataset.priceAmount ?? null,
       maxPrice: maxNode?.dataset.priceAmount ?? null,
@@ -268,7 +307,8 @@ async function readProduct(page: Page, url: string): Promise<DevirProduct | null
       ? "unavailable"
       : /pre\s*reserva/i.test(rawAvailability)
         ? "preorder"
-        : /disponible/i.test(rawAvailability) || /\bavailable\b/i.test(data.stockClass)
+        : /disponible/i.test(rawAvailability) ||
+            /\bavailable\b/i.test(data.stockClass)
           ? "available"
           : "unknown";
 
@@ -289,9 +329,12 @@ async function readProduct(page: Page, url: string): Promise<DevirProduct | null
 }
 
 async function main(): Promise<void> {
-  if (!Number.isFinite(maxPages) || maxPages <= 0) throw new Error("DEVIR_B2B_MAX_PAGES debe ser > 0.");
-  if (!Number.isFinite(maxProducts) || maxProducts < 0) throw new Error("DEVIR_B2B_MAX_PRODUCTS debe ser >= 0.");
-  if (!Number.isFinite(delayMs) || delayMs < 250) throw new Error("DEVIR_B2B_DELAY_MS debe ser >= 250 ms.");
+  if (!Number.isFinite(maxPages) || maxPages <= 0)
+    throw new Error("DEVIR_B2B_MAX_PAGES debe ser > 0.");
+  if (!Number.isFinite(maxProducts) || maxProducts < 0)
+    throw new Error("DEVIR_B2B_MAX_PRODUCTS debe ser >= 0.");
+  if (!Number.isFinite(delayMs) || delayMs < 250)
+    throw new Error("DEVIR_B2B_DELAY_MS debe ser >= 250 ms.");
 
   const browser = await chromium.launchPersistentContext(profilePath, {
     headless: true,
@@ -312,8 +355,11 @@ async function main(): Promise<void> {
     }
 
     const discovered = hyperMode ? await discoverCategoryUrls(page) : [];
-    const categoryUrls = Array.from(new Set([...configuredCategoryUrls, ...discovered]));
-    if (!categoryUrls.length) throw new Error("No hay categorías configuradas o descubiertas.");
+    const categoryUrls = Array.from(
+      new Set([...configuredCategoryUrls, ...discovered]),
+    );
+    if (!categoryUrls.length)
+      throw new Error("No hay categorías configuradas o descubiertas.");
 
     console.log(
       `Modo ${hyperMode ? "HYPER" : "normal"}: ${categoryUrls.length} categorías, hasta ${maxPages} páginas por categoría, delay ${delayMs} ms.`,
@@ -321,12 +367,16 @@ async function main(): Promise<void> {
 
     const checkpoint = await readCheckpoint();
     const productUrls = new Set<string>(
-      checkpoint && !checkpoint.complete && checkpoint.mode === (hyperMode ? "hyper" : "standard")
+      checkpoint &&
+        !checkpoint.complete &&
+        checkpoint.mode === (hyperMode ? "hyper" : "standard")
         ? checkpoint.productUrls
         : [],
     );
     const productsBySku = new Map<string, DevirProduct>(
-      checkpoint && !checkpoint.complete && checkpoint.mode === (hyperMode ? "hyper" : "standard")
+      checkpoint &&
+        !checkpoint.complete &&
+        checkpoint.mode === (hyperMode ? "hyper" : "standard")
         ? checkpoint.products.map((product) => [product.sku, product])
         : [],
     );
@@ -337,47 +387,50 @@ async function main(): Promise<void> {
     );
 
     for (const categoryUrl of categoryUrls) {
-    let lastPageProductCount = -1;
+      let lastPageProductCount = -1;
 
-    for (let pageNumber = 1; pageNumber <= maxPages; pageNumber += 1) {
-      const url = new URL(categoryUrl);
-      if (pageNumber > 1) url.searchParams.set("p", String(pageNumber));
+      for (let pageNumber = 1; pageNumber <= maxPages; pageNumber += 1) {
+        const url = new URL(categoryUrl);
+        if (pageNumber > 1) url.searchParams.set("p", String(pageNumber));
 
-      console.log(`Categoría ${pageNumber}: ${url}`);
-      await page.goto(url.toString(), {
-        waitUntil: "domcontentloaded",
-        timeout: timeoutMs,
-      });
+        console.log(`Categoría ${pageNumber}: ${url}`);
+        await page.goto(url.toString(), {
+          waitUntil: "domcontentloaded",
+          timeout: timeoutMs,
+        });
 
-      const links = await collectProductLinks(page);
-      const previousSize = productUrls.size;
-      for (const link of links) productUrls.add(link);
+        const links = await collectProductLinks(page);
+        const previousSize = productUrls.size;
+        for (const link of links) productUrls.add(link);
 
-      console.log(
-        `  ${links.length} enlaces de producto; ${productUrls.size} acumulados.`,
-      );
+        console.log(
+          `  ${links.length} enlaces de producto; ${productUrls.size} acumulados.`,
+        );
 
-      if (maxProducts > 0 && productUrls.size >= maxProducts) break;
-      if (
-        links.length === 0 ||
-        (productUrls.size === previousSize && links.length === lastPageProductCount)
-      ) {
-        break;
+        if (maxProducts > 0 && productUrls.size >= maxProducts) break;
+        if (
+          links.length === 0 ||
+          (productUrls.size === previousSize &&
+            links.length === lastPageProductCount)
+        ) {
+          break;
+        }
+
+        lastPageProductCount = links.length;
+        await sleep(delayMs);
       }
 
-      lastPageProductCount = links.length;
-      await sleep(delayMs);
+      if (maxProducts > 0 && productUrls.size >= maxProducts) break;
     }
-
-    if (maxProducts > 0 && productUrls.size >= maxProducts) break;
-  }
 
     const urls = Array.from(productUrls).slice(
       0,
       maxProducts > 0 ? maxProducts : undefined,
     );
     const alreadyRead = productsBySku.size;
-    console.log(`Leyendo ${urls.length} productos (${alreadyRead} recuperados del checkpoint)...`);
+    console.log(
+      `Leyendo ${urls.length} productos (${alreadyRead} recuperados del checkpoint)...`,
+    );
 
     for (const [index, url] of urls.entries()) {
       if (readUrls.has(url)) continue;
@@ -386,7 +439,9 @@ async function main(): Promise<void> {
         if (product) {
           const previous = productsBySku.get(product.sku);
           if (previous && previous.url !== product.url) {
-            console.warn(`  SKU duplicado ${product.sku}; se conserva la ficha más reciente leída.`);
+            console.warn(
+              `  SKU duplicado ${product.sku}; se conserva la ficha más reciente leída.`,
+            );
           }
           productsBySku.set(product.sku, product);
           readUrls.add(product.url);

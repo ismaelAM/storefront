@@ -50,8 +50,7 @@ export function CookieConsent({ gtmId }: CookieConsentProps) {
   };
 
   const segments = pathname.split("/").filter(Boolean);
-  const basePath =
-    segments.length >= 2 ? `/${segments[0]}/${segments[1]}` : "";
+  const basePath = segments.length >= 2 ? `/${segments[0]}/${segments[1]}` : "";
   const privacyHref = `${basePath}/policies/privacy-policy`;
 
   if (!ready) return null;

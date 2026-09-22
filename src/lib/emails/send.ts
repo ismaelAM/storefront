@@ -148,9 +148,7 @@ async function sendEmailGmail({ to, subject, react, from }: SendEmailOptions) {
   const fromAddress = from || getStoreEmailFrom();
 
   if (!from && isStoreEmailFromFallback()) {
-    throw new Error(
-      "EMAIL_FROM must be configured when EMAIL_PROVIDER=gmail.",
-    );
+    throw new Error("EMAIL_FROM must be configured when EMAIL_PROVIDER=gmail.");
   }
 
   const mime = [
@@ -182,9 +180,7 @@ async function sendEmailGmail({ to, subject, react, from }: SendEmailOptions) {
 
   if (!response.ok) {
     const detail = (await response.text()).slice(0, 800);
-    throw new Error(
-      `Gmail send failed (HTTP ${response.status}): ${detail}`,
-    );
+    throw new Error(`Gmail send failed (HTTP ${response.status}): ${detail}`);
   }
 }
 

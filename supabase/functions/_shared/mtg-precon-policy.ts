@@ -44,7 +44,6 @@ export function requiresMtgPreconSplitReview(
   return Number.isFinite(purchasePrice) && purchasePrice >= 80;
 }
 
-
 /**
  * Generic supplier-pack safety rule.
  *
@@ -62,15 +61,12 @@ export function requiresManualPackSplitReview(
 ): boolean {
   const value = normalize(`${candidate.name} ${candidate.url ?? ""}`);
 
-  const boardgamePresentationSku =
-    /^prbg/i.test(candidate.sku?.trim() ?? "");
+  const boardgamePresentationSku = /^prbg/i.test(candidate.sku?.trim() ?? "");
 
-  const namedBoardgamePresentation =
-    /^\s*presentacion\s*:/.test(value);
+  const namedBoardgamePresentation = /^\s*presentacion\s*:/.test(value);
 
   const promotionalPresentation =
-    /\bpresentacion\b/.test(value) &&
-    /\b\d+\s*\+\s*\d+\b/.test(value);
+    /\bpresentacion\b/.test(value) && /\b\d+\s*\+\s*\d+\b/.test(value);
 
   const supplierUnitPack =
     /\bventa\s+en\s+pack\s+de\s+\d+\s*(?:u|un|ud|uds|unidad|unidades)\.?(?:\s|$|\))/.test(
@@ -91,18 +87,17 @@ export function requiresManualPackSplitReview(
   // expansion packs, not as one consumer product. Keep them in review even
   // when Devir omits the unit count from the B2B title.
   const knownExpansionDisplay =
-    /\b(?:hero realms|star realms)\b/.test(value) &&
-    /\bdisplay\b/.test(value);
+    /\b(?:hero realms|star realms)\b/.test(value) && /\bdisplay\b/.test(value);
 
   // Scene Boxes and Theme Decks arrive from Devir as supplier packs
   // (currently cartons of 4 and displays of 8 respectively). Do not infer
   // individual retail units: keep the supplier pack hidden until an operator
   // explicitly decides how it should be split/listed.
   const devirSceneOrThemePack =
-    /\bscene\s+box\b/.test(value) ||
-    /\btheme\s+decks?\b/.test(value);
+    /\bscene\s+box\b/.test(value) || /\btheme\s+decks?\b/.test(value);
 
-  return boardgamePresentationSku ||
+  return (
+    boardgamePresentationSku ||
     namedBoardgamePresentation ||
     promotionalPresentation ||
     supplierUnitPack ||
@@ -110,5 +105,6 @@ export function requiresManualPackSplitReview(
     explicitDeckCarton ||
     knownExpansionDisplay ||
     devirSceneOrThemePack ||
-    requiresMtgPreconSplitReview(candidate);
+    requiresMtgPreconSplitReview(candidate)
+  );
 }

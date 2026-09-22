@@ -172,7 +172,10 @@ export const siteConfig: Config<SiteComponents> = {
           }}
         >
           <div className="mx-auto max-w-4xl">
-            <h2 className="text-3xl font-bold" style={{ color: props.titleColor }}>
+            <h2
+              className="text-3xl font-bold"
+              style={{ color: props.titleColor }}
+            >
               {props.title || "Página legal"}
             </h2>
             {props.intro && <p className="mt-3">{props.intro}</p>}

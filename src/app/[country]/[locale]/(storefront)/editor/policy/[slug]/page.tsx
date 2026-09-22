@@ -1,6 +1,6 @@
 import type { Data } from "@puckeditor/core";
-import { connection } from "next/server";
 import { notFound } from "next/navigation";
+import { connection } from "next/server";
 import { getPolicy } from "@/lib/data/policies";
 import { getSitePageData } from "@/lib/puck/get-site-page-data";
 import { PolicyEditorClient } from "./PolicyEditorClient";
@@ -15,7 +15,12 @@ export default async function PolicyEditorPage({ params }: Props) {
   const policy = await getPolicy(slug, { country, locale });
   if (!policy) notFound();
   const fallbackData: Data = {
-    content: [{ type: "PolicyChrome", props: { id: "policy-chrome", title: policy.name, intro: "" } }],
+    content: [
+      {
+        type: "PolicyChrome",
+        props: { id: "policy-chrome", title: policy.name, intro: "" },
+      },
+    ],
     root: {},
   };
   const initialData = await getSitePageData(`policy:${slug}`, fallbackData);

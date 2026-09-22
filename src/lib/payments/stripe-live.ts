@@ -180,7 +180,9 @@ export async function reconcileStripePaymentToSpree(
   const cartId = paymentIntent.metadata.spree_cart_id;
   if (!cartId) throw new Error("PaymentIntent sin spree_cart_id");
   if (paymentIntent.status !== "succeeded") {
-    throw new Error(`Stripe PaymentIntent aún no está pagado: ${paymentIntent.status}`);
+    throw new Error(
+      `Stripe PaymentIntent aún no está pagado: ${paymentIntent.status}`,
+    );
   }
 
   const order = await spreeAdminRequest<AdminOrder>(

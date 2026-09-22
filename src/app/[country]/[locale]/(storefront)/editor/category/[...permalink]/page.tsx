@@ -1,7 +1,7 @@
-import type { Category, Product } from "@spree/sdk";
 import type { Data } from "@puckeditor/core";
-import { connection } from "next/server";
+import type { Category, Product } from "@spree/sdk";
 import { notFound } from "next/navigation";
+import { connection } from "next/server";
 import { PRODUCT_CARD_FIELDS } from "@/lib/data/cached";
 import { getCategories, getCategory } from "@/lib/data/categories";
 import { getProducts } from "@/lib/data/products";
@@ -16,7 +16,9 @@ interface CategoryEditorPageProps {
   }>;
 }
 
-export default async function CategoryEditorPage({ params }: CategoryEditorPageProps) {
+export default async function CategoryEditorPage({
+  params,
+}: CategoryEditorPageProps) {
   await connection();
   const { country, locale, permalink } = await params;
   const fullPermalink = permalink.join("/");
@@ -38,7 +40,10 @@ export default async function CategoryEditorPage({ params }: CategoryEditorPageP
         },
         "dtc",
       ),
-      getCategories({ depth_eq: 0, expand: ["children.children"] }, { country, locale }),
+      getCategories(
+        { depth_eq: 0, expand: ["children.children"] },
+        { country, locale },
+      ),
     ]);
     products = productsResponse.data ?? [];
     categories = categoriesResponse.data ?? [];

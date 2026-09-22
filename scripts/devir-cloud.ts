@@ -29,7 +29,9 @@ function required(name: string, fallbacks: string[] = []): string {
 }
 
 function spreeKey(): string {
-  const key = required("DEVIR_B2B_SPREE_ADMIN_API_KEY", ["SPREE_ADMIN_API_KEY"]);
+  const key = required("DEVIR_B2B_SPREE_ADMIN_API_KEY", [
+    "SPREE_ADMIN_API_KEY",
+  ]);
   if (!key.startsWith("sk_")) {
     throw new Error("La clave de Spree debe ser una Secret API Key sk_....");
   }
@@ -37,7 +39,13 @@ function spreeKey(): string {
 }
 
 async function callCloud(
-  action: "bootstrap" | "status" | "enable" | "disable" | "run-now" | "credentials",
+  action:
+    | "bootstrap"
+    | "status"
+    | "enable"
+    | "disable"
+    | "run-now"
+    | "credentials",
   body: Record<string, unknown> = {},
 ): Promise<Record<string, unknown>> {
   const response = await fetch(cloudUrl, {
@@ -64,7 +72,6 @@ async function callCloud(
   }
   return payload;
 }
-
 
 async function promptLine(message: string): Promise<string> {
   process.stdin.setEncoding("utf8");
@@ -124,14 +131,17 @@ async function bootstrap(): Promise<void> {
   });
 
   console.log("Cloud sync activada.");
-  console.log("  Sesión Devir: validada y guardada de forma privada en Supabase.");
-  console.log("  Clave Spree: validada contra Spree y guardada; no se ha mostrado.");
+  console.log(
+    "  Sesión Devir: validada y guardada de forma privada en Supabase.",
+  );
+  console.log(
+    "  Clave Spree: validada contra Spree y guardada; no se ha mostrado.",
+  );
   console.log("  Próximo ciclo: solicitado inmediatamente.");
   console.log("  Frecuencia: cada 6 h entre ciclos completos.");
   if (typeof result.message === "string") console.log("  " + result.message);
   console.log("Ejecuta `pnpm devir:cloud:status` para ver el progreso.");
 }
-
 
 async function credentials(): Promise<void> {
   const username =
@@ -141,14 +151,17 @@ async function credentials(): Promise<void> {
     env("DEVIR_B2B_PASSWORD") ??
     (await promptSecret("Contraseña Devir B2B (no se mostrará): "));
 
-  if (!username || !password) throw new Error("Usuario y contraseña son obligatorios.");
+  if (!username || !password)
+    throw new Error("Usuario y contraseña son obligatorios.");
 
   const result = await callCloud("credentials", { username, password });
   console.log("Credenciales Devir validadas y guardadas en Supabase Vault.");
   if (result.session_refreshed) {
     console.log("Sesión Devir renovada correctamente.");
   }
-  console.log("El worker podrá renovar automáticamente la sesión cuando caduque.");
+  console.log(
+    "El worker podrá renovar automáticamente la sesión cuando caduque.",
+  );
 }
 
 async function status(): Promise<void> {
@@ -169,13 +182,18 @@ async function status(): Promise<void> {
   console.log(`  próximo ciclo: ${String(config.next_due_at ?? "—")}`);
   console.log(`  último intento: ${String(config.last_attempt_at ?? "—")}`);
   console.log(`  último éxito: ${String(config.last_success_at ?? "—")}`);
-  if (config.last_error) console.log(`  último error: ${String(config.last_error)}`);
+  if (config.last_error)
+    console.log(`  último error: ${String(config.last_error)}`);
 
   if (cycles.length) {
     console.log("\nÚltimos ciclos:");
     for (const cycle of cycles) {
       console.log(
-        `  ${String(cycle.status ?? "?").toUpperCase().padEnd(7)} ${String(cycle.started_at ?? "—")} · productos ${String(cycle.product_count ?? 0)} · errores ${String(cycle.error_count ?? 0)}`,
+        `  ${String(cycle.status ?? "?")
+          .toUpperCase()
+          .padEnd(
+            7,
+          )} ${String(cycle.started_at ?? "—")} · productos ${String(cycle.product_count ?? 0)} · errores ${String(cycle.error_count ?? 0)}`,
       );
     }
   }
@@ -192,7 +210,9 @@ async function runNow(): Promise<void> {
     console.log(`Ya hay un ciclo activo: ${result.already_running}`);
     return;
   }
-  console.log("Ciclo solicitado; Supabase Cron lo iniciará en el siguiente tick.");
+  console.log(
+    "Ciclo solicitado; Supabase Cron lo iniciará en el siguiente tick.",
+  );
 }
 
 async function main(): Promise<void> {
@@ -203,7 +223,10 @@ async function main(): Promise<void> {
   else if (command === "enable") await setEnabled(true);
   else if (command === "disable") await setEnabled(false);
   else if (command === "run-now") await runNow();
-  else throw new Error("Uso: devir-cloud <bootstrap|credentials|status|enable|disable|run-now>");
+  else
+    throw new Error(
+      "Uso: devir-cloud <bootstrap|credentials|status|enable|disable|run-now>",
+    );
 }
 
 main().catch((error) => {

@@ -5,7 +5,12 @@ import { getCategoryPageId } from "@/lib/puck/get-category-data";
 import { createSupabaseClient } from "@/lib/supabase/server";
 
 export async function saveCategoryPageData(permalink: string, data: Data) {
-  if (!permalink || !data || typeof data !== "object" || !Array.isArray(data.content)) {
+  if (
+    !permalink ||
+    !data ||
+    typeof data !== "object" ||
+    !Array.isArray(data.content)
+  ) {
     throw new Error("Invalid category Puck data");
   }
 

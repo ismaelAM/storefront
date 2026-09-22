@@ -1,12 +1,12 @@
 "use client";
 
 import type { Config, Slot } from "@puckeditor/core";
+import { colorField } from "@/puck/fields";
 import { ProductEditorialBlock } from "@/puck/ProductEditorialBlock";
 import {
   ProductColumnsBlock,
   ProductLayoutBlock,
 } from "@/puck/ProductLayoutBlocks";
-import { colorField } from "@/puck/fields";
 import { DEFAULT_PALETTE_VALUES } from "@/puck/palette";
 
 type ProductEditorialProps = {
@@ -98,7 +98,13 @@ export const productConfig: Config<ProductComponents> = {
         padding: "medium",
         content: [],
       },
-      render: ({ backgroundColor, width, alignment, padding, content: Content }) => (
+      render: ({
+        backgroundColor,
+        width,
+        alignment,
+        padding,
+        content: Content,
+      }) => (
         <ProductLayoutBlock
           backgroundColor={backgroundColor}
           width={width}

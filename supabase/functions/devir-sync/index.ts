@@ -2829,8 +2829,7 @@ async function syncProductToSpree(
       ]),
     ).filter(
       (tag) =>
-        review ||
-        (tag !== "REVISION-HUMANA" && tag !== "NECESITA-TU-AYUDA"),
+        review || (tag !== "REVISION-HUMANA" && tag !== "NECESITA-TU-AYUDA"),
     );
     const refreshManagedMetadata =
       managed && (!active || forceDraftForSplit || needsManagedCleanup);
@@ -6151,9 +6150,14 @@ async function repairRetailUnitProducts(
 const HUMAN_REVIEW_MARKER_VERSION = "catalog-review-v1";
 
 function reviewReasonsFromLastError(value: unknown): string[] {
-  const text = String(value ?? "").replace(/^REVIEW:\s*/i, "").trim();
+  const text = String(value ?? "")
+    .replace(/^REVIEW:\s*/i, "")
+    .trim();
   if (!text) return ["manual_review_required"];
-  return text.split(", ").map((item) => item.trim()).filter(Boolean);
+  return text
+    .split(", ")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 async function refreshHumanReviewMarkersBatch(
@@ -6162,10 +6166,9 @@ async function refreshHumanReviewMarkersBatch(
 ): Promise<{ processed: number; remaining: number }> {
   const { data, error, count } = await supabase
     .from("devir_sync_catalog")
-    .select(
-      "spree_product_id,last_error,review_marker_version,updated_at",
-      { count: "exact" },
-    )
+    .select("spree_product_id,last_error,review_marker_version,updated_at", {
+      count: "exact",
+    })
     .eq("catalog_state", "review")
     .not("spree_product_id", "is", null)
     .or(

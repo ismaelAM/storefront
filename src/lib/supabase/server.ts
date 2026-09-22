@@ -10,13 +10,13 @@ export function createSupabaseClient() {
 
   if (!url) {
     throw new Error(
-      "SUPABASE_URL is not defined. Configure it in Vercel environment variables."
+      "SUPABASE_URL is not defined. Configure it in Vercel environment variables.",
     );
   }
 
   if (!serviceRoleKey) {
     throw new Error(
-      "SUPABASE_SERVICE_ROLE_KEY is not defined. Configure it in Vercel environment variables."
+      "SUPABASE_SERVICE_ROLE_KEY is not defined. Configure it in Vercel environment variables.",
     );
   }
 

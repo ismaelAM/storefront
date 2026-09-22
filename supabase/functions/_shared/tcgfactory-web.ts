@@ -1,4 +1,7 @@
-import { normalizeText, type SupplierAvailability } from "./catalog-sourcing.ts";
+import {
+  normalizeText,
+  type SupplierAvailability,
+} from "./catalog-sourcing.ts";
 
 export const TCGFACTORY_BASE_URL = "https://tcgfactory.com";
 export const TCGFACTORY_ACCESSORIES_URL =
@@ -7,11 +10,27 @@ export const TCGFACTORY_ACCESSORIES_URL =
 export const TCGFACTORY_ACCESSORY_CATEGORY_SPECS = [
   { key: "accesorios/albumes", name: "Álbumes", slug: "albumes" },
   { key: "accesorios/cajas-mazo", name: "Cajas de mazo", slug: "cajas-mazo" },
-  { key: "accesorios/bolsas-comics", name: "Bolsas para cómics", slug: "bolsas-comics" },
+  {
+    key: "accesorios/bolsas-comics",
+    name: "Bolsas para cómics",
+    slug: "bolsas-comics",
+  },
   { key: "accesorios/dados", name: "Dados", slug: "dados" },
-  { key: "accesorios/fundas-juegos-mesa", name: "Fundas para juegos de mesa", slug: "fundas-juegos-mesa" },
-  { key: "accesorios/fundas-standard", name: "Fundas Standard", slug: "fundas-standard" },
-  { key: "accesorios/fundas-small", name: "Fundas Small", slug: "fundas-small" },
+  {
+    key: "accesorios/fundas-juegos-mesa",
+    name: "Fundas para juegos de mesa",
+    slug: "fundas-juegos-mesa",
+  },
+  {
+    key: "accesorios/fundas-standard",
+    name: "Fundas Standard",
+    slug: "fundas-standard",
+  },
+  {
+    key: "accesorios/fundas-small",
+    name: "Fundas Small",
+    slug: "fundas-small",
+  },
   { key: "accesorios/tapetes", name: "Tapetes", slug: "tapetes" },
   { key: "accesorios/almacenaje", name: "Almacenaje", slug: "almacenaje" },
   { key: "accesorios/otros", name: "Otros accesorios", slug: "otros" },
@@ -66,7 +85,7 @@ function decodeHtml(value: string): string {
   };
   return value
     .replace(/&#x([0-9a-f]+);/gi, (_, hex) =>
-      String.fromCodePoint(parseInt(hex, 16))
+      String.fromCodePoint(parseInt(hex, 16)),
     )
     .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(Number(dec)))
     .replace(/&([a-z]+);/gi, (full, key) => named[key] ?? full);
@@ -108,11 +127,16 @@ function field(lines: string[], label: RegExp): string | null {
     const current = lines[index];
     const sameLine = current.match(label);
     if (!sameLine) continue;
-    const tail = current.slice(sameLine.index! + sameLine[0].length)
+    const tail = current
+      .slice(sameLine.index! + sameLine[0].length)
       .replace(/^\s*:\s*/, "")
       .trim();
     if (tail) return tail;
-    for (let next = index + 1; next < Math.min(lines.length, index + 4); next += 1) {
+    for (
+      let next = index + 1;
+      next < Math.min(lines.length, index + 4);
+      next += 1
+    ) {
       if (lines[next]) return lines[next];
     }
   }
@@ -255,15 +279,17 @@ export function parseTcgFactoryListing(
   const totalItems = totalItemsMatch
     ? Number(totalItemsMatch[1].replace(/\./g, ""))
     : null;
-  const currentPage = Number(new URL(pageUrl).searchParams.get("page") ?? "1") || 1;
-  const linkedPages = Array.from(
-    html.matchAll(/[?&]page=(\d+)/gi),
-    (match) => Number(match[1]),
+  const currentPage =
+    Number(new URL(pageUrl).searchParams.get("page") ?? "1") || 1;
+  const linkedPages = Array.from(html.matchAll(/[?&]page=(\d+)/gi), (match) =>
+    Number(match[1]),
   ).filter(Number.isFinite);
   const totalPages = Math.max(
     currentPage,
     ...linkedPages,
-    totalItems && unique.length > 0 ? Math.ceil(totalItems / Math.max(unique.length, 27)) : 1,
+    totalItems && unique.length > 0
+      ? Math.ceil(totalItems / Math.max(unique.length, 27))
+      : 1,
   );
   return {
     productUrls: unique,
@@ -283,13 +309,12 @@ export function parseTcgFactoryPublicProduct(
   }
   const text = stripHtml(html);
   const lines = text.split("\n");
-  const h1 =
-    decodeHtml(
-      html.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i)?.[1]?.replace(/<[^>]+>/g, " ") ??
-        "",
-    )
-      .replace(/\s+/g, " ")
-      .trim();
+  const h1 = decodeHtml(
+    html.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i)?.[1]?.replace(/<[^>]+>/g, " ") ??
+      "",
+  )
+    .replace(/\s+/g, " ")
+    .trim();
   const productName = h1 || field(lines, /^Producto\s*$/i) || "";
   if (!productName) throw new Error("TcgFactory: nombre no encontrado");
 
@@ -299,12 +324,14 @@ export function parseTcgFactoryPublicProduct(
   const releaseDate = isoDate(field(lines, /^Fecha de lanzamiento\s*:?/i));
   const reportedAvailability =
     field(lines, /^Estado de producto\s*:?/i) ??
-    (text.match(/\b(Disponible|En reposici[oó]n|Preventa|Agotado|Sin stock)\b/i)?.[1] ?? "");
+    text.match(
+      /\b(Disponible|En reposici[oó]n|Preventa|Agotado|Sin stock)\b/i,
+    )?.[1] ??
+    "";
   const productType =
     field(lines, /^Tipo de accesorio\s*:?/i) ??
     field(lines, /^Tipo de producto\s*:?/i);
-  const manufacturer =
-    field(lines, /^(?:Marca|Fabricante|Editorial)\s*:?/i);
+  const manufacturer = field(lines, /^(?:Marca|Fabricante|Editorial)\s*:?/i);
   const categoryKey = tcgFactoryAccessoryCategory(productName, productType);
   const options: Record<string, string> = {};
   for (const [key, label] of [
@@ -320,7 +347,10 @@ export function parseTcgFactoryPublicProduct(
   const externalVariantId =
     ean ??
     reference ??
-    new URL(officialUrl).pathname.split("/").pop()!.replace(/\.html$/i, "");
+    new URL(officialUrl).pathname
+      .split("/")
+      .pop()!
+      .replace(/\.html$/i, "");
 
   return {
     sourceUrl: officialUrl,
