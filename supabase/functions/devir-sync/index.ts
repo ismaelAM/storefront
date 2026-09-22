@@ -10352,6 +10352,14 @@ async function operatorAction(
     });
   }
 
+  if (action === "repair-physical-only-stock") {
+    const limit = Math.min(200, Math.max(1, Number(body.limit ?? 100) || 100));
+    return json({
+      ok: true,
+      ...(await reconcilePhysicalOnlyCatalogBatch(config, limit)),
+    });
+  }
+
   if (action === "repair-tcgfactory-images") {
     const offset = Math.max(0, Number(body.offset ?? 0) || 0);
     const limit = Math.min(100, Math.max(1, Number(body.limit ?? 25) || 25));
