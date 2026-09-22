@@ -278,3 +278,26 @@ Antes de producción:
 5. confirmar en Spree que sólo existe una variante y que el custom field indica
    el proveedor más barato;
 6. ejecutar el crawl completo y entonces `catalog-complete-run`.
+
+
+## Política comercial de precio y ofertas
+
+El precio automático usa perfiles comerciales por producto además de la categoría.
+Los perfiles son deliberadamente más granulares para distinguir, entre otros,
+booster boxes, Commander precons, bundles y sobres de MTG; sellado de otros TCG;
+juegos de mesa y expansiones; rol; y familias de accesorios.
+
+Los porcentajes del perfil son **suelos de contribución sobre el PVP final** tras
+IVA y la comisión estándar de tarjeta, no markups sobre coste. Los libros de precio
+fijo conservan su tratamiento específico y no participan en ofertas rotativas.
+
+La referencia comercial actual mantiene los booster boxes de MTG con un suelo
+muy competitivo (4,5 %) y eleva Commander precons al 10 %. Juegos de mesa se
+sitúan alrededor de 8,5 %, expansiones en 10 % y accesorios entre 13 % y 15 %
+según familia. Los precios manuales de Spree siguen teniendo prioridad.
+
+Las ofertas públicas se implementan como una Price List de Spree separada del
+precio base. Rotan una vez por día según calendario Europe/Madrid, con 8 productos
+en un día normal y 16 los sábados. La selección es determinista por fecha,
+diversificada por perfil y respeta un suelo de contribución específico para
+ofertas. Manga/libros de precio fijo y productos en revisión quedan excluidos.
