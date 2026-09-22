@@ -9,6 +9,15 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { getFulfillmentStatusColor } from "@/lib/utils/format";
 
+const FULFILLMENT_STATUS_KEYS = {
+  shipped: "shipped",
+  delivered: "delivered",
+  ready: "ready",
+  pending: "pending",
+  canceled: "canceled",
+  backorder: "backorder",
+} as const;
+
 interface FulfillmentBlockProps {
   fulfillment: Fulfillment;
   shipAddress: Address | null;
@@ -23,6 +32,15 @@ export function FulfillmentBlock({
   lineItems,
 }: FulfillmentBlockProps) {
   const t = useTranslations("orders");
+  const statusKey =
+    fulfillment.status &&
+    FULFILLMENT_STATUS_KEYS[
+      fulfillment.status as keyof typeof FULFILLMENT_STATUS_KEYS
+    ];
+  const statusLabel = statusKey
+    ? t(statusKey)
+    : fulfillment.status || t("unknownShipmentStatus");
+
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-4">
       <div className="px-6 py-4 border-b border-gray-200">
@@ -41,7 +59,8 @@ export function FulfillmentBlock({
                 {t("shippingMethod")}
               </h3>
               <p className="text-sm text-gray-900">
-                {fulfillment.delivery_method?.name || t("canceled")}
+                {fulfillment.delivery_method?.name ||
+                  t("shippingMethodUnavailable")}
               </p>
               {fulfillment.stock_location && (
                 <p className="text-xs text-gray-500 mt-1">
@@ -53,11 +72,19 @@ export function FulfillmentBlock({
               <span
                 className={`inline-flex items-center mt-2 px-2.5 py-0.5 rounded-lg text-xs font-medium capitalize ${getFulfillmentStatusColor(fulfillment.status)}`}
               >
-                {fulfillment.status}
+                {statusLabel}
               </span>
+              {fulfillment.tracking && (
+                <p className="mt-2 text-xs text-gray-600">
+                  {t("trackingNumber")}:{" "}
+                  <span className="font-mono font-medium text-gray-900">
+                    {fulfillment.tracking}
+                  </span>
+                </p>
+              )}
             </div>
-            <div className="mt-4 lg:mt-0">
-              {fulfillment.status === "shipped" && fulfillment.tracking_url ? (
+            {fulfillment.tracking_url && (
+              <div className="mt-4 lg:mt-0">
                 <Button size="sm" asChild>
                   <a
                     href={fulfillment.tracking_url}
@@ -67,12 +94,8 @@ export function FulfillmentBlock({
                     {t("trackItems")}
                   </a>
                 </Button>
-              ) : (
-                <Button variant="outline" size="sm" disabled>
-                  {t("trackItems")}
-                </Button>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -82,9 +105,7 @@ export function FulfillmentBlock({
             <AlertDescription>{t("shipmentCanceledRefund")}</AlertDescription>
           </Alert>
         )}
-        {fulfillment.status !== "canceled" &&
-          fulfillment.status !== "shipped" &&
-          !fulfillment.tracking && (
+        {fulfillment.status !== "canceled" && !fulfillment.tracking && (
             <div className="mt-3 p-3 bg-gray-50 rounded-xl text-sm text-gray-500 text-center">
               {t("noTrackingInfo")}
             </div>
