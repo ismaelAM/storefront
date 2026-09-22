@@ -149,9 +149,7 @@ export async function POST(request: Request) {
     }
 
     if (action === "correos-preregister") {
-      const requestBody = body.request as
-        | CorreosPreregisterRequest
-        | undefined;
+      const requestBody = body.request as CorreosPreregisterRequest | undefined;
       if (!requestBody) throw new Error("Falta request");
       return NextResponse.json(await correos.createShipment(requestBody));
     }
