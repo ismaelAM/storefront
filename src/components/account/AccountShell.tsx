@@ -17,6 +17,9 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { extractBasePath } from "@/lib/utils/path";
 
+const ACCOUNT_SKELETON_NAV = ["overview", "orders", "addresses", "payment", "gifts", "profile"];
+const ACCOUNT_SKELETON_CARDS = ["orders", "addresses", "payment", "profile"];
+
 function getNavItems(t: ReturnType<typeof useTranslations<"account">>): {
   href: string;
   label: string;
@@ -43,35 +46,32 @@ export function AccountShellSkeleton() {
       className="container mx-auto px-4 py-10 sm:px-6 sm:py-12 lg:px-8 lg:py-14"
     >
       <div className="grid gap-8 xl:grid-cols-[minmax(15rem,18rem)_minmax(0,1fr)] xl:gap-12">
-        <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
-          <div className="space-y-3 border-b border-gray-200 p-5 sm:p-6">
-            <div className="h-5 w-36 rounded bg-gray-200" />
-            <div className="h-4 w-48 max-w-full rounded bg-gray-100" />
+        <div className="overflow-hidden rounded-2xl border border-border bg-card">
+          <div className="space-y-3 border-b border-border p-5 sm:p-6">
+            <div className="h-5 w-36 rounded bg-muted" />
+            <div className="h-4 w-48 max-w-full rounded bg-muted/60" />
           </div>
           <div className="grid gap-2 p-3 sm:grid-cols-2 sm:p-4 xl:grid-cols-1">
-            {Array.from({ length: 6 }).map((_, index) => (
-              <div
-                key={index}
-                className="h-12 rounded-xl bg-gray-100"
-              />
+            {ACCOUNT_SKELETON_NAV.map((item) => (
+              <div key={item} className="h-12 rounded-xl bg-muted/60" />
             ))}
           </div>
-          <div className="border-t border-gray-200 p-3 sm:p-4">
-            <div className="h-11 rounded-xl bg-gray-100" />
+          <div className="border-t border-border p-3 sm:p-4">
+            <div className="h-11 rounded-xl bg-muted/60" />
           </div>
         </div>
 
         <div className="min-w-0 space-y-6">
-          <div className="h-9 w-56 max-w-[75%] rounded bg-gray-200" />
+          <div className="h-9 w-56 max-w-[75%] rounded bg-muted" />
           <div className="grid gap-5 md:grid-cols-2 sm:gap-6">
-            {Array.from({ length: 4 }).map((_, index) => (
+            {ACCOUNT_SKELETON_CARDS.map((item) => (
               <div
-                key={index}
-                className="min-h-32 rounded-xl border border-gray-200 bg-white p-6"
+                key={item}
+                className="min-h-32 rounded-xl border border-border bg-card p-6"
               >
-                <div className="h-6 w-2/3 rounded bg-gray-200" />
-                <div className="mt-4 h-4 w-full rounded bg-gray-100" />
-                <div className="mt-2 h-4 w-4/5 rounded bg-gray-100" />
+                <div className="h-6 w-2/3 rounded bg-muted" />
+                <div className="mt-4 h-4 w-full rounded bg-muted/60" />
+                <div className="mt-2 h-4 w-4/5 rounded bg-muted/60" />
               </div>
             ))}
           </div>
@@ -98,14 +98,14 @@ export function AccountShell({ children }: { children: React.ReactNode }) {
     <div className="container mx-auto px-4 py-10 sm:px-6 sm:py-12 lg:px-8 lg:py-14">
       <div className="grid gap-8 xl:grid-cols-[minmax(15rem,18rem)_minmax(0,1fr)] xl:gap-12">
         <aside className="min-w-0">
-          <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
-            <div className="border-b border-gray-200 p-5 sm:p-6">
-              <p className="font-semibold text-gray-900">
+          <div className="overflow-hidden rounded-2xl border border-border bg-white">
+            <div className="border-b border-border p-5 sm:p-6">
+              <p className="font-semibold text-foreground">
                 {user?.first_name
                   ? `${user.first_name} ${user.last_name || ""}`.trim()
                   : t("myAccount")}
               </p>
-              <p className="mt-1 truncate text-sm text-gray-500">
+              <p className="mt-1 truncate text-sm text-muted-foreground">
                 {user?.email}
               </p>
             </div>
@@ -137,7 +137,7 @@ export function AccountShell({ children }: { children: React.ReactNode }) {
               </ul>
             </nav>
 
-            <div className="border-t border-gray-200 p-3 sm:p-4">
+            <div className="border-t border-border p-3 sm:p-4">
               <Button
                 variant="ghost"
                 onClick={handleLogout}
