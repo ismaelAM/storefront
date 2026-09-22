@@ -17,7 +17,7 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [x] Stripe Live integrado directamente con PaymentIntents + Payment Element porque el Spree alojado no admite las claves live; Spree sigue controlando pedido/stock/envío y recibe un pago externo reconciliado sin segundo cargo.
 - [x] Estrategia Stripe definitiva: Stripe Live cobra directamente en el storefront; un método interno oculto `Stripe Live External` registra el cobro ya confirmado en Spree y completa el pedido.
 - [ ] Validar en Vercel el SEO técnico añadido: canonical, hreflang, JSON-LD y rutas por idioma/Market.
-- [ ] Corregir y probar la configuración del método de envío propio para Madrid en Spree.
+- [x] Corregida y probada la configuración del método de envío propio para Madrid en Spree mediante carrito temporal de Store API.
 
 ## Transporte externo
 
@@ -96,12 +96,12 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 
 ## Envíos
 
-- [ ] Crear/corregir la Zone exclusiva para Madrid en Spree.
+- [x] Corregida la elegibilidad de la entrega local de Madrid en Spree.
 - [ ] Crear o validar el método `Entrega local BisonTCG — Madrid` con código `BISON_LOCAL_MADRID`.
 - [ ] Asociar el método a la Shipping Category física correspondiente.
 - [ ] Definir tarifa fija y tiempo estimado de entrega.
-- [ ] **Bug confirmado:** el método/opción de Madrid aparece también para una dirección de Lugo. La corrección pertenece a la Zone/método de Spree, no a una condición hardcodeada en Next.js.
-- [ ] Probar que Madrid ofrece el método local y que fuera de Madrid no aparece.
+- [x] Corregido en Spree: la opción local de Madrid ya no aparece para una dirección de Lugo.
+- [x] Verificado con carritos temporales: Madrid ofrece `Entrega en Madrid` + `Correos`; Lugo ofrece solo `Correos`.
 - [ ] Confirmar que un pedido real genera correctamente su fulfillment en Spree.
 - [x] Implementada lógica de back-office para guardar tracking, marcar enviado y marcar entregado sobre el fulfillment nativo de Spree.
 - [x] Implementadas operaciones Correos para Preregister, Labels, Trackpub y Requests con la autenticación vigente; eliminada BoxEntry del flujo operativo.
@@ -194,9 +194,9 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [x] Documentado que el tracking local puede gestionarse manualmente desde Spree sin API externa.
 - [x] Confirmado manualmente en Preview que el checkout muestra métodos de envío procedentes de Spree.
 - [x] Homogeneizada la selección visual del método de envío con el color global `--primary` del storefront.
-- [ ] Corregir en Spree la Zone/método para que Madrid no aparezca en Lugo.
+- [x] Corregido en Spree: Madrid ya no aparece como opción de entrega para Lugo.
 - [ ] Probar checkout, Shipment y estado de entrega con una dirección de Madrid.
-- [ ] Probar que una dirección fuera de Madrid no recibe la opción local.
+- [x] Verificado con una dirección de Lugo: no recibe la opción local de Madrid.
 - [ ] Integrar Correos API después de estabilizar el método local y obtener contrato/credenciales.
 
 
