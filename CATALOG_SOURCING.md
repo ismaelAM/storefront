@@ -349,3 +349,52 @@ vendible. Si una variante `physical_only` llega a cero, el tick periódico
 vuelve a reconciliar el producto y lo saca de venta salvo que otra variante del
 mismo producto siga siendo cumplible. Esto evita que un pedido dependa de un
 pack de proveedor que todavía no se ha recibido físicamente.
+
+
+### Comandos de revisión
+
+La decisión humana se opera sin editar estados de Spree a mano:
+
+```bash
+pnpm catalog:sourcing review-status prod_ABC123
+pnpm catalog:sourcing review-approve prod_ABC123 physical_only "Cartón revisado; vender solo stock recibido"
+pnpm catalog:sourcing review-reject prod_ABC123 "No publicar este pack"
+pnpm catalog:sourcing review-reset prod_ABC123
+```
+
+Para packs heterogéneos o cualquier producto cuya unidad de proveedor no sea la
+misma que la unidad vendida al cliente, usar `physical_only`. La aprobación
+solo persiste mientras coincidan exactamente los motivos revisados.
+
+### Enlaces de reposición a variantes retail
+
+`catalog_replenishment_links` permite documentar que una oferta de proveedor
+repone una variante retail ya desplegada en Spree sin convertir esa oferta en
+stock vendible. Esto sirve para cartones de Commander/precons, displays u otros
+packs que contienen varias unidades retail.
+
+Ejemplo: si un cartón del proveedor contiene una unidad de un precon concreto:
+
+```bash
+pnpm catalog:sourcing link-supply devir 5010996420039 variant_RETAIL_PRECON_A 1 "1 copia por cartón"
+pnpm catalog:sourcing links variant_RETAIL_PRECON_A
+```
+
+Un mismo cartón puede enlazarse a varias variantes retail. `units_per_source`
+describe cuántas unidades de esa variante se reciben por unidad del pack. El
+enlace es **solo de aprovisionamiento**: no modifica `count_on_hand`, no abre
+backorder, no crea preventa y no hace comprable la variante. Las unidades pasan
+a ser vendibles únicamente cuando el stock físico real se registra en Spree.
+
+Para retirar una relación:
+
+```bash
+pnpm catalog:sourcing unlink-supply <LINK_ID>
+```
+
+Así, un "Combo" de precons puede existir comercialmente como un producto con
+variantes retail, mientras el cartón del proveedor queda vinculado como fuente
+de reposición. Si queda una unidad física de un precon procedente de una compra
+anterior, esa variante continúa vendible aunque el proveedor ya no tenga
+cartones; cuando llega a cero, deja de ser comprable salvo que tenga otra fuente
+de proveedor segura configurada como `supplier_or_physical`.
