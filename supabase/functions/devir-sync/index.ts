@@ -2666,10 +2666,11 @@ async function syncProductToSpree(
   });
   const categoryBaseMargin =
     configuredMargin ?? DEFAULT_CATEGORY_MARGINS[key] ?? 0.08;
-  // Fixed-price books keep their conservative legal/reference-price handling.
-  const targetMargin = isBookProduct(product, key)
-    ? 0.05
-    : Math.max(categoryBaseMargin, commercialProfile.targetMargin);
+  const targetMargin = commercialTargetMargin(
+    product,
+    key,
+    categoryBaseMargin,
+  );
   const pricing = competitivePricing(
     product,
     key,
@@ -3315,7 +3316,7 @@ async function createGroupedVariant(
   const pricing = competitivePricing(
     product,
     key,
-    DEFAULT_CATEGORY_MARGINS[key] ?? 0.05,
+    commercialTargetMargin(product, key),
   );
   const shipping = shippingDefaults(key, product);
   const created = await spreeRequest<SpreeVariant>(
@@ -4212,6 +4213,23 @@ function isBookProduct(product: DevirProduct, key: string): boolean {
   );
 }
 
+function commercialTargetMargin(
+  product: DevirProduct,
+  key: string,
+  categoryBaseMargin?: number | null,
+): number {
+  if (isBookProduct(product, key)) return 0.05;
+  const profile = commercialPricingProfile({
+    name: product.name,
+    categoryKey: key,
+  });
+  const base =
+    Number.isFinite(Number(categoryBaseMargin)) && Number(categoryBaseMargin) >= 0
+      ? Number(categoryBaseMargin)
+      : DEFAULT_CATEGORY_MARGINS[key] ?? 0.08;
+  return Math.max(base, profile.targetMargin);
+}
+
 function roundUpToProfessionalPrice(value: number): number {
   // Keep the profitability floor untouched: choose the first clean retail
   // ending at or above it instead of mathematically rounding down.
@@ -4881,7 +4899,7 @@ async function categorizeDraftBatch(
     };
     const key = categoryKey(product);
     const category = categoryForKey(categories, key);
-    const margin = DEFAULT_CATEGORY_MARGINS[key];
+    const margin = commercialTargetMargin(product, key);
     if (
       !category ||
       !Number.isFinite(margin) ||
@@ -5090,7 +5108,7 @@ async function repriceCommercialBooksBatch(
       const pricing = competitivePricing(
         product,
         key,
-        DEFAULT_CATEGORY_MARGINS[key] ?? 0.05,
+        0.05,
         selectedSupply.supplier_code,
         selectedSupply.supplier_config,
       );
@@ -5810,7 +5828,7 @@ async function preparePublishBatch(
         availability: selectedSupply.availability ?? "unknown",
         supplierMinimumQuantity: selectedSupply.minimum_order_quantity ?? null,
       };
-      const targetMargin = DEFAULT_CATEGORY_MARGINS[key] ?? 0.05;
+      const targetMargin = commercialTargetMargin(selectedProduct, key);
       const pricing = competitivePricing(
         selectedProduct,
         key,
@@ -7629,7 +7647,12 @@ async function repriceCatalogSupplierBatch(
       if (!Number.isFinite(cost) || cost <= 0) {
         throw new Error("supplier_cost_missing");
       }
-      const key = String(productRow.category_key ?? "");
+      const storedKey = String(productRow.category_key ?? "").trim();
+      const inferredKey = inferDevirCategoryKey({
+        name: String(row.product_name ?? productRow.name ?? ""),
+        url: String(row.source_url ?? ""),
+      });
+      const key = storedKey || inferredKey;
       const product: DevirProduct = {
         sku: String(row.canonical_sku ?? ""),
         name: String(row.product_name ?? productRow.name ?? ""),
@@ -7655,10 +7678,21 @@ async function repriceCatalogSupplierBatch(
             ?.raw_payload as Record<string, unknown> | null | undefined,
         ),
       };
+      const categoryBaseMargin =
+        marginByKey.get(key) ?? DEFAULT_CATEGORY_MARGINS[key] ?? 0.08;
+      const targetMargin = commercialTargetMargin(
+        product,
+        key,
+        categoryBaseMargin,
+      );
+      const profile = commercialPricingProfile({
+        name: product.name,
+        categoryKey: key,
+      });
       const pricing = competitivePricing(
         product,
         key,
-        marginByKey.get(key) ?? DEFAULT_CATEGORY_MARGINS[key] ?? 0.05,
+        targetMargin,
         supplierCode,
         supplier.config,
       );
@@ -7721,6 +7755,8 @@ async function repriceCatalogSupplierBatch(
         minimumOrderQuantity: product.supplierMinimumQuantity ?? null,
         minimumOrderSurchargeNet: pricing.minimumOrderSurchargeNet,
         minimumOrderSurchargeGross: pricing.minimumOrderSurchargeGross,
+        pricingProfile: profile.code,
+        targetMargin,
       });
     } catch (error) {
       failed += 1;
