@@ -24,7 +24,8 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm run check
+      - run: pnpm run lint
+      - run: pnpm run check:locales
 
   typecheck:
     name: Type Check
