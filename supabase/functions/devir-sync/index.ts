@@ -5849,6 +5849,7 @@ async function preparePublishBatch(
       return;
     }
 
+    // Product-level policy is required below for every variant in this batch.
     const { data: catalogProductPolicy, error: catalogProductPolicyError } =
       await supabase
         .from("catalog_products")
