@@ -24,7 +24,7 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec biome check supabase/functions/_shared/tcgfactory-web.ts src/lib/tcgfactory-web.test.ts supabase/functions/devir-sync/index.ts --max-diagnostics=100
+      - run: pnpm run check
 
   typecheck:
     name: Type Check
