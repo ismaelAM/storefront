@@ -91,6 +91,11 @@ describe("TcgFactory public web parser", () => {
   it("parses only explicit per-product minimum quantities", () => {
     expect(parseTcgFactoryMinimumOrderQuantity('"minimal_quantity": 6')).toBe(6);
     expect(parseTcgFactoryMinimumOrderQuantity("Cantidad mínima: 4")).toBe(4);
+    expect(
+      parseTcgFactoryMinimumOrderQuantity(
+        "<span>Cantidad mínima</span><strong>6</strong>",
+      ),
+    ).toBe(6);
     expect(parseTcgFactoryMinimumOrderQuantity("Múltiplo de compra: 12")).toBe(12);
     expect(parseTcgFactoryMinimumOrderQuantity('"minimalPurchase": 150')).toBeNull();
     expect(parseTcgFactoryMinimumOrderQuantity("Pack de 100 fundas")).toBeNull();
