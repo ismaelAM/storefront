@@ -22,6 +22,7 @@ vi.mock("@/components/account/AccountShell", () => ({
   AccountShell: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="account-shell">{children}</div>
   ),
+  AccountShellSkeleton: () => <div data-testid="account-shell-skeleton" />,
 }));
 
 import { AuthenticatedAccountShell } from "../AuthenticatedAccountShell";
@@ -41,6 +42,7 @@ describe("AuthenticatedAccountShell", () => {
     );
 
     expect(screen.queryByTestId("account-shell")).not.toBeInTheDocument();
+    expect(screen.getByTestId("account-shell-skeleton")).toBeInTheDocument();
     expect(
       screen.queryByText("Protected account content"),
     ).not.toBeInTheDocument();
