@@ -21,6 +21,11 @@ import {
 } from "../_shared/devir-catalog-policy.ts";
 import { requiresManualPackSplitReview } from "../_shared/mtg-precon-policy.ts";
 import {
+  commercialPricingProfile,
+  deterministicOfferScore,
+  madridCommercialDay,
+} from "../_shared/commercial-pricing-policy.ts";
+import {
   supplierMinimumOrderRiskSurcharge,
   supplierVatRate,
 } from "../_shared/supplier-pricing-policy.ts";
@@ -1368,6 +1373,12 @@ async function definitions(
       label: "⚠ Catálogo · Motivo de revisión",
       field_type: "long_text",
     },
+    {
+      namespace: "pricing",
+      key: "profile",
+      label: "Precio · Perfil comercial",
+      field_type: "short_text",
+    },
   ];
 
   let createdAny = false;
@@ -2649,8 +2660,16 @@ async function syncProductToSpree(
   const key = categoryKey(product);
   const category = key ? (categoryForKey(categories, key) ?? null) : null;
   const configuredMargin = await categoryMargin(config, category);
-  const targetMargin =
-    configuredMargin ?? DEFAULT_CATEGORY_MARGINS[key] ?? 0.05;
+  const commercialProfile = commercialPricingProfile({
+    name: product.name,
+    categoryKey: key,
+  });
+  const categoryBaseMargin =
+    configuredMargin ?? DEFAULT_CATEGORY_MARGINS[key] ?? 0.08;
+  // Fixed-price books keep their conservative legal/reference-price handling.
+  const targetMargin = isBookProduct(product, key)
+    ? 0.05
+    : Math.max(categoryBaseMargin, commercialProfile.targetMargin);
   const pricing = competitivePricing(
     product,
     key,
@@ -2964,8 +2983,11 @@ async function syncProductToSpree(
       : "Sin revisión pendiente.",
     "pricing.applied_margin": targetMargin,
     "pricing.effective_margin": effectiveMargin,
+    "pricing.profile": commercialProfile.code,
     "pricing.rule_source":
       pricing.ruleSource +
+      ":profile=" +
+      commercialProfile.code +
       (category ? ":category=" + category.id : "") +
       (catalogContext ? ":supplier=" + sourceCode : ""),
     "pricing.vat_rate": pricing.vatRate,
@@ -4137,38 +4159,37 @@ async function migrateLanguageGroup(
 
 const DEFAULT_CATEGORY_MARGINS: Record<string, number> = {
   // Minimum contribution after VAT and a standard EEA Stripe card fee.
-  // These are safety floors; the market/reference-price discount normally
-  // leaves a larger realised margin.
-  "juegos-de-mesa/general": 0.05,
-  "juegos-de-mesa/expansiones": 0.05,
-  "juegos-de-mesa/infantil": 0.05,
-  "tcg/mtg": 0.04,
-  "tcg/yugioh": 0.04,
-  "rol/dungeons-dragons": 0.05,
-  "rol/pathfinder": 0.05,
-  "rol/warhammer": 0.05,
-  "rol/otros": 0.05,
+  // Product-level commercial profiles can raise these category baselines.
+  "juegos-de-mesa/general": 0.085,
+  "juegos-de-mesa/expansiones": 0.1,
+  "juegos-de-mesa/infantil": 0.095,
+  "tcg/mtg": 0.045,
+  "tcg/yugioh": 0.05,
+  "rol/dungeons-dragons": 0.09,
+  "rol/pathfinder": 0.09,
+  "rol/warhammer": 0.09,
+  "rol/otros": 0.09,
   "manga-comic": 0.05,
-  accesorios: 0.05,
+  accesorios: 0.14,
   ...Object.fromEntries(
-    TCGFACTORY_ACCESSORY_CATEGORY_SPECS.map((spec) => [spec.key, 0.05]),
+    TCGFACTORY_ACCESSORY_CATEGORY_SPECS.map((spec) => [spec.key, 0.14]),
   ),
 };
 
 const CATEGORY_REFERENCE_DISCOUNTS: Record<string, number> = {
-  "juegos-de-mesa/general": 0.17,
-  "juegos-de-mesa/expansiones": 0.17,
-  "juegos-de-mesa/infantil": 0.15,
-  "tcg/mtg": 0.12,
-  "tcg/yugioh": 0.12,
-  "rol/dungeons-dragons": 0.1,
-  "rol/pathfinder": 0.1,
-  "rol/warhammer": 0.1,
-  "rol/otros": 0.1,
+  "juegos-de-mesa/general": 0.12,
+  "juegos-de-mesa/expansiones": 0.1,
+  "juegos-de-mesa/infantil": 0.1,
+  "tcg/mtg": 0.08,
+  "tcg/yugioh": 0.08,
+  "rol/dungeons-dragons": 0.08,
+  "rol/pathfinder": 0.08,
+  "rol/warhammer": 0.08,
+  "rol/otros": 0.08,
   "manga-comic": 0.05,
-  accesorios: 0.15,
+  accesorios: 0.1,
   ...Object.fromEntries(
-    TCGFACTORY_ACCESSORY_CATEGORY_SPECS.map((spec) => [spec.key, 0.15]),
+    TCGFACTORY_ACCESSORY_CATEGORY_SPECS.map((spec) => [spec.key, 0.1]),
   ),
 };
 
@@ -4360,7 +4381,11 @@ function competitivePricing(
   let reviewReason: string | null = null;
 
   if (referenceGross !== null) {
-    const discount = book ? 0.05 : (CATEGORY_REFERENCE_DISCOUNTS[key] ?? 0.12);
+    const commercialProfile = commercialPricingProfile({
+      name: product.name,
+      categoryKey: key,
+    });
+    const discount = book ? 0.05 : commercialProfile.referenceDiscount;
     const marketTarget = referenceGross * (1 - discount);
     raw = Math.max(floor, marketTarget + minimumOrderSurchargeGross);
     ruleSource = book
