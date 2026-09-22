@@ -2110,6 +2110,58 @@ async function reconcileStaleCatalogBatch(
   return { checked: data?.length ?? 0, reconciled, failed };
 }
 
+async function reconcilePhysicalOnlyCatalogBatch(
+  config: ConfigRow,
+  limit = 100,
+): Promise<{ products: number; reconciled: number; failed: number }> {
+  const { data: variants, error: variantsError } = await supabase
+    .from("catalog_variants")
+    .select("product_id")
+    .eq("fulfillment_mode", "physical_only")
+    .not("spree_variant_id", "is", null)
+    .order("product_id")
+    .limit(limit);
+  if (variantsError) throw variantsError;
+
+  const productIds = Array.from(
+    new Set((variants ?? []).map((row) => String(row.product_id)).filter(Boolean)),
+  );
+  if (productIds.length === 0) {
+    return { products: 0, reconciled: 0, failed: 0 };
+  }
+
+  const { data: products, error: productsError } = await supabase
+    .from("catalog_products")
+    .select("id,spree_product_id")
+    .in("id", productIds)
+    .not("spree_product_id", "is", null);
+  if (productsError) throw productsError;
+
+  let reconciled = 0;
+  let failed = 0;
+  for (const product of products ?? []) {
+    const spreeProductId = String(product.spree_product_id ?? "");
+    if (!spreeProductId) continue;
+    try {
+      await markCatalogProductDirty(spreeProductId);
+      await preparePublishBatch(config, 0, 1, spreeProductId);
+      reconciled += 1;
+    } catch (error) {
+      failed += 1;
+      console.error("No se pudo reconciliar stock físico protegido", {
+        spreeProductId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return {
+    products: products?.length ?? 0,
+    reconciled,
+    failed,
+  };
+}
+
 async function resolveCatalogVariant(
   supplier: CatalogSupplierRow,
   item: NormalizedSupplierCatalogItem,
