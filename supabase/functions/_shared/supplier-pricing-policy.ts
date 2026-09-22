@@ -8,7 +8,6 @@ export function supplierVatRate(input: {
   return input.isBook ? 0.04 : 0.21;
 }
 
-
 export function supplierMinimumOrderRiskSurcharge(input: {
   supplierCode?: string | null;
   unitCostNet: number;
@@ -43,7 +42,6 @@ export function supplierMinimumOrderRiskSurcharge(input: {
     return 0;
   }
 
-  const excessExposure =
-    (quantity - 1) * unitCostNet * excessCoverageRate;
+  const excessExposure = (quantity - 1) * unitCostNet * excessCoverageRate;
   return Math.min(excessExposure, unitCostNet * maxUnitCostShare);
 }
