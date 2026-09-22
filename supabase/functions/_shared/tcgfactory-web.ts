@@ -274,6 +274,17 @@ export function isTcgFactoryProductImageReference(
   return filename === slug;
 }
 
+export function isTcgFactoryKnownPollutionMediaReference(
+  value: string,
+): boolean {
+  const filename = imageFilename(value).toLowerCase();
+  if (!filename) return false;
+  if (/^\d+\.(?:jpe?g|png|webp)$/i.test(filename)) return true;
+  return /^(?:juego-cartas|juego-de-mesa|accesorios|merchandising|marcas|nuestros-productos(?:_\d+)?|ofertas)\.(?:jpe?g|png|webp)$/i.test(
+    filename,
+  );
+}
+
 function tcgFactoryImageAssetKey(value: string): string {
   try {
     const parts = new URL(value).pathname.split("/").filter(Boolean);
