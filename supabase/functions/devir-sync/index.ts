@@ -6185,6 +6185,212 @@ async function repairTcgFactorySellabilityBatch(
   };
 }
 
+function spreeMediaReference(media: Record<string, unknown>): string | null {
+  for (const key of [
+    "original_url",
+    "download_url",
+    "xlarge_url",
+    "large_url",
+    "medium_url",
+    "small_url",
+    "mini_url",
+  ]) {
+    const value = media[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+function mediaFilename(value: string): string {
+  try {
+    return decodeURIComponent(new URL(value).pathname.split("/").pop() ?? "");
+  } catch {
+    return value;
+  }
+}
+
+async function repairTcgFactoryImagesBatch(
+  config: ConfigRow,
+  offset: number,
+  limit: number,
+  dryRun = true,
+): Promise<Record<string, unknown>> {
+  const supplier = await tcgFactorySupplierRow();
+  const { data, error, count } = await supabase
+    .from("catalog_selected_supply")
+    .select(
+      "variant_id,spree_product_id,supplier_sku,source_url,supplier_code",
+      { count: "exact" },
+    )
+    .eq("supplier_code", TCGFACTORY_SUPPLIER_CODE)
+    .not("spree_product_id", "is", null)
+    .not("source_url", "is", null)
+    .order("variant_id")
+    .range(offset, offset + limit - 1);
+  if (error) throw error;
+
+  const uniqueProducts = new Map<
+    string,
+    { productId: string; supplierSku: string; sourceUrl: string }
+  >();
+  for (const row of data ?? []) {
+    const productId = String(row.spree_product_id ?? "");
+    const sourceUrl = String(row.source_url ?? "");
+    const supplierSku = String(row.supplier_sku ?? "");
+    if (productId && sourceUrl && supplierSku && !uniqueProducts.has(productId)) {
+      uniqueProducts.set(productId, { productId, supplierSku, sourceUrl });
+    }
+  }
+
+  let inspected = 0;
+  let productsWithInvalidMedia = 0;
+  let deleted = 0;
+  let uploaded = 0;
+  let failed = 0;
+  const results: Array<Record<string, unknown>> = [];
+
+  for (const product of uniqueProducts.values()) {
+    try {
+      const media = await spreeList<Record<string, unknown>>(
+        config,
+        "/products/" + encodeURIComponent(product.productId) + "/media",
+      );
+      const invalid = media.filter((item) => {
+        const reference = spreeMediaReference(item);
+        return (
+          typeof item.id === "string" &&
+          reference !== null &&
+          !isTcgFactoryProductImageReference(reference, product.sourceUrl)
+        );
+      });
+      const valid = media.filter((item) => {
+        const reference = spreeMediaReference(item);
+        return (
+          reference !== null &&
+          isTcgFactoryProductImageReference(reference, product.sourceUrl)
+        );
+      });
+      inspected += 1;
+      if (invalid.length > 0) productsWithInvalidMedia += 1;
+
+      const { data: discovery, error: discoveryError } = await supabase
+        .from("catalog_supplier_discovery")
+        .select("id,image_urls")
+        .eq("supplier_id", supplier.id)
+        .eq("supplier_sku", product.supplierSku)
+        .maybeSingle();
+      if (discoveryError) throw discoveryError;
+      const filteredImageUrls = Array.isArray(discovery?.image_urls)
+        ? discovery.image_urls.filter(
+            (value): value is string =>
+              typeof value === "string" &&
+              isTcgFactoryProductImageReference(value, product.sourceUrl),
+          )
+        : [];
+
+      if (!dryRun) {
+        for (const item of invalid) {
+          await spreeRequest(
+            config,
+            "DELETE",
+            "/products/" +
+              encodeURIComponent(product.productId) +
+              "/media/" +
+              encodeURIComponent(String(item.id)),
+          );
+          deleted += 1;
+        }
+
+        if (discovery?.id) {
+          const { error: updateDiscoveryError } = await supabase
+            .from("catalog_supplier_discovery")
+            .update({
+              image_urls: filteredImageUrls,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", discovery.id);
+          if (updateDiscoveryError) throw updateDiscoveryError;
+        }
+
+        const { data: offers, error: offersError } = await supabase
+          .from("catalog_supplier_offers")
+          .select("id,raw_payload")
+          .eq("supplier_id", supplier.id)
+          .eq("supplier_sku", product.supplierSku);
+        if (offersError) throw offersError;
+        for (const offer of offers ?? []) {
+          const payload =
+            offer.raw_payload && typeof offer.raw_payload === "object"
+              ? (offer.raw_payload as Record<string, unknown>)
+              : {};
+          const { error: updateOfferError } = await supabase
+            .from("catalog_supplier_offers")
+            .update({
+              raw_payload: {
+                ...payload,
+                imageUrls: filteredImageUrls,
+              },
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", offer.id);
+          if (updateOfferError) throw updateOfferError;
+        }
+
+        if (valid.length === 0) {
+          for (const [index, url] of filteredImageUrls.entries()) {
+            await spreeRequest(
+              config,
+              "POST",
+              "/products/" + encodeURIComponent(product.productId) + "/media",
+              { url, position: index + 1 },
+            );
+            uploaded += 1;
+          }
+        }
+      }
+
+      results.push({
+        productId: product.productId,
+        supplierSku: product.supplierSku,
+        valid: valid.length,
+        invalid: invalid.length,
+        invalidFiles: invalid
+          .map(spreeMediaReference)
+          .filter((value): value is string => Boolean(value))
+          .map(mediaFilename)
+          .slice(0, 20),
+        cleanSourceImages: filteredImageUrls.length,
+        dryRun,
+      });
+    } catch (repairError) {
+      failed += 1;
+      results.push({
+        productId: product.productId,
+        supplierSku: product.supplierSku,
+        error:
+          repairError instanceof Error
+            ? repairError.message
+            : String(repairError),
+      });
+    }
+  }
+
+  const total = count ?? 0;
+  const consumed = data?.length ?? 0;
+  return {
+    dryRun,
+    inspected,
+    productsWithInvalidMedia,
+    deleted,
+    uploaded,
+    failed,
+    total,
+    offset,
+    nextOffset: offset + consumed < total ? offset + consumed : null,
+    results,
+  };
+}
+
 async function repairRetailUnitProducts(
   config: ConfigRow,
 ): Promise<Record<string, unknown>> {
@@ -8737,6 +8943,16 @@ async function operatorAction(
     return json({
       ok: true,
       ...(await repairSellabilityBatch(config, limit)),
+    });
+  }
+
+  if (action === "repair-tcgfactory-images") {
+    const offset = Math.max(0, Number(body.offset ?? 0) || 0);
+    const limit = Math.min(100, Math.max(1, Number(body.limit ?? 25) || 25));
+    const dryRun = body.dryRun !== false;
+    return json({
+      ok: true,
+      ...(await repairTcgFactoryImagesBatch(config, offset, limit, dryRun)),
     });
   }
 
