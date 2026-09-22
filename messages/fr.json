@@ -187,7 +187,10 @@
     "preorderAction": "Précommander",
     "preorderShipsAt": "Expédition prévue : {date}",
     "standardEdition": "Édition standard",
-    "unavailableVariantHelp": "Les options marquées en rupture de stock restent au catalogue, mais ne peuvent pas être achetées pour le moment."
+    "unavailableVariantHelp": "Les options marquées en rupture de stock restent au catalogue, mais ne peuvent pas être achetées pour le moment.",
+    "availableToOrder": "Disponible",
+    "preorderHelp": "Commandez maintenant ; l’envoi aura lieu à la date de sortie.",
+    "extendedFulfillment": "Délai de préparation : 2 à 3 jours ouvrés"
   },
   "navigation": {
     "home": "Accueil",

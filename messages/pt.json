@@ -187,7 +187,10 @@
     "preorderAction": "Reservar",
     "preorderShipsAt": "Envio previsto: {date}",
     "standardEdition": "Edição standard",
-    "unavailableVariantHelp": "As opções marcadas como esgotadas continuam no catálogo, mas não podem ser compradas neste momento."
+    "unavailableVariantHelp": "As opções marcadas como esgotadas continuam no catálogo, mas não podem ser compradas neste momento.",
+    "availableToOrder": "Disponível",
+    "preorderHelp": "Encomende agora; será enviado quando chegar a data de lançamento.",
+    "extendedFulfillment": "Tempo de preparação: 2–3 dias úteis"
   },
   "navigation": {
     "home": "Início",

@@ -187,7 +187,10 @@
     "preorderAction": "Vorbestellen",
     "preorderShipsAt": "Voraussichtlicher Versand: {date}",
     "standardEdition": "Standardausgabe",
-    "unavailableVariantHelp": "Als nicht auf Lager markierte Optionen bleiben im Katalog, können aber derzeit nicht gekauft werden."
+    "unavailableVariantHelp": "Als nicht auf Lager markierte Optionen bleiben im Katalog, können aber derzeit nicht gekauft werden.",
+    "availableToOrder": "Verfügbar",
+    "preorderHelp": "Jetzt bestellen; der Versand erfolgt zum Erscheinungstermin.",
+    "extendedFulfillment": "Bearbeitungszeit: 2–3 Werktage"
   },
   "navigation": {
     "home": "Startseite",
@@ -398,7 +401,8 @@
     "orderTitle": "Bestellung #{number}",
     "shipmentCanceledRefund": "Sendung storniert — eine Rückerstattung wurde veranlasst.",
     "shippingMethodUnavailable": "Nicht verfügbar",
-    "totalColumn": "Gesamt"
+    "totalColumn": "Gesamt",
+    "trackingNumber": "Sendungsnummer"
   },
   "orderPlaced": {
     "thanksForOrder": "Vielen Dank für Ihre Bestellung, {name}!",
