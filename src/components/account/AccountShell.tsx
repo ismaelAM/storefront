@@ -17,7 +17,14 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { extractBasePath } from "@/lib/utils/path";
 
-const ACCOUNT_SKELETON_NAV = ["overview", "orders", "addresses", "payment", "gifts", "profile"];
+const ACCOUNT_SKELETON_NAV = [
+  "overview",
+  "orders",
+  "addresses",
+  "payment",
+  "gifts",
+  "profile",
+];
 const ACCOUNT_SKELETON_CARDS = ["orders", "addresses", "payment", "profile"];
 
 function getNavItems(t: ReturnType<typeof useTranslations<"account">>): {
@@ -63,7 +70,7 @@ export function AccountShellSkeleton() {
 
         <div className="min-w-0 space-y-6">
           <div className="h-9 w-56 max-w-[75%] rounded bg-muted" />
-          <div className="grid gap-5 md:grid-cols-2 sm:gap-6">
+          <div className="grid gap-5 sm:gap-6 md:grid-cols-2">
             {ACCOUNT_SKELETON_CARDS.map((item) => (
               <div
                 key={item}
@@ -98,7 +105,7 @@ export function AccountShell({ children }: { children: React.ReactNode }) {
     <div className="container mx-auto px-4 py-10 sm:px-6 sm:py-12 lg:px-8 lg:py-14">
       <div className="grid gap-8 xl:grid-cols-[minmax(15rem,18rem)_minmax(0,1fr)] xl:gap-12">
         <aside className="min-w-0">
-          <div className="overflow-hidden rounded-2xl border border-border bg-white">
+          <div className="overflow-hidden rounded-2xl border border-border bg-card">
             <div className="border-b border-border p-5 sm:p-6">
               <p className="font-semibold text-foreground">
                 {user?.first_name
@@ -124,8 +131,8 @@ export function AccountShell({ children }: { children: React.ReactNode }) {
                         href={href}
                         className={`flex min-h-12 min-w-0 items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-colors ${
                           isActive
-                            ? "bg-gray-50 text-primary"
-                            : "text-gray-700 hover:bg-gray-50"
+                            ? "bg-muted text-primary"
+                            : "text-foreground/80 hover:bg-muted/60"
                         }`}
                       >
                         <item.icon className="h-5 w-5 shrink-0" />
