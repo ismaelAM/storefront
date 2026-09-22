@@ -249,6 +249,7 @@ function tcgFactoryProductSlug(sourceUrl: string): string | null {
     return (
       decodeURIComponent(new URL(sourceUrl).pathname.split("/").pop() ?? "")
         .replace(/\.html$/i, "")
+        .replace(/^[-_]+|[-_]+$/g, "")
         .trim() || null
     );
   } catch {
@@ -268,10 +269,34 @@ export function isTcgFactoryProductImageReference(
   value: string,
   sourceUrl: string,
 ): boolean {
+  if (isTcgFactoryKnownPollutionMediaReference(value)) return false;
   const slug = tcgFactoryProductSlug(sourceUrl);
   if (!slug) return false;
   const filename = imageFilename(value).replace(/\.[a-z0-9]{2,5}$/i, "");
   return filename === slug;
+}
+
+function isTcgFactorySourceProductImageReference(
+  value: string,
+  sourceUrl: string,
+): boolean {
+  if (!isTcgFactoryProductImageReference(value, sourceUrl)) return false;
+  try {
+    const url = new URL(value);
+    if (
+      url.hostname !== "tcgfactory.com" &&
+      !url.hostname.endsWith(".tcgfactory.com")
+    ) {
+      return false;
+    }
+    const parts = url.pathname.split("/").filter(Boolean);
+    const rendition = parts.length > 1 ? parts[parts.length - 2] : "";
+    return /^\d+-(?:thickbox_default|large_default|medium_default|home_default|imagen_producto_newsletter)$/i.test(
+      rendition,
+    );
+  } catch {
+    return false;
+  }
 }
 
 export function isTcgFactoryKnownPollutionMediaReference(
@@ -280,7 +305,7 @@ export function isTcgFactoryKnownPollutionMediaReference(
   const filename = imageFilename(value).toLowerCase();
   if (!filename) return false;
   if (/^\d+\.(?:jpe?g|png|webp)$/i.test(filename)) return true;
-  return /^(?:juego-cartas|juego-de-mesa|accesorios|merchandising|marcas|nuestros-productos(?:_\d+)?|ofertas)\.(?:jpe?g|png|webp)$/i.test(
+  return /^(?:juego-cartas|juego-de-mesa|accesorios|merchandising|marcas|nuestros-productos(?:_\d+)?|ofertas|contacto|compra|envio)\.(?:jpe?g|png|webp)$/i.test(
     filename,
   );
 }
@@ -313,7 +338,7 @@ function images(html: string, sourceUrl: string): string[] {
   ]) {
     for (const match of html.matchAll(pattern)) {
       const url = absoluteOfficialUrl(match[1], sourceUrl);
-      if (url && isTcgFactoryProductImageReference(url, sourceUrl)) {
+      if (url && isTcgFactorySourceProductImageReference(url, sourceUrl)) {
         candidates.push(url);
       }
     }
