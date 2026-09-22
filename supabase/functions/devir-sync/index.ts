@@ -243,6 +243,9 @@ interface SelectedSupplyRow {
   availability: DevirProduct["availability"] | null;
   source_url: string | null;
   last_seen_at: string | null;
+  supplier_config?: Record<string, unknown> | null;
+  selected_offer_payload?: Record<string, unknown> | null;
+  minimum_order_quantity?: number | null;
 }
 
 interface CatalogSpreeContext {
@@ -1889,6 +1892,19 @@ async function loadCatalogVariant(
   return { product: productData as CatalogProductRow, variant };
 }
 
+function minimumOrderQuantityFromOfferPayload(
+  payload: Record<string, unknown> | null | undefined,
+): number | null {
+  const metadata =
+    payload?.metadata &&
+    typeof payload.metadata === "object" &&
+    !Array.isArray(payload.metadata)
+      ? (payload.metadata as Record<string, unknown>)
+      : {};
+  const quantity = Number(metadata.minimumOrderQuantity);
+  return Number.isInteger(quantity) && quantity > 1 ? quantity : null;
+}
+
 async function selectedSupplyForSpreeVariant(
   spreeVariantId: string,
 ): Promise<SelectedSupplyRow | null> {
@@ -1901,7 +1917,39 @@ async function selectedSupplyForSpreeVariant(
     .eq("spree_variant_id", spreeVariantId)
     .maybeSingle();
   if (error) throw error;
-  return data as SelectedSupplyRow | null;
+  if (!data) return null;
+
+  const row = data as SelectedSupplyRow;
+  if (row.supplier_code) {
+    const supplier = await configuredCatalogSupplier(row.supplier_code);
+    row.supplier_config = supplier.config ?? null;
+  }
+
+  if (row.supplier_code === TCGFACTORY_SUPPLIER_CODE) {
+    const { data: variant, error: variantError } = await supabase
+      .from("catalog_variants")
+      .select("selected_offer_id")
+      .eq("spree_variant_id", spreeVariantId)
+      .maybeSingle();
+    if (variantError) throw variantError;
+    if (variant?.selected_offer_id) {
+      const { data: offer, error: offerError } = await supabase
+        .from("catalog_supplier_offers")
+        .select("raw_payload")
+        .eq("id", variant.selected_offer_id)
+        .maybeSingle();
+      if (offerError) throw offerError;
+      row.selected_offer_payload =
+        offer?.raw_payload && typeof offer.raw_payload === "object"
+          ? (offer.raw_payload as Record<string, unknown>)
+          : null;
+      row.minimum_order_quantity = minimumOrderQuantityFromOfferPayload(
+        row.selected_offer_payload,
+      );
+    }
+  }
+
+  return row;
 }
 
 async function reconcileSpreeVariantFromCatalog(
@@ -4240,7 +4288,10 @@ function minimumOrderRiskSurcharge(
   supplierCode?: string | null,
   supplierConfig?: Record<string, unknown> | null,
 ): number {
-  if (normalizeSupplierCode(supplierCode ?? "") !== TCGFACTORY_SUPPLIER_CODE) {
+  if (
+    !supplierCode ||
+    normalizeSupplierCode(supplierCode) !== TCGFACTORY_SUPPLIER_CODE
+  ) {
     return 0;
   }
   const quantity = Number(product.supplierMinimumQuantity);
@@ -4786,6 +4837,7 @@ async function categorizeDraftBatch(
       availabilityLabel: null,
       releaseDate: null,
       imageUrls: [],
+      supplierMinimumQuantity: selectedSupply.minimum_order_quantity ?? null,
     };
     const key = categoryKey(product);
     const category = categoryForKey(categories, key);
@@ -4803,6 +4855,7 @@ async function categorizeDraftBatch(
       key,
       margin,
       selectedSupply.supplier_code,
+      selectedSupply.supplier_config,
     );
 
     const patch = async () => {
@@ -4989,6 +5042,7 @@ async function repriceCommercialBooksBatch(
       availabilityLabel: null,
       releaseDate: null,
       imageUrls: [],
+      supplierMinimumQuantity: selectedSupply.minimum_order_quantity ?? null,
     };
 
     try {
@@ -5713,6 +5767,7 @@ async function preparePublishBatch(
             ? selectedReference
             : legacyProduct.referencePriceNet,
         availability: selectedSupply.availability ?? "unknown",
+        supplierMinimumQuantity: selectedSupply.minimum_order_quantity ?? null,
       };
       const targetMargin = DEFAULT_CATEGORY_MARGINS[key] ?? 0.05;
       const pricing = competitivePricing(
