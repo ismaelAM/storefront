@@ -309,3 +309,43 @@ break-even calculado con coste neto, IVA y comisión estándar de tarjeta. Para
 stock físico no se añade el recargo estratégico de riesgo MOQ al suelo de
 liquidación; para stock de proveedor se mantienen el margen de oferta y el
 recargo MOQ normales. Los PVP manuales siguen excluidos de la rotación.
+
+## Revisión humana persistente y fulfillment seguro
+
+La revisión humana ya no se deduce de si un operador cambia manualmente el
+estado del producto en Spree. `catalog_products.review_decision` conserva una
+decisión explícita `pending`, `approved` o `rejected`. Una aprobación guarda
+además la huella ordenada de los motivos que se aprobaron. Si en un sync futuro
+aparece un motivo nuevo, la huella deja de coincidir y el producto vuelve a
+revisión; los bots no convierten una aprobación antigua en un permiso genérico.
+
+Acciones internas del worker:
+
+- `catalog-review-status`: muestra decisión, motivos y política de las variantes.
+- `catalog-review-approve`: aprueba exactamente los motivos actuales.
+- `catalog-review-reject`: mantiene el producto fuera de venta de forma persistente.
+- `catalog-review-reset`: devuelve la decisión a pendiente.
+
+Las acciones aceptan `catalogProductId` o `spreeProductId`. En una aprobación
+se puede enviar `fulfillmentMode`. Los modos de variante son:
+
+- `supplier_or_physical`: vende con stock físico o mediante una oferta de
+  proveedor elegible.
+- `physical_only`: nunca abre backorder ni preventa por stock de proveedor;
+  solo puede vender las unidades realmente presentes en Spree.
+- `disabled`: la variante no es vendible aunque exista stock de proveedor.
+
+Los packs que requieren división manual, incluidos cartones heterogéneos de
+Commander/precons, se migran a `physical_only` por defecto. Aprobar uno de esos
+packs no convierte el stock del mayorista en cuatro precons ficticiamente
+independientes. Para vender precons sueltos con seguridad deben existir como
+variantes retail reales y sus unidades deben entrar en `count_on_hand`; el
+cartón del proveedor puede seguir sirviendo como información de
+aprovisionamiento, pero no como backorder de cada mazo.
+
+La publicación se decide con la regla **stock físico OR proveedor elegible**.
+Si un proveedor desaparece pero quedan unidades físicas, el producto permanece
+vendible. Si una variante `physical_only` llega a cero, el tick periódico
+vuelve a reconciliar el producto y lo saca de venta salvo que otra variante del
+mismo producto siga siendo cumplible. Esto evita que un pedido dependa de un
+pack de proveedor que todavía no se ha recibido físicamente.

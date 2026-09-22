@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   canWriteManagedCatalogPrice,
+  catalogReviewFingerprint,
+  isCatalogReviewApproved,
+  shouldAllowSupplierBackorder,
   shouldAutoPublishCatalogProduct,
+  shouldRequireCatalogReview,
 } from "../../supabase/functions/_shared/catalog-publish-policy";
 
 describe("catalog publish policy", () => {
-  it("publishes sellable products only when they do not need review", () => {
+  it("publishes supplier-backed products only when they do not need review", () => {
     expect(
       shouldAutoPublishCatalogProduct({
         review: false,
@@ -30,6 +34,78 @@ describe("catalog publish policy", () => {
         availability: "unavailable",
       }),
     ).toBe(false);
+  });
+
+  it("keeps physical stock sellable when every supplier is unavailable", () => {
+    expect(
+      shouldAutoPublishCatalogProduct({
+        review: false,
+        availability: "unavailable",
+        physicalStockOnHand: 1,
+      }),
+    ).toBe(true);
+    expect(
+      shouldAutoPublishCatalogProduct({
+        review: false,
+        availability: "missing",
+        physicalStockOnHand: 3,
+        fulfillmentMode: "physical_only",
+      }),
+    ).toBe(true);
+  });
+
+  it("never backorders physical-only variants", () => {
+    expect(
+      shouldAllowSupplierBackorder({
+        availability: "available",
+        fulfillmentMode: "physical_only",
+      }),
+    ).toBe(false);
+    expect(
+      shouldAllowSupplierBackorder({
+        availability: "available",
+        fulfillmentMode: "supplier_or_physical",
+      }),
+    ).toBe(true);
+  });
+
+  it("persists a human approval only for the exact reviewed reasons", () => {
+    const reasons = ["pack_requires_operator_split", "product_image_missing"];
+    const fingerprint = catalogReviewFingerprint(reasons);
+
+    expect(
+      isCatalogReviewApproved({
+        reasons,
+        decision: "approved",
+        approvedFingerprint: fingerprint,
+      }),
+    ).toBe(true);
+    expect(
+      shouldRequireCatalogReview({
+        reasons,
+        decision: "approved",
+        approvedFingerprint: fingerprint,
+      }),
+    ).toBe(false);
+
+    expect(
+      shouldRequireCatalogReview({
+        reasons: [...reasons, "supplier_cost_missing"],
+        decision: "approved",
+        approvedFingerprint: fingerprint,
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps rejected products in review even when the reasons are unchanged", () => {
+    const reasons = ["catalan_requires_operator_review"];
+    expect(
+      shouldRequireCatalogReview({
+        reasons,
+        decision: "rejected",
+        approvedFingerprint: catalogReviewFingerprint(reasons),
+      }),
+    ).toBe(true);
   });
 
   it("keeps updating an active managed automatic price", () => {

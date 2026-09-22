@@ -1,7 +1,12 @@
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import {
   canWriteManagedCatalogPrice,
+  catalogReviewFingerprint,
+  type CatalogFulfillmentMode,
+  type CatalogReviewDecision,
+  shouldAllowSupplierBackorder,
   shouldAutoPublishCatalogProduct,
+  shouldRequireCatalogReview,
 } from "../_shared/catalog-publish-policy.ts";
 import {
   buildCanonicalIdentity,
@@ -177,6 +182,10 @@ interface CatalogProductRow {
   name: string;
   category_key: string | null;
   spree_product_id: string | null;
+  review_decision: CatalogReviewDecision;
+  approved_review_fingerprint: string | null;
+  review_decided_at?: string | null;
+  review_note?: string | null;
 }
 
 interface CatalogVariantRow {
@@ -190,6 +199,7 @@ interface CatalogVariantRow {
   spree_variant_id: string | null;
   selected_offer_id: string | null;
   last_auto_price: number | string | null;
+  fulfillment_mode: CatalogFulfillmentMode;
 }
 
 interface CatalogOfferRow {
@@ -257,6 +267,7 @@ interface SelectedSupplyRow {
   supplier_config?: Record<string, unknown> | null;
   selected_offer_payload?: Record<string, unknown> | null;
   minimum_order_quantity?: number | null;
+  fulfillment_mode?: CatalogFulfillmentMode | null;
 }
 
 interface CatalogSpreeContext {
@@ -272,6 +283,9 @@ interface CatalogSpreeContext {
   existingProduct: SpreeProduct | null;
   existingVariant: SpreeVariant | null;
   lastAutoPrice: number | null;
+  reviewDecision: CatalogReviewDecision;
+  approvedReviewFingerprint: string | null;
+  fulfillmentMode: CatalogFulfillmentMode;
 }
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -912,6 +926,8 @@ function humanizeReviewReason(reason: string): string {
         : "Las variantes apuntan a categorías distintas.";
     case "manual_review_required":
       return "Este producto está marcado para revisión manual.";
+    case "operator_rejected":
+      return "Has decidido mantener este producto fuera de venta.";
     default:
       return detail
         ? `Revisión manual: ${code.trim()} (${detail}).`
@@ -1619,13 +1635,13 @@ async function syncBackorderability(
   config: ConfigRow,
   variantId: string | null,
   availability: DevirProduct["availability"],
+  fulfillmentMode: CatalogFulfillmentMode = "supplier_or_physical",
 ): Promise<number> {
-  if (
-    !variantId ||
-    (availability !== "available" && availability !== "unavailable")
-  )
-    return 0;
-  const desired = availability === "available";
+  if (!variantId) return 0;
+  const desired = shouldAllowSupplierBackorder({
+    availability,
+    fulfillmentMode,
+  });
   const attempts = [
     "/stock_items?q[variant_id_eq]=" + encodeURIComponent(variantId),
     "/stock_items?q[variant_prefixed_id_eq]=" + encodeURIComponent(variantId),
@@ -1716,6 +1732,46 @@ async function appendToExistingGroupedProduct(
     }
 
     if (!(parent.tags ?? []).includes("devir-group")) continue;
+
+    const { data: catalogProductPolicy, error: catalogProductPolicyError } =
+      await supabase
+        .from("catalog_products")
+        .select(
+          "id,review_decision,approved_review_fingerprint,review_decided_at,review_note",
+        )
+        .eq("spree_product_id", productId)
+        .maybeSingle();
+    if (catalogProductPolicyError) throw catalogProductPolicyError;
+
+    const reviewDecision =
+      (catalogProductPolicy?.review_decision as CatalogReviewDecision | null) ??
+      "pending";
+    const approvedReviewFingerprint =
+      typeof catalogProductPolicy?.approved_review_fingerprint === "string"
+        ? catalogProductPolicy.approved_review_fingerprint
+        : null;
+
+    const { data: catalogVariantPolicies, error: catalogVariantPoliciesError } =
+      catalogProductPolicy?.id
+        ? await supabase
+            .from("catalog_variants")
+            .select("spree_variant_id,fulfillment_mode")
+            .eq("product_id", catalogProductPolicy.id)
+        : { data: [], error: null };
+    if (catalogVariantPoliciesError) throw catalogVariantPoliciesError;
+    const fulfillmentModeByVariant = new Map<string, CatalogFulfillmentMode>(
+      (catalogVariantPolicies ?? []).flatMap((row) => {
+        const variantId = String(row.spree_variant_id ?? "");
+        if (!variantId) return [];
+        return [
+          [
+            variantId,
+            (row.fulfillment_mode as CatalogFulfillmentMode | null) ??
+              "supplier_or_physical",
+          ] as const,
+        ];
+      }),
+    );
 
     const variants = await spreeList<SpreeVariant>(
       config,
@@ -1893,7 +1949,7 @@ async function loadCatalogVariant(
   const { data: variantData, error: variantError } = await supabase
     .from("catalog_variants")
     .select(
-      "id,product_id,canonical_key,canonical_sku,name,option_values,option_signature,spree_variant_id,selected_offer_id,last_auto_price",
+      "id,product_id,canonical_key,canonical_sku,name,option_values,option_signature,spree_variant_id,selected_offer_id,last_auto_price,fulfillment_mode",
     )
     .eq("id", variantId)
     .single();
@@ -1902,7 +1958,7 @@ async function loadCatalogVariant(
 
   const { data: productData, error: productError } = await supabase
     .from("catalog_products")
-    .select("id,canonical_key,name,category_key,spree_product_id")
+    .select("id,canonical_key,name,category_key,spree_product_id,review_decision,approved_review_fingerprint,review_decided_at,review_note")
     .eq("id", variant.product_id)
     .single();
   if (productError) throw productError;
@@ -1929,7 +1985,7 @@ async function selectedSupplyForSpreeVariant(
   const { data, error } = await supabase
     .from("catalog_selected_supply")
     .select(
-      "variant_id,canonical_sku,spree_variant_id,product_id,product_name,spree_product_id,supplier_code,supplier_name,supplier_enabled,supplier_stale_after_hours,supplier_sku,normalized_cost,currency,reference_price_net,availability,source_url,last_seen_at",
+      "variant_id,canonical_sku,spree_variant_id,product_id,product_name,spree_product_id,supplier_code,supplier_name,supplier_enabled,supplier_stale_after_hours,supplier_sku,normalized_cost,currency,reference_price_net,availability,source_url,last_seen_at,fulfillment_mode",
     )
     .eq("spree_variant_id", spreeVariantId)
     .maybeSingle();
@@ -2029,12 +2085,16 @@ async function reconcileStaleCatalogBatch(
   let failed = 0;
   for (const variantId of staleVariantIds) {
     try {
-      await reconcileCatalogVariant(
+      const synced = await reconcileCatalogVariant(
         config,
         await loadCatalogVariant(variantId),
         categories,
         defs,
       );
+      if (synced.productId) {
+        await markCatalogProductDirty(synced.productId);
+        await preparePublishBatch(config, 0, 1, synced.productId);
+      }
       reconciled += 1;
     } catch (reconcileError) {
       failed += 1;
@@ -2048,6 +2108,64 @@ async function reconcileStaleCatalogBatch(
     }
   }
   return { checked: data?.length ?? 0, reconciled, failed };
+}
+
+async function reconcilePhysicalOnlyCatalogBatch(
+  config: ConfigRow,
+  limit = 40,
+): Promise<{ products: number; reconciled: number; failed: number }> {
+  const { data: variants, error: variantsError } = await supabase
+    .from("catalog_variants")
+    .select("product_id,updated_at")
+    .eq("fulfillment_mode", "physical_only")
+    .not("spree_variant_id", "is", null)
+    .order("updated_at", { ascending: true })
+    .limit(limit);
+  if (variantsError) throw variantsError;
+
+  const productIds = Array.from(
+    new Set((variants ?? []).map((row) => String(row.product_id)).filter(Boolean)),
+  );
+  if (productIds.length === 0) {
+    return { products: 0, reconciled: 0, failed: 0 };
+  }
+
+  const { data: products, error: productsError } = await supabase
+    .from("catalog_products")
+    .select("id,spree_product_id")
+    .in("id", productIds)
+    .not("spree_product_id", "is", null);
+  if (productsError) throw productsError;
+
+  let reconciled = 0;
+  let failed = 0;
+  for (const product of products ?? []) {
+    const spreeProductId = String(product.spree_product_id ?? "");
+    if (!spreeProductId) continue;
+    try {
+      await markCatalogProductDirty(spreeProductId);
+      await preparePublishBatch(config, 0, 1, spreeProductId);
+      const { error: checkpointError } = await supabase
+        .from("catalog_variants")
+        .update({ updated_at: new Date().toISOString() })
+        .eq("product_id", product.id)
+        .eq("fulfillment_mode", "physical_only");
+      if (checkpointError) throw checkpointError;
+      reconciled += 1;
+    } catch (error) {
+      failed += 1;
+      console.error("No se pudo reconciliar stock físico protegido", {
+        spreeProductId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return {
+    products: products?.length ?? 0,
+    reconciled,
+    failed,
+  };
 }
 
 async function resolveCatalogVariant(
@@ -2146,7 +2264,7 @@ async function resolveCatalogVariant(
 
   const { data: productData, error: productError } = await supabase
     .from("catalog_products")
-    .select("id,canonical_key,name,category_key,spree_product_id")
+    .select("id,canonical_key,name,category_key,spree_product_id,review_decision,approved_review_fingerprint,review_decided_at,review_note")
     .eq("canonical_key", identity.productKey)
     .single();
   if (productError) throw productError;
@@ -2192,7 +2310,7 @@ async function resolveCatalogVariant(
   const { data: variantData, error: variantError } = await supabase
     .from("catalog_variants")
     .select(
-      "id,product_id,canonical_key,canonical_sku,name,option_values,option_signature,spree_variant_id,selected_offer_id,last_auto_price",
+      "id,product_id,canonical_key,canonical_sku,name,option_values,option_signature,spree_variant_id,selected_offer_id,last_auto_price,fulfillment_mode",
     )
     .eq("canonical_key", identity.variantKey)
     .single();
@@ -2511,6 +2629,7 @@ async function reconcileCatalogVariantUnlocked(
   variantId: string | null;
   images: number;
   review: boolean;
+  reviewReasons: string[];
   backorderItems: number;
   lastAutoPrice: number | null;
   selectedSupplierCode: string | null;
@@ -2528,6 +2647,7 @@ async function reconcileCatalogVariantUnlocked(
         config,
         resolution.variant.spree_variant_id,
         "unavailable",
+        resolution.variant.fulfillment_mode ?? "supplier_or_physical",
       );
     }
     if (mapping.product && resolution.variant.spree_variant_id) {
@@ -2546,7 +2666,8 @@ async function reconcileCatalogVariantUnlocked(
       productId: mapping.product?.id ?? null,
       variantId: mapping.variant?.id ?? null,
       images: 0,
-      review: true,
+      review: false,
+      reviewReasons: [],
       backorderItems: 0,
       lastAutoPrice: null,
       selectedSupplierCode: null,
@@ -2570,6 +2691,11 @@ async function reconcileCatalogVariantUnlocked(
     existingProduct: mapping.product,
     existingVariant: mapping.variant,
     lastAutoPrice: Number.isFinite(lastAutoPrice) ? lastAutoPrice : null,
+    reviewDecision: resolution.product.review_decision ?? "pending",
+    approvedReviewFingerprint:
+      resolution.product.approved_review_fingerprint ?? null,
+    fulfillmentMode:
+      resolution.variant.fulfillment_mode ?? "supplier_or_physical",
   });
   await updateCatalogSpreeMapping(resolution, synced);
   return {
@@ -2653,6 +2779,7 @@ async function syncProductToSpree(
   variantId: string | null;
   images: number;
   review: boolean;
+  reviewReasons: string[];
   backorderItems: number;
   lastAutoPrice: number | null;
 }> {
@@ -2698,7 +2825,22 @@ async function syncProductToSpree(
     grouping.itemKind === "standalone" ? languageGroupingInfo(product) : null;
   if (grouping.confidence === "ambiguous")
     reasons.push("grouping_requires_operator_review");
-  const review = reasons.length > 0;
+  if (catalogContext?.reviewDecision === "rejected") {
+    reasons.push("operator_rejected");
+  }
+  const review = shouldRequireCatalogReview({
+    reasons,
+    decision: catalogContext?.reviewDecision ?? "pending",
+    approvedFingerprint: catalogContext?.approvedReviewFingerprint ?? null,
+  });
+  const fulfillmentMode =
+    catalogContext?.fulfillmentMode ?? "supplier_or_physical";
+  const supplierSellable = shouldAllowSupplierBackorder({
+    availability: product.availability,
+    fulfillmentMode,
+  });
+  const supplierPreorderable =
+    product.availability === "preorder" && supplierSellable;
   const spreeSku = catalogContext?.canonicalSku ?? product.sku;
   const spreeProductName = catalogContext?.productName ?? product.name;
   const variantOptions = Object.entries(catalogContext?.options ?? {}).map(
@@ -2792,9 +2934,8 @@ async function syncProductToSpree(
           ...shipping,
           track_inventory: true,
           backorder_limit: null,
-          preorderable: product.availability === "preorder",
-          preorder_ships_at:
-            product.availability === "preorder" ? product.releaseDate : null,
+          preorderable: supplierPreorderable,
+          preorder_ships_at: supplierPreorderable ? product.releaseDate : null,
           options: variantOptions,
           prices: [{ currency: "EUR", amount: pricing.retail }],
         },
@@ -2842,9 +2983,10 @@ async function syncProductToSpree(
             ...shipping,
             track_inventory: true,
             backorder_limit: null,
-            preorderable: product.availability === "preorder",
-            preorder_ships_at:
-              product.availability === "preorder" ? product.releaseDate : null,
+            preorderable: supplierPreorderable,
+            preorder_ships_at: supplierPreorderable
+              ? product.releaseDate
+              : null,
             prices: [{ currency: "EUR", amount: pricing.retail }],
           },
         ],
@@ -2888,7 +3030,7 @@ async function syncProductToSpree(
     const managed =
       (existing.product.tags ?? []).includes("devir") ||
       (existing.product.tags ?? []).includes("catalog-managed");
-    const forceDraftForSplit = packRequiresSplit && managed;
+    const forceDraftForSplit = packRequiresSplit && managed && review;
     const canWritePrice = canWriteManagedCatalogPrice({
       createdVariant,
       managed,
@@ -2940,9 +3082,8 @@ async function syncProductToSpree(
         ...shipping,
         track_inventory: true,
         backorder_limit: null,
-        preorderable: product.availability === "preorder",
-        preorder_ships_at:
-          product.availability === "preorder" ? product.releaseDate : null,
+        preorderable: supplierPreorderable,
+        preorder_ships_at: supplierPreorderable ? product.releaseDate : null,
       },
     );
     if (canWritePrice) {
@@ -2981,10 +3122,16 @@ async function syncProductToSpree(
         ? humanizeReviewReasons(reasons)
         : "Sin revisión pendiente.",
     "devir.last_sync_at": catalogContext ? undefined : new Date().toISOString(),
-    "catalog.review_status": review ? "⚠ NECESITA TU AYUDA" : "LISTO",
+    "catalog.review_status": review
+      ? "⚠ NECESITA TU AYUDA"
+      : reasons.length > 0 && catalogContext?.reviewDecision === "approved"
+        ? "✓ APROBADO"
+        : "LISTO",
     "catalog.review_reason": review
       ? humanizeReviewReasons(reasons)
-      : "Sin revisión pendiente.",
+      : reasons.length > 0 && catalogContext?.reviewDecision === "approved"
+        ? "Aprobado por ti: " + humanizeReviewReasons(reasons)
+        : "Sin revisión pendiente.",
     "pricing.applied_margin": targetMargin,
     "pricing.effective_margin": effectiveMargin,
     "pricing.profile": commercialProfile.code,
@@ -3017,6 +3164,7 @@ async function syncProductToSpree(
     config,
     variantId,
     product.availability,
+    fulfillmentMode,
   );
   if (
     sourceCode === TCGFACTORY_SUPPLIER_CODE &&
@@ -3037,17 +3185,25 @@ async function syncProductToSpree(
       productId,
       variantId,
       Number(current.total_on_hand ?? 0),
-      true,
-      product.availability === "preorder",
-      product.availability === "preorder" ? product.releaseDate : null,
+      shouldAllowSupplierBackorder({
+        availability: product.availability,
+        fulfillmentMode,
+      }),
+      supplierPreorderable,
+      supplierPreorderable ? product.releaseDate : null,
     );
     backorderItems += 1;
   }
   const images = await syncImages(config, productId, product);
 
+  const physicalStockOnHand = existing
+    ? Number(existing.variant.total_on_hand ?? 0)
+    : 0;
   const autoPublish = shouldAutoPublishCatalogProduct({
     review,
     availability: product.availability,
+    physicalStockOnHand,
+    fulfillmentMode,
   });
   if (autoPublish) {
     await spreeRequest(
@@ -3075,6 +3231,7 @@ async function syncProductToSpree(
     variantId,
     images,
     review,
+    reviewReasons: reasons,
     backorderItems,
     lastAutoPrice: manualPrice ? null : pricing.retail,
   };
@@ -5640,6 +5797,7 @@ async function preparePublishBatch(
   config: ConfigRow,
   offset: number,
   limit: number,
+  targetSpreeProductId?: string | null,
 ): Promise<{
   processed_products: number;
   published: number;
@@ -5648,13 +5806,17 @@ async function preparePublishBatch(
   variants_updated: number;
   next_offset: number | null;
 }> {
-  const { data, error } = await supabase
+  let pendingQuery = supabase
     .from("devir_sync_catalog")
     .select(
       "supplier_sku,source_url,name,snapshot,image_urls,spree_product_id,spree_variant_id,supplier_status,item_kind,grouping_confidence,last_error,catalog_version,catalog_state",
     )
     .not("spree_product_id", "is", null)
-    .or("catalog_version.is.null,catalog_version.neq.devir-taxonomy-v2")
+    .or("catalog_version.is.null,catalog_version.neq.devir-taxonomy-v2");
+  if (targetSpreeProductId) {
+    pendingQuery = pendingQuery.eq("spree_product_id", targetSpreeProductId);
+  }
+  const { data, error } = await pendingQuery
     .order("spree_product_id")
     .order("supplier_sku");
   if (error) throw error;
@@ -5776,6 +5938,19 @@ async function preparePublishBatch(
         continue;
       }
 
+      const fulfillmentMode =
+        fulfillmentModeByVariant.get(variant.id) ?? "supplier_or_physical";
+      const physicalStockOnHand = Math.max(
+        0,
+        Number(variant.total_on_hand ?? 0),
+      );
+      const physicalSellable =
+        fulfillmentMode !== "disabled" && physicalStockOnHand > 0;
+      if (physicalSellable) {
+        anySellable = true;
+        hasAvailable = true;
+      }
+
       if (variant.id !== row.spree_variant_id) {
         await supabase
           .from("devir_sync_catalog")
@@ -5788,7 +5963,13 @@ async function preparePublishBatch(
 
       const selectedSupply = await selectedSupplyForSpreeVariant(variant.id);
       if (!selectedSupply?.supplier_code) {
-        anyWaiting = true;
+        await syncBackorderability(
+          config,
+          variant.id,
+          "unavailable",
+          fulfillmentMode,
+        );
+        if (!physicalSellable) anyWaiting = true;
         continue;
       }
       if (
@@ -5850,13 +6031,20 @@ async function preparePublishBatch(
 
       variantsUpdated += 1;
       updatedForProduct += 1;
-      if (selectedSupply.availability === "available") {
+      const supplierSellable = shouldAllowSupplierBackorder({
+        availability: selectedSupply.availability ?? "unknown",
+        fulfillmentMode,
+      });
+      if (supplierSellable && selectedSupply.availability === "available") {
         anySellable = true;
         hasAvailable = true;
-      } else if (selectedSupply.availability === "preorder") {
+      } else if (
+        supplierSellable &&
+        selectedSupply.availability === "preorder"
+      ) {
         anySellable = true;
         hasPreorder = true;
-      } else {
+      } else if (!physicalSellable) {
         anyWaiting = true;
       }
     }
@@ -5867,7 +6055,14 @@ async function preparePublishBatch(
       );
     }
 
-    const human = productReasons.size > 0;
+    if (reviewDecision === "rejected") {
+      productReasons.add("operator_rejected");
+    }
+    const human = shouldRequireCatalogReview({
+      reasons: productReasons,
+      decision: reviewDecision,
+      approvedFingerprint: approvedReviewFingerprint,
+    });
     const publish = !human && anySellable;
     const waiting = !human && !anySellable && anyWaiting;
     const catalogState = human
@@ -5977,10 +6172,16 @@ async function preparePublishBatch(
     }
 
     await upsertProductFields(config, productId, defs, {
-      "catalog.review_status": human ? "⚠ NECESITA TU AYUDA" : "LISTO",
+      "catalog.review_status": human
+        ? "⚠ NECESITA TU AYUDA"
+        : productReasons.size > 0 && reviewDecision === "approved"
+          ? "✓ APROBADO"
+          : "LISTO",
       "catalog.review_reason": human
         ? humanizeReviewReasons(productReasons)
-        : "Sin revisión pendiente.",
+        : productReasons.size > 0 && reviewDecision === "approved"
+          ? "Aprobado por ti: " + humanizeReviewReasons(productReasons)
+          : "Sin revisión pendiente.",
       ...(human
         ? {
             "devir.review_status": "⚠ REVISIÓN HUMANA",
@@ -6040,7 +6241,7 @@ async function repairSellabilityBatch(
   failed: number;
   remaining: number;
 }> {
-  const version = "catalog-stock-v2";
+  const version = "catalog-stock-v3";
   const categories = await spreeCategories(config);
   const defs = await definitions(config);
   const { data, error } = await supabase
@@ -6083,19 +6284,23 @@ async function repairSellabilityBatch(
           encodeURIComponent(variantId),
       );
       const preorder = selectedSupply?.availability === "preorder";
-      const sellable = selectedSupply?.availability === "available" || preorder;
+      const supplierSellable = shouldAllowSupplierBackorder({
+        availability: selectedSupply?.availability ?? "unavailable",
+        fulfillmentMode:
+          selectedSupply?.fulfillment_mode ?? "supplier_or_physical",
+      });
 
       const updated = await patchVariantInventory(
         config,
         productId,
         variantId,
         Number(current.total_on_hand ?? 0),
-        sellable,
-        preorder,
+        supplierSellable,
+        preorder && supplierSellable,
         null,
       );
 
-      if (sellable && !updated.backorderable && !updated.purchasable) {
+      if (supplierSellable && !updated.backorderable && !updated.purchasable) {
         throw new Error("Spree no dejó la variante backorderable/comprable");
       }
 
@@ -6155,7 +6360,7 @@ async function repairTcgFactorySellabilityBatch(
   const { data, error, count } = await supabase
     .from("catalog_selected_supply")
     .select(
-      "variant_id,spree_product_id,spree_variant_id,availability,supplier_code",
+      "variant_id,spree_product_id,spree_variant_id,availability,supplier_code,fulfillment_mode",
       { count: "exact" },
     )
     .eq("supplier_code", TCGFACTORY_SUPPLIER_CODE)
@@ -6184,16 +6389,23 @@ async function repairTcgFactorySellabilityBatch(
           encodeURIComponent(spreeVariantId),
       );
       const preorder = row.availability === "preorder";
+      const supplierSellable = shouldAllowSupplierBackorder({
+        availability:
+          row.availability === "preorder" ? "preorder" : "available",
+        fulfillmentMode:
+          (row.fulfillment_mode as CatalogFulfillmentMode | null) ??
+          "supplier_or_physical",
+      });
       const updated = await patchVariantInventory(
         config,
         productId,
         spreeVariantId,
         Number(current.total_on_hand ?? 0),
-        true,
-        preorder,
+        supplierSellable,
+        preorder && supplierSellable,
         null,
       );
-      if (!updated.backorderable && !updated.purchasable) {
+      if (supplierSellable && !updated.backorderable && !updated.purchasable) {
         throw new Error("Spree no dejó la variante comprable");
       }
       repaired += 1;
@@ -6612,6 +6824,56 @@ function reviewReasonsFromLastError(value: unknown): string[] {
     .filter(Boolean);
 }
 
+async function currentCatalogReviewReasonsForSpreeProduct(
+  spreeProductId: string,
+): Promise<Set<string>> {
+  const { data, error } = await supabase
+    .from("devir_sync_catalog")
+    .select(
+      "supplier_sku,source_url,name,snapshot,image_urls,spree_product_id,spree_variant_id,supplier_status,item_kind,grouping_confidence,last_error,catalog_state",
+    )
+    .eq("spree_product_id", spreeProductId)
+    .order("supplier_sku");
+  if (error) throw error;
+
+  const reasons = new Set<string>();
+  for (const row of (data ?? []) as CatalogAuditRow[]) {
+    if (
+      row.catalog_state === "review" ||
+      /^REVIEW:/i.test(String(row.last_error ?? ""))
+    ) {
+      for (const reason of reviewReasonsFromLastError(row.last_error)) {
+        reasons.add(reason);
+      }
+    }
+
+    const product = productFromCatalogRow(row);
+    if (!product.imageUrls.length) reasons.add("product_image_missing");
+    if (isPack(product)) reasons.add("pack_requires_operator_split");
+    if (isCatalanCatalogProduct(product)) {
+      reasons.add("catalan_requires_operator_review");
+    }
+    if (row.grouping_confidence === "ambiguous") {
+      reasons.add("grouping_requires_operator_review");
+    }
+  }
+
+  return reasons;
+}
+
+async function markCatalogProductDirty(spreeProductId: string): Promise<void> {
+  const { error } = await supabase
+    .from("devir_sync_catalog")
+    .update({
+      catalog_version: null,
+      catalog_prepared_at: null,
+      review_marker_version: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("spree_product_id", spreeProductId);
+  if (error) throw error;
+}
+
 async function refreshHumanReviewMarkersBatch(
   config: ConfigRow,
   limit = 40,
@@ -6743,6 +7005,28 @@ async function hideCatalogPolicyViolations(
     channels[0];
   const hidden: Array<Record<string, unknown>> = [];
   for (const [productId, reasons] of violations) {
+    const { data: reviewPolicy, error: reviewPolicyError } = await supabase
+      .from("catalog_products")
+      .select("review_decision,approved_review_fingerprint")
+      .eq("spree_product_id", productId)
+      .maybeSingle();
+    if (reviewPolicyError) throw reviewPolicyError;
+    if (
+      reviewPolicy &&
+      !shouldRequireCatalogReview({
+        reasons,
+        decision:
+          (reviewPolicy.review_decision as CatalogReviewDecision | null) ??
+          "pending",
+        approvedFingerprint:
+          typeof reviewPolicy.approved_review_fingerprint === "string"
+            ? reviewPolicy.approved_review_fingerprint
+            : null,
+      })
+    ) {
+      continue;
+    }
+
     const product = await spreeRequest<SpreeProduct>(
       config,
       "GET",
@@ -8322,13 +8606,19 @@ async function completeCatalogSupplierRun(
   if (affectedVariantIds.length > 0) {
     const categories = await spreeCategories(config);
     const defs = await definitions(config);
+    const affectedProducts = new Set<string>();
     for (const variantId of affectedVariantIds) {
-      await reconcileCatalogVariant(
+      const synced = await reconcileCatalogVariant(
         config,
         await loadCatalogVariant(variantId),
         categories,
         defs,
       );
+      if (synced.productId) affectedProducts.add(synced.productId);
+    }
+    for (const productId of affectedProducts) {
+      await markCatalogProductDirty(productId);
+      await preparePublishBatch(config, 0, 1, productId);
     }
   }
 
@@ -9513,6 +9803,177 @@ async function operatorAction(
     });
   }
 
+  if (
+    action === "catalog-review-status" ||
+    action === "catalog-review-approve" ||
+    action === "catalog-review-reject" ||
+    action === "catalog-review-reset"
+  ) {
+    const requestedCatalogProductId =
+      typeof body.catalogProductId === "string"
+        ? body.catalogProductId.trim()
+        : "";
+    const requestedSpreeProductId =
+      typeof body.spreeProductId === "string" ? body.spreeProductId.trim() : "";
+    if (!requestedCatalogProductId && !requestedSpreeProductId) {
+      return json(
+        { error: "catalogProductId_or_spreeProductId_required" },
+        400,
+      );
+    }
+
+    let productQuery = supabase
+      .from("catalog_products")
+      .select(
+        "id,name,spree_product_id,review_decision,approved_review_fingerprint,review_decided_at,review_note",
+      );
+    productQuery = requestedCatalogProductId
+      ? productQuery.eq("id", requestedCatalogProductId)
+      : productQuery.eq("spree_product_id", requestedSpreeProductId);
+    const { data: productPolicy, error: productPolicyError } =
+      await productQuery.maybeSingle();
+    if (productPolicyError) throw productPolicyError;
+    if (!productPolicy) return json({ error: "catalog_product_not_found" }, 404);
+
+    const spreeProductId = String(productPolicy.spree_product_id ?? "");
+    if (!spreeProductId) {
+      return json({ error: "catalog_product_not_mapped_to_spree" }, 409);
+    }
+
+    const reasons = await currentCatalogReviewReasonsForSpreeProduct(
+      spreeProductId,
+    );
+    const reasonList = Array.from(reasons).sort();
+    const fingerprint = catalogReviewFingerprint(reasonList);
+    const { data: variantPolicies, error: variantPoliciesError } = await supabase
+      .from("catalog_variants")
+      .select(
+        "id,canonical_sku,name,spree_variant_id,fulfillment_mode,selected_offer_id",
+      )
+      .eq("product_id", productPolicy.id)
+      .order("canonical_sku");
+    if (variantPoliciesError) throw variantPoliciesError;
+
+    if (action === "catalog-review-status") {
+      return json({
+        ok: true,
+        product: productPolicy,
+        reasons: reasonList,
+        review_fingerprint: fingerprint,
+        approval_matches:
+          productPolicy.review_decision === "approved" &&
+          fingerprint ===
+            String(productPolicy.approved_review_fingerprint ?? ""),
+        variants: variantPolicies ?? [],
+      });
+    }
+
+    const now = new Date().toISOString();
+    const note = typeof body.note === "string" ? body.note.trim() : null;
+    let nextDecision: CatalogReviewDecision;
+    let approvedReviewFingerprint: string | null = null;
+
+    if (action === "catalog-review-approve") {
+      if (!fingerprint) {
+        return json({ error: "no_current_review_reasons" }, 409);
+      }
+      nextDecision = "approved";
+      approvedReviewFingerprint = fingerprint;
+    } else if (action === "catalog-review-reject") {
+      nextDecision = "rejected";
+    } else {
+      nextDecision = "pending";
+    }
+
+    const requestedFulfillmentMode =
+      typeof body.fulfillmentMode === "string"
+        ? body.fulfillmentMode.trim()
+        : "";
+    const allowedFulfillmentModes = new Set<CatalogFulfillmentMode>([
+      "supplier_or_physical",
+      "physical_only",
+      "disabled",
+    ]);
+    if (
+      requestedFulfillmentMode &&
+      !allowedFulfillmentModes.has(
+        requestedFulfillmentMode as CatalogFulfillmentMode,
+      )
+    ) {
+      return json({ error: "invalid_fulfillment_mode" }, 400);
+    }
+
+    const defaultFulfillmentMode: CatalogFulfillmentMode | null =
+      action === "catalog-review-approve" &&
+      reasons.has("pack_requires_operator_split")
+        ? "physical_only"
+        : null;
+    const nextFulfillmentMode =
+      (requestedFulfillmentMode as CatalogFulfillmentMode) ||
+      defaultFulfillmentMode;
+
+    const { error: decisionError } = await supabase
+      .from("catalog_products")
+      .update({
+        review_decision: nextDecision,
+        approved_review_fingerprint: approvedReviewFingerprint,
+        review_decided_at: action === "catalog-review-reset" ? null : now,
+        review_note: action === "catalog-review-reset" ? null : note,
+        updated_at: now,
+      })
+      .eq("id", productPolicy.id);
+    if (decisionError) throw decisionError;
+
+    if (nextFulfillmentMode) {
+      const { error: modeError } = await supabase
+        .from("catalog_variants")
+        .update({
+          fulfillment_mode: nextFulfillmentMode,
+          updated_at: now,
+        })
+        .eq("product_id", productPolicy.id);
+      if (modeError) throw modeError;
+    }
+
+    await markCatalogProductDirty(spreeProductId);
+    const prepared = await preparePublishBatch(
+      config,
+      0,
+      1,
+      spreeProductId,
+    );
+
+    const { data: refreshedProduct, error: refreshedProductError } =
+      await supabase
+        .from("catalog_products")
+        .select(
+          "id,name,spree_product_id,review_decision,approved_review_fingerprint,review_decided_at,review_note",
+        )
+        .eq("id", productPolicy.id)
+        .single();
+    if (refreshedProductError) throw refreshedProductError;
+    const { data: refreshedVariants, error: refreshedVariantsError } =
+      await supabase
+        .from("catalog_variants")
+        .select(
+          "id,canonical_sku,name,spree_variant_id,fulfillment_mode,selected_offer_id",
+        )
+        .eq("product_id", productPolicy.id)
+        .order("canonical_sku");
+    if (refreshedVariantsError) throw refreshedVariantsError;
+
+    return json({
+      ok: true,
+      decision: nextDecision,
+      reasons: reasonList,
+      review_fingerprint: fingerprint,
+      fulfillment_mode_applied: nextFulfillmentMode,
+      product: refreshedProduct,
+      variants: refreshedVariants ?? [],
+      reconciliation: prepared,
+    });
+  }
+
   if (action === "tcgfactory-credentials") {
     const email = typeof body.email === "string" ? body.email.trim() : "";
     const password = typeof body.password === "string" ? body.password : "";
@@ -10172,12 +10633,28 @@ async function processProducts(
             last_seen_at: now,
             last_synced_at: now,
             ...(packRequiresSplit
-              ? {
-                  catalog_state: "review",
-                  catalog_version: null,
-                  catalog_prepared_at: null,
-                  last_error: "REVIEW: pack_requires_operator_split",
-                }
+              ? synced.review
+                ? {
+                    catalog_state: "review",
+                    catalog_version: null,
+                    catalog_prepared_at: null,
+                    last_error:
+                      "REVIEW: " +
+                      (synced.reviewReasons.length
+                        ? synced.reviewReasons.join(", ")
+                        : "pack_requires_operator_split"),
+                  }
+                : {
+                    catalog_state:
+                      product.availability === "available"
+                        ? "published"
+                        : product.availability === "preorder"
+                          ? "preorder"
+                          : "waiting_supplier",
+                    catalog_version: "devir-taxonomy-v2",
+                    catalog_prepared_at: now,
+                    last_error: null,
+                  }
               : { last_error: null }),
             updated_at: now,
           },
@@ -10391,6 +10868,8 @@ Deno.serve(async (req) => {
     }
     const reviewMarkers = await refreshHumanReviewMarkersBatch(config);
     const staleReconciliation = await reconcileStaleCatalogBatch(config);
+    const physicalOnlyReconciliation =
+      await reconcilePhysicalOnlyCatalogBatch(config);
     let tcgFactoryResult: Record<string, unknown>;
     try {
       tcgFactoryResult = await tcgFactoryTick(config);
@@ -10433,6 +10912,7 @@ Deno.serve(async (req) => {
         ok: true,
         skipped: "disabled",
         catalog_reconciliation: staleReconciliation,
+        physical_only_reconciliation: physicalOnlyReconciliation,
         review_markers: reviewMarkers,
         tcgfactory: tcgFactoryResult,
         daily_offers: dailyOffersResult,
@@ -10451,6 +10931,7 @@ Deno.serve(async (req) => {
           skipped: "not_due",
           next_due_at: config.next_due_at,
           daily_offers: dailyOffersResult,
+          physical_only_reconciliation: physicalOnlyReconciliation,
         });
       }
       cycleId = await startCycle(config);
