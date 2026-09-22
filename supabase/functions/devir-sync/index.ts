@@ -8125,7 +8125,7 @@ async function backfillTcgFactoryMinimumOrders(
   let session = await tcgFactoryLogin();
   const { data, error, count } = await supabase
     .from("catalog_supplier_discovery")
-    .select("id,supplier_sku,source_url,metadata")
+    .select("id,supplier_sku,source_url,metadata", { count: "exact" })
     .eq("supplier_id", supplier.id)
     .eq("active", true)
     .not("source_url", "is", null)
