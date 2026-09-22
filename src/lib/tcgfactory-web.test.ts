@@ -101,6 +101,11 @@ describe("TcgFactory public web parser", () => {
     expect(parseTcgFactoryMinimumOrderQuantity("Cantidad mínima: 4")).toBe(4);
     expect(
       parseTcgFactoryMinimumOrderQuantity(
+        "La cantidad mínima en el pedido de compra para el producto es 6",
+      ),
+    ).toBe(6);
+    expect(
+      parseTcgFactoryMinimumOrderQuantity(
         "<span>Cantidad mínima</span><strong>6</strong>",
       ),
     ).toBe(6);
