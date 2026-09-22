@@ -6301,6 +6301,22 @@ async function repairTcgFactoryImagesBatch(
       inspected += 1;
       if (invalid.length > 0) productsWithInvalidMedia += 1;
 
+      const wouldLoseAllImages =
+        invalid.length > 0 &&
+        valid.length === 0 &&
+        filteredImageUrls.length === 0;
+      if (wouldLoseAllImages) {
+        results.push({
+          productId: product.productId,
+          supplierSku: product.supplierSku,
+          valid: 0,
+          invalid: invalid.length,
+          skipped: "no_safe_replacement_image",
+          dryRun,
+        });
+        continue;
+      }
+
       if (!dryRun) {
         for (const item of invalid) {
           await spreeRequest(
