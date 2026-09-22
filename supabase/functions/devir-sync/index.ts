@@ -6263,11 +6263,31 @@ async function repairTcgFactoryImagesBatch(
         config,
         "/products/" + encodeURIComponent(product.productId) + "/media",
       );
+      const { data: discovery, error: discoveryError } = await supabase
+        .from("catalog_supplier_discovery")
+        .select("id,image_urls")
+        .eq("supplier_id", supplier.id)
+        .eq("supplier_sku", product.supplierSku)
+        .maybeSingle();
+      if (discoveryError) throw discoveryError;
+
+      const originalImageUrls = Array.isArray(discovery?.image_urls)
+        ? discovery.image_urls.filter(
+            (value): value is string => typeof value === "string",
+          )
+        : [];
+      const supplierImportedFilenames = new Set(
+        originalImageUrls.map(mediaFilename),
+      );
+      const filteredImageUrls = originalImageUrls.filter((value) =>
+        isTcgFactoryProductImageReference(value, product.sourceUrl),
+      );
       const invalid = media.filter((item) => {
         const reference = spreeMediaReference(item);
         return (
           typeof item.id === "string" &&
           reference !== null &&
+          supplierImportedFilenames.has(mediaFilename(reference)) &&
           !isTcgFactoryProductImageReference(reference, product.sourceUrl)
         );
       });
@@ -6280,21 +6300,6 @@ async function repairTcgFactoryImagesBatch(
       });
       inspected += 1;
       if (invalid.length > 0) productsWithInvalidMedia += 1;
-
-      const { data: discovery, error: discoveryError } = await supabase
-        .from("catalog_supplier_discovery")
-        .select("id,image_urls")
-        .eq("supplier_id", supplier.id)
-        .eq("supplier_sku", product.supplierSku)
-        .maybeSingle();
-      if (discoveryError) throw discoveryError;
-      const filteredImageUrls = Array.isArray(discovery?.image_urls)
-        ? discovery.image_urls.filter(
-            (value): value is string =>
-              typeof value === "string" &&
-              isTcgFactoryProductImageReference(value, product.sourceUrl),
-          )
-        : [];
 
       if (!dryRun) {
         for (const item of invalid) {
