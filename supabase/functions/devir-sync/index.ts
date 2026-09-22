@@ -9240,7 +9240,6 @@ Deno.serve(async (req) => {
         skipped: "disabled",
         catalog_reconciliation: staleReconciliation,
         review_markers: reviewMarkers,
-        review_markers: reviewMarkers,
         tcgfactory: tcgFactoryResult,
       });
     }
