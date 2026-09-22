@@ -2921,9 +2921,10 @@ async function syncProductToSpree(
             ...shipping,
             track_inventory: true,
             backorder_limit: null,
-            preorderable: product.availability === "preorder",
-            preorder_ships_at:
-              product.availability === "preorder" ? product.releaseDate : null,
+            preorderable: supplierPreorderable,
+            preorder_ships_at: supplierPreorderable
+              ? product.releaseDate
+              : null,
             prices: [{ currency: "EUR", amount: pricing.retail }],
           },
         ],
@@ -3019,9 +3020,8 @@ async function syncProductToSpree(
         ...shipping,
         track_inventory: true,
         backorder_limit: null,
-        preorderable: product.availability === "preorder",
-        preorder_ships_at:
-          product.availability === "preorder" ? product.releaseDate : null,
+        preorderable: supplierPreorderable,
+        preorder_ships_at: supplierPreorderable ? product.releaseDate : null,
       },
     );
     if (canWritePrice) {
