@@ -14,9 +14,10 @@ repositorio. Es la referencia antes de modificar su adaptador.
   validar un feed B2B real.
 - La cuenta y la contraseña se leen exclusivamente de los secretos
   `TCGFACTORY_B2B_EMAIL` y `TCGFACTORY_B2B_PASSWORD`.
-- La autenticación y descarga del catálogo B2B todavía no están implementadas:
-  falta una muestra autorizada de la cuenta profesional o una especificación
-  oficial de exportación/API.
+- La autenticación web profesional está implementada en el worker y valida que
+  la sesión haya quedado iniciada antes de leer precios B2B. El HTML autenticado
+  sigue tratándose como transporte frágil: cualquier cambio del proveedor debe
+  validarse antes de completar un run.
 - La ingesta genérica, deduplicación, selección de coste y escritura en Spree
   son las descritas en `CATALOG_SOURCING.md`.
 
@@ -117,6 +118,33 @@ Reglas importantes:
 Un fichero puede ser un array o un objeto `{ "items": [...] }`. Los decimales
 pueden llegar como número o como texto con punto/coma; moneda e impuestos deben
 seguir siendo explícitos.
+
+
+## Calidad de imágenes y pedido mínimo
+
+Las imágenes de TcgFactory se filtran con una regla estricta: el nombre del
+fichero debe corresponder al slug de la ficha actual. Esto evita importar
+banners, imágenes CMS, logos de fabricante, categorías y recomendaciones
+laterales. Si la misma foto aparece en varias resoluciones, se conserva la
+mejor disponible.
+
+La reparación de galerías existentes se ejecuta con
+`repair-tcgfactory-images` y usa `dryRun: true` por defecto. El dry-run debe
+revisarse antes de permitir borrados; las imágenes subidas manualmente quedan
+protegidas y no deben eliminarse por no coincidir con el origen del proveedor.
+
+El pedido mínimo por SKU sólo se acepta cuando el proveedor lo expone de forma
+explícita o cuando existe un override documentado en
+`catalog_suppliers.config.minimumOrder.quantityBySku`. No se deduce nunca a
+partir de textos como «pack de 100 fundas», porque eso describe el contenido del
+producto y no el mínimo de compra.
+
+Cuando TcgFactory exige un MOQ alto, el PVP gestionado puede incorporar una
+cobertura parcial del riesgo de inventario. La política por defecto se aplica
+sólo a MOQ >= 4: cubre el 8% del coste de las unidades adicionales obligatorias
+y limita el recargo al 30% del coste unitario. Los precios editados manualmente
+siguen protegidos y no se sobrescriben por este proceso.
+
 
 ## Disponibilidad
 
