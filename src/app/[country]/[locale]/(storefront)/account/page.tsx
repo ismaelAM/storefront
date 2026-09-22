@@ -13,7 +13,10 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
-import { AccountShell } from "@/components/account/AccountShell";
+import {
+  AccountShell,
+  AccountShellSkeleton,
+} from "@/components/account/AccountShell";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -67,17 +70,9 @@ export default function AccountPage() {
     setLoading(false);
   };
 
-  // Show loading state while auth is initializing
+  // Keep the authenticated account geometry stable while auth initializes.
   if (authLoading) {
-    return (
-      <div className="max-w-md mx-auto px-4 sm:px-6 lg:px-8 py-16">
-        <div className="animate-pulse space-y-4">
-          <div className="h-8 bg-gray-200 rounded w-1/2 mx-auto" />
-          <div className="h-4 bg-gray-200 rounded w-3/4 mx-auto" />
-          <div className="h-48 bg-gray-200 rounded" />
-        </div>
-      </div>
-    );
+    return <AccountShellSkeleton />;
   }
 
   // Show login form if not authenticated
@@ -189,15 +184,15 @@ export default function AccountPage() {
   return (
     <AccountShell>
       <div>
-        <h1 className="text-2xl font-bold text-gray-900 mb-6">
+        <h1 className="mb-7 text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">
           {t("accountOverview")}
         </h1>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 sm:gap-6">
           <Link href={`${basePath}/account/orders`}>
-            <Card className="hover:border-gray-300 transition-colors h-full">
-              <CardContent className="flex items-center gap-4 py-0">
-                <div className="p-3 bg-gray-100 rounded-xl">
+            <Card className="h-full min-h-32 transition-colors hover:border-gray-300 sm:min-h-36">
+              <CardContent className="flex h-full items-center gap-4 py-2 sm:gap-5 sm:py-3">
+                <div className="shrink-0 rounded-xl bg-gray-100 p-3.5">
                   <ShoppingBag className="w-6 h-6 text-primary" />
                 </div>
                 <div>
@@ -213,9 +208,9 @@ export default function AccountPage() {
           </Link>
 
           <Link href={`${basePath}/account/addresses`}>
-            <Card className="hover:border-gray-300 transition-colors h-full">
-              <CardContent className="flex items-center gap-4 py-0">
-                <div className="p-3 bg-gray-100 rounded-xl">
+            <Card className="h-full min-h-32 transition-colors hover:border-gray-300 sm:min-h-36">
+              <CardContent className="flex h-full items-center gap-4 py-2 sm:gap-5 sm:py-3">
+                <div className="shrink-0 rounded-xl bg-gray-100 p-3.5">
                   <MapPin className="w-6 h-6 text-primary" />
                 </div>
                 <div>
@@ -231,9 +226,9 @@ export default function AccountPage() {
           </Link>
 
           <Link href={`${basePath}/account/credit-cards`}>
-            <Card className="hover:border-gray-300 transition-colors h-full">
-              <CardContent className="flex items-center gap-4 py-0">
-                <div className="p-3 bg-gray-100 rounded-xl">
+            <Card className="h-full min-h-32 transition-colors hover:border-gray-300 sm:min-h-36">
+              <CardContent className="flex h-full items-center gap-4 py-2 sm:gap-5 sm:py-3">
+                <div className="shrink-0 rounded-xl bg-gray-100 p-3.5">
                   <CreditCard className="w-6 h-6 text-primary" />
                 </div>
                 <div>
@@ -249,9 +244,9 @@ export default function AccountPage() {
           </Link>
 
           <Link href={`${basePath}/account/profile`}>
-            <Card className="hover:border-gray-300 transition-colors h-full">
-              <CardContent className="flex items-center gap-4 py-0">
-                <div className="p-3 bg-gray-100 rounded-xl">
+            <Card className="h-full min-h-32 transition-colors hover:border-gray-300 sm:min-h-36">
+              <CardContent className="flex h-full items-center gap-4 py-2 sm:gap-5 sm:py-3">
+                <div className="shrink-0 rounded-xl bg-gray-100 p-3.5">
                   <User className="w-6 h-6 text-primary" />
                 </div>
                 <div>
