@@ -4177,22 +4177,6 @@ const DEFAULT_CATEGORY_MARGINS: Record<string, number> = {
   ),
 };
 
-const CATEGORY_REFERENCE_DISCOUNTS: Record<string, number> = {
-  "juegos-de-mesa/general": 0.12,
-  "juegos-de-mesa/expansiones": 0.1,
-  "juegos-de-mesa/infantil": 0.1,
-  "tcg/mtg": 0.08,
-  "tcg/yugioh": 0.08,
-  "rol/dungeons-dragons": 0.08,
-  "rol/pathfinder": 0.08,
-  "rol/warhammer": 0.08,
-  "rol/otros": 0.08,
-  "manga-comic": 0.05,
-  accesorios: 0.1,
-  ...Object.fromEntries(
-    TCGFACTORY_ACCESSORY_CATEGORY_SPECS.map((spec) => [spec.key, 0.1]),
-  ),
-};
 
 const STANDARD_EEA_CARD_RATE = 0.015;
 const STANDARD_EEA_CARD_FIXED_EUR = 0.25;
