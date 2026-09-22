@@ -6364,7 +6364,7 @@ async function repairTcgFactoryImagesBatch(
           .from("catalog_supplier_offers")
           .select("id,raw_payload")
           .eq("supplier_id", supplier.id)
-          .eq("supplier_sku", product.supplierSku);
+          .eq("source_url", product.sourceUrl);
         if (offersError) throw offersError;
         for (const offer of offers ?? []) {
           const payload =
