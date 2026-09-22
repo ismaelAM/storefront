@@ -6277,9 +6277,11 @@ async function repairTcgFactoryImagesBatch(
       );
       const { data: discovery, error: discoveryError } = await supabase
         .from("catalog_supplier_discovery")
-        .select("id,image_urls")
+        .select("id,image_urls,source_url")
         .eq("supplier_id", supplier.id)
-        .eq("supplier_sku", product.supplierSku)
+        .eq("source_url", product.sourceUrl)
+        .order("updated_at", { ascending: false })
+        .limit(1)
         .maybeSingle();
       if (discoveryError) throw discoveryError;
 

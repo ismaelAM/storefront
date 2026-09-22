@@ -95,6 +95,22 @@ describe("TcgFactory public web parser", () => {
     ]);
   });
 
+  it("normalizes a leading dash in legacy TCG Factory product slugs", () => {
+    const html = `
+      <h1>Fundas Small Japanese Matte Negro</h1>
+      <meta property="og:image" content="https://tcgfactory.com/12345-thickbox_default/fundas-small-59mm-x-86mm-japanese-matte-negro-60-fundas-dragon-shield.jpg">
+      <img src="https://tcgfactory.com/img/cms/contacto.png">
+    `;
+    const product = parseTcgFactoryPublicProduct(
+      html,
+      "https://tcgfactory.com/es/distribucion/-fundas-small-59mm-x-86mm-japanese-matte-negro-60-fundas-dragon-shield.html",
+    );
+
+    expect(product.imageUrls).toEqual([
+      "https://tcgfactory.com/12345-thickbox_default/fundas-small-59mm-x-86mm-japanese-matte-negro-60-fundas-dragon-shield.jpg",
+    ]);
+  });
+
   it("recognizes legacy TCG Factory site-chrome media without matching product photos", () => {
     for (const url of [
       "https://console.spree.sh/blob/juego-cartas.png",
@@ -104,6 +120,9 @@ describe("TcgFactory public web parser", () => {
       "https://console.spree.sh/blob/marcas.png",
       "https://console.spree.sh/blob/nuestros-productos_2.png",
       "https://console.spree.sh/blob/ofertas.png",
+      "https://console.spree.sh/blob/contacto.png",
+      "https://console.spree.sh/blob/compra.png",
+      "https://console.spree.sh/blob/envio.png",
       "https://console.spree.sh/blob/177.jpg",
     ]) {
       expect(isTcgFactoryKnownPollutionMediaReference(url)).toBe(true);

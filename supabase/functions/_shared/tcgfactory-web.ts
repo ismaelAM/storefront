@@ -244,13 +244,18 @@ export function parseTcgFactoryAuthenticatedPrice(html: string): number | null {
   return null;
 }
 
+function normalizeTcgFactoryMediaStem(value: string): string {
+  return decodeURIComponent(value)
+    .replace(/\.[a-z0-9]{2,5}$/i, "")
+    .replace(/^-+/, "")
+    .trim()
+    .toLowerCase();
+}
+
 function tcgFactoryProductSlug(sourceUrl: string): string | null {
   try {
-    return (
-      decodeURIComponent(new URL(sourceUrl).pathname.split("/").pop() ?? "")
-        .replace(/\.html$/i, "")
-        .trim() || null
-    );
+    const raw = new URL(sourceUrl).pathname.split("/").pop() ?? "";
+    return normalizeTcgFactoryMediaStem(raw.replace(/\.html$/i, "")) || null;
   } catch {
     return null;
   }
@@ -270,9 +275,21 @@ export function isTcgFactoryProductImageReference(
 ): boolean {
   const slug = tcgFactoryProductSlug(sourceUrl);
   if (!slug) return false;
-  const filename = imageFilename(value).replace(/\.[a-z0-9]{2,5}$/i, "");
-  return filename === slug;
+  return normalizeTcgFactoryMediaStem(imageFilename(value)) === slug;
 }
+
+const TCGFACTORY_SITE_CHROME_MEDIA_STEMS = new Set([
+  "juego-cartas",
+  "juego-de-mesa",
+  "accesorios",
+  "merchandising",
+  "marcas",
+  "nuestros-productos",
+  "ofertas",
+  "contacto",
+  "compra",
+  "envio",
+]);
 
 export function isTcgFactoryKnownPollutionMediaReference(
   value: string,
@@ -280,9 +297,9 @@ export function isTcgFactoryKnownPollutionMediaReference(
   const filename = imageFilename(value).toLowerCase();
   if (!filename) return false;
   if (/^\d+\.(?:jpe?g|png|webp)$/i.test(filename)) return true;
-  return /^(?:juego-cartas|juego-de-mesa|accesorios|merchandising|marcas|nuestros-productos(?:_\d+)?|ofertas)\.(?:jpe?g|png|webp)$/i.test(
-    filename,
-  );
+
+  const stem = normalizeTcgFactoryMediaStem(filename).replace(/_\d+$/, "");
+  return TCGFACTORY_SITE_CHROME_MEDIA_STEMS.has(stem);
 }
 
 function tcgFactoryImageAssetKey(value: string): string {

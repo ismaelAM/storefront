@@ -125,13 +125,20 @@ seguir siendo explícitos.
 Las imágenes de TcgFactory se filtran con una regla estricta: el nombre del
 fichero debe corresponder al slug de la ficha actual. Esto evita importar
 banners, imágenes CMS, logos de fabricante, categorías y recomendaciones
-laterales. Si la misma foto aparece en varias resoluciones, se conserva la
-mejor disponible.
+laterales. El comparador normaliza guiones iniciales heredados en algunas URLs
+de producto, pero no relaja la pertenencia de la imagen a la ficha. Si la misma
+foto aparece en varias resoluciones, se conserva la mejor disponible.
 
 La reparación de galerías existentes se ejecuta con
-`repair-tcgfactory-images` y usa `dryRun: true` por defecto. El dry-run debe
-revisarse antes de permitir borrados; las imágenes subidas manualmente quedan
-protegidas y no deben eliminarse por no coincidir con el origen del proveedor.
+`repair-tcgfactory-images` y usa `dryRun: true` por defecto. El reparador
+identifica el discovery por `source_url` (no por SKU, porque TcgFactory puede
+reutilizar referencias genéricas) y reconoce como contaminación conocida los
+assets de navegación/CMS observados en producción: `juego-cartas`,
+`juego-de-mesa`, `accesorios`, `merchandising`, `marcas`,
+`nuestros-productos`, `ofertas`, `contacto`, `compra` y `envio`,
+además de nombres puramente numéricos. El dry-run debe revisarse antes de
+permitir borrados; las imágenes subidas manualmente quedan protegidas y no deben
+eliminarse por no coincidir con el origen del proveedor.
 
 El pedido mínimo por SKU sólo se acepta cuando el proveedor lo expone de forma
 explícita o cuando existe un override documentado en
