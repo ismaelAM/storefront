@@ -23,6 +23,16 @@ describe("commercial pricing policy", () => {
     expect(commander.targetMargin).toBeGreaterThan(box.targetMargin * 2);
   });
 
+  it("uses cost to recognize supplier-named MTG displays", () => {
+    expect(
+      commercialPricingProfile({
+        name: "MTG STAR TREK Play Booster",
+        categoryKey: "tcg/mtg",
+        unitCostNet: 124.12,
+      }).code,
+    ).toBe("mtg_booster_box");
+  });
+
   it("distinguishes broad store families", () => {
     expect(
       commercialPricingProfile({
