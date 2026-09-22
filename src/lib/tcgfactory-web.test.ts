@@ -79,6 +79,10 @@ describe("TcgFactory public web parser", () => {
       <h1>Caja de mazo Ashen White Blanco Dragon Shield</h1>
       <meta property="og:image" content="https://tcgfactory.com/34773-thickbox_default/caja-de-mazo-ashen-white-blanco-dragon-shield.jpg">
       <img src="https://tcgfactory.com/img/cms/juego-cartas.png">
+      <img src="https://tcgfactory.com/img/cms/contacto.png">
+      <img src="https://tcgfactory.com/img/cms/compra.png">
+      <img src="https://tcgfactory.com/img/cms/envio.png">
+      <img src="https://tcgfactory.com/img/cms/caja-de-mazo-ashen-white-blanco-dragon-shield.jpg">
       <img src="https://tcgfactory.com/34773-home_default/caja-de-mazo-ashen-white-blanco-dragon-shield.jpg">
       <img src="https://tcgfactory.com/34774-home_default/caja-de-mazo-ashen-white-blanco-dragon-shield.jpg">
       <img src="https://tcgfactory.com/img/m/4.jpg">
@@ -95,6 +99,20 @@ describe("TcgFactory public web parser", () => {
     ]);
   });
 
+  it("accepts a valid product rendition when the supplier URL has a stray leading dash", () => {
+    const product = parseTcgFactoryPublicProduct(
+      `
+        <h1>Fundas Small Japanese Matte Negro</h1>
+        <meta property="og:image" content="https://tcgfactory.com/43799-thickbox_default/fundas-small-59mm-x-86mm-japanese-matte-negro-60-fundas-dragon-shield.jpg">
+      `,
+      "https://tcgfactory.com/es/distribucion/-fundas-small-59mm-x-86mm-japanese-matte-negro-60-fundas-dragon-shield.html",
+    );
+
+    expect(product.imageUrls).toEqual([
+      "https://tcgfactory.com/43799-thickbox_default/fundas-small-59mm-x-86mm-japanese-matte-negro-60-fundas-dragon-shield.jpg",
+    ]);
+  });
+
   it("recognizes legacy TCG Factory site-chrome media without matching product photos", () => {
     for (const url of [
       "https://console.spree.sh/blob/juego-cartas.png",
@@ -104,6 +122,9 @@ describe("TcgFactory public web parser", () => {
       "https://console.spree.sh/blob/marcas.png",
       "https://console.spree.sh/blob/nuestros-productos_2.png",
       "https://console.spree.sh/blob/ofertas.png",
+      "https://console.spree.sh/blob/contacto.png",
+      "https://console.spree.sh/blob/compra.png",
+      "https://console.spree.sh/blob/envio.png",
       "https://console.spree.sh/blob/177.jpg",
     ]) {
       expect(isTcgFactoryKnownPollutionMediaReference(url)).toBe(true);
