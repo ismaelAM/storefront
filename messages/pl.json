@@ -187,7 +187,10 @@
     "preorderAction": "Zamów w przedsprzedaży",
     "preorderShipsAt": "Planowana wysyłka: {date}",
     "standardEdition": "Wydanie standardowe",
-    "unavailableVariantHelp": "Opcje oznaczone jako niedostępne pozostają w katalogu, ale obecnie nie można ich kupić."
+    "unavailableVariantHelp": "Opcje oznaczone jako niedostępne pozostają w katalogu, ale obecnie nie można ich kupić.",
+    "availableToOrder": "Dostępny",
+    "preorderHelp": "Zamów teraz; wysyłka nastąpi w dniu premiery.",
+    "extendedFulfillment": "Czas przygotowania: 2–3 dni robocze"
   },
   "navigation": {
     "home": "Strona główna",
@@ -398,7 +401,8 @@
     "orderTitle": "Zamówienie #{number}",
     "shipmentCanceledRefund": "Przesyłka anulowana — zwrot został wystawiony.",
     "shippingMethodUnavailable": "Niedostępna",
-    "totalColumn": "Suma"
+    "totalColumn": "Suma",
+    "trackingNumber": "Numer przesyłki"
   },
   "orderPlaced": {
     "thanksForOrder": "Dziękujemy za zamówienie, {name}!",
