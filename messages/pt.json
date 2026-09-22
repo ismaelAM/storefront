@@ -369,6 +369,7 @@
     "shippingMethod": "Método de envio",
     "shippedFrom": "Enviado de {location}",
     "trackItems": "Acompanhar artigos",
+    "trackingNumber": "Número de seguimento",
     "shipmentCanceled": "Este envio foi cancelado.",
     "noTrackingInfo": "Não existem informações de acompanhamento.",
     "paymentInformation": "Informações de pagamento",
