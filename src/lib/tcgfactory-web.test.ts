@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  isTcgFactoryKnownPollutionMediaReference,
   mapTcgFactoryPublicAvailability,
   parseTcgFactoryAuthenticatedPrice,
   parseTcgFactoryListing,
@@ -94,11 +95,41 @@ describe("TcgFactory public web parser", () => {
     ]);
   });
 
+  it("recognizes legacy TCG Factory site-chrome media without matching product photos", () => {
+    for (const url of [
+      "https://console.spree.sh/blob/juego-cartas.png",
+      "https://console.spree.sh/blob/juego-de-mesa.png",
+      "https://console.spree.sh/blob/accesorios.png",
+      "https://console.spree.sh/blob/merchandising.png",
+      "https://console.spree.sh/blob/marcas.png",
+      "https://console.spree.sh/blob/nuestros-productos_2.png",
+      "https://console.spree.sh/blob/ofertas.png",
+      "https://console.spree.sh/blob/177.jpg",
+    ]) {
+      expect(isTcgFactoryKnownPollutionMediaReference(url)).toBe(true);
+    }
+    expect(
+      isTcgFactoryKnownPollutionMediaReference(
+        "https://console.spree.sh/blob/dados-runic-shimmering-negro-y-magenta-7-unidades-q-workshop.jpg",
+      ),
+    ).toBe(false);
+    expect(
+      isTcgFactoryKnownPollutionMediaReference(
+        "https://console.spree.sh/blob/manual-shop-photo.jpg",
+      ),
+    ).toBe(false);
+  });
+
   it("parses only explicit per-product minimum quantities", () => {
     expect(parseTcgFactoryMinimumOrderQuantity('"minimal_quantity": 6')).toBe(
       6,
     );
     expect(parseTcgFactoryMinimumOrderQuantity("Cantidad mínima: 4")).toBe(4);
+    expect(
+      parseTcgFactoryMinimumOrderQuantity(
+        "La cantidad mínima en el pedido de compra para el producto es 6",
+      ),
+    ).toBe(6);
     expect(
       parseTcgFactoryMinimumOrderQuantity(
         "<span>Cantidad mínima</span><strong>6</strong>",

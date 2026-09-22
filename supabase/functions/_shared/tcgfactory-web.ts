@@ -274,6 +274,17 @@ export function isTcgFactoryProductImageReference(
   return filename === slug;
 }
 
+export function isTcgFactoryKnownPollutionMediaReference(
+  value: string,
+): boolean {
+  const filename = imageFilename(value).toLowerCase();
+  if (!filename) return false;
+  if (/^\d+\.(?:jpe?g|png|webp)$/i.test(filename)) return true;
+  return /^(?:juego-cartas|juego-de-mesa|accesorios|merchandising|marcas|nuestros-productos(?:_\d+)?|ofertas)\.(?:jpe?g|png|webp)$/i.test(
+    filename,
+  );
+}
+
 function tcgFactoryImageAssetKey(value: string): string {
   try {
     const parts = new URL(value).pathname.split("/").filter(Boolean);
@@ -329,6 +340,7 @@ export function parseTcgFactoryMinimumOrderQuantity(
   const patterns = [
     /(?:minimal[_-]?quantity|minimum[_-]?quantity|min[_-]?order[_-]?quantity|minimumOrderQuantity)["']?\s*[:=]\s*["']?(\d+)/i,
     /(?:cantidad|compra|pedido)\s+m[ií]nima(?:\s+de\s+compra)?\s*:?\s*(\d+)/i,
+    /cantidad\s+m[ií]nima[\s\S]{0,120}?(?:es|:)\s*(\d+)/i,
     /m[ií]nimo(?:\s+de\s+compra)?\s*:?\s*(\d+)\s+unidades?/i,
     /m[uú]ltiplo(?:\s+de\s+compra)?\s*:?\s*(\d+)/i,
   ];

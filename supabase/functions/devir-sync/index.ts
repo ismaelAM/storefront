@@ -30,6 +30,7 @@ import {
   tcgFactoryRecordToCatalogItem,
 } from "../_shared/tcgfactory-adapter.ts";
 import {
+  isTcgFactoryKnownPollutionMediaReference,
   isTcgFactoryProductImageReference,
   parseTcgFactoryAuthenticatedPrice,
   parseTcgFactoryListing,
@@ -6284,11 +6285,16 @@ async function repairTcgFactoryImagesBatch(
       );
       const invalid = media.filter((item) => {
         const reference = spreeMediaReference(item);
+        if (
+          typeof item.id !== "string" ||
+          reference === null ||
+          isTcgFactoryProductImageReference(reference, product.sourceUrl)
+        ) {
+          return false;
+        }
         return (
-          typeof item.id === "string" &&
-          reference !== null &&
-          supplierImportedFilenames.has(mediaFilename(reference)) &&
-          !isTcgFactoryProductImageReference(reference, product.sourceUrl)
+          supplierImportedFilenames.has(mediaFilename(reference)) ||
+          isTcgFactoryKnownPollutionMediaReference(reference)
         );
       });
       const valid = media.filter((item) => {
@@ -6300,6 +6306,22 @@ async function repairTcgFactoryImagesBatch(
       });
       inspected += 1;
       if (invalid.length > 0) productsWithInvalidMedia += 1;
+
+      const wouldLoseAllImages =
+        invalid.length > 0 &&
+        valid.length === 0 &&
+        filteredImageUrls.length === 0;
+      if (wouldLoseAllImages) {
+        results.push({
+          productId: product.productId,
+          supplierSku: product.supplierSku,
+          valid: 0,
+          invalid: invalid.length,
+          skipped: "no_safe_replacement_image",
+          dryRun,
+        });
+        continue;
+      }
 
       if (!dryRun) {
         for (const item of invalid) {
