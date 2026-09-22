@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { Breadcrumbs } from "@/components/navigation/Breadcrumbs";
 import { ProductListing } from "@/components/products/ProductListing";
 import { CategoryPuckRenderer } from "@/components/puck/CategoryPuckRenderer";
 import { JsonLd } from "@/components/seo/JsonLd";
