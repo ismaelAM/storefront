@@ -7192,6 +7192,428 @@ async function syncSpecialPricingProgram(
   };
 }
 
+interface DailyOfferStateRow {
+  id: string;
+  day_key: string | null;
+  spree_price_list_id: string | null;
+  special: boolean;
+  active_products: Array<{
+    productId: string;
+    hadSale: boolean;
+    hadFeatured: boolean;
+  }> | null;
+  last_rotated_at: string | null;
+  last_error: string | null;
+}
+
+async function dailyOfferState(): Promise<DailyOfferStateRow | null> {
+  const { data, error } = await supabase
+    .from("catalog_daily_offer_state")
+    .select(
+      "id,day_key,spree_price_list_id,special,active_products,last_rotated_at,last_error",
+    )
+    .eq("id", "primary")
+    .maybeSingle();
+  if (error) throw error;
+  return data as DailyOfferStateRow | null;
+}
+
+async function restoreDailyOfferTags(
+  config: ConfigRow,
+  state: DailyOfferStateRow | null,
+): Promise<void> {
+  for (const item of state?.active_products ?? []) {
+    try {
+      const product = await spreeRequest<SpreeProduct>(
+        config,
+        "GET",
+        "/products/" + encodeURIComponent(item.productId),
+      );
+      let tags = (product.tags ?? []).filter(
+        (tag) =>
+          tag !== "daily-offer" &&
+          tag !== "saturday-special" &&
+          !tag.startsWith("offer-date:") &&
+          !tag.startsWith("offer-profile:"),
+      );
+      if (!item.hadSale) tags = tags.filter((tag) => tag !== "sale");
+      if (!item.hadFeatured) tags = tags.filter((tag) => tag !== "featured");
+      if (item.hadSale && !tags.includes("sale")) tags.push("sale");
+      if (item.hadFeatured && !tags.includes("featured")) tags.push("featured");
+      await spreeRequest(
+        config,
+        "PATCH",
+        "/products/" + encodeURIComponent(item.productId),
+        { tags: Array.from(new Set(tags)) },
+      );
+    } catch (error) {
+      console.error("No se pudieron restaurar tags de oferta", {
+        productId: item.productId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+}
+
+async function loadDailyOfferSupplyRows(): Promise<Array<Record<string, unknown>>> {
+  const rows: Array<Record<string, unknown>> = [];
+  for (let offset = 0; offset < 5000; offset += 500) {
+    const { data, error } = await supabase
+      .from("catalog_selected_supply")
+      .select(
+        "variant_id,canonical_sku,spree_variant_id,product_id,product_name,spree_product_id,supplier_code,normalized_cost,reference_price_net,availability,source_url",
+      )
+      .eq("availability", "available")
+      .not("spree_variant_id", "is", null)
+      .not("spree_product_id", "is", null)
+      .not("supplier_code", "is", null)
+      .order("variant_id")
+      .range(offset, offset + 499);
+    if (error) throw error;
+    const batch = (data ?? []) as Array<Record<string, unknown>>;
+    rows.push(...batch);
+    if (batch.length < 500) break;
+  }
+  return rows;
+}
+
+async function rotateDailyOffers(
+  config: ConfigRow,
+  force = false,
+): Promise<Record<string, unknown>> {
+  const calendar = madridCommercialDay();
+  const currentState = await dailyOfferState();
+  if (!force && currentState?.day_key === calendar.dayKey) {
+    return {
+      status: "current",
+      dayKey: calendar.dayKey,
+      saturday: calendar.saturday,
+      priceListId: currentState.spree_price_list_id,
+      products: currentState.active_products?.length ?? 0,
+    };
+  }
+
+  const supplyRows = await loadDailyOfferSupplyRows();
+  const variantIds = Array.from(
+    new Set(supplyRows.map((row) => String(row.variant_id ?? "")).filter(Boolean)),
+  );
+  const productIds = Array.from(
+    new Set(supplyRows.map((row) => String(row.product_id ?? "")).filter(Boolean)),
+  );
+
+  const variantRows: Array<Record<string, unknown>> = [];
+  for (let index = 0; index < variantIds.length; index += 200) {
+    const { data, error } = await supabase
+      .from("catalog_variants")
+      .select("id,last_auto_price")
+      .in("id", variantIds.slice(index, index + 200));
+    if (error) throw error;
+    variantRows.push(...((data ?? []) as Array<Record<string, unknown>>));
+  }
+  const productRows: Array<Record<string, unknown>> = [];
+  for (let index = 0; index < productIds.length; index += 200) {
+    const { data, error } = await supabase
+      .from("catalog_products")
+      .select("id,name,category_key")
+      .in("id", productIds.slice(index, index + 200));
+    if (error) throw error;
+    productRows.push(...((data ?? []) as Array<Record<string, unknown>>));
+  }
+
+  const variantsById = new Map(
+    variantRows.map((row) => [String(row.id), row]),
+  );
+  const productsById = new Map(
+    productRows.map((row) => [String(row.id), row]),
+  );
+
+  const ranked = supplyRows
+    .flatMap((row) => {
+      const variant = variantsById.get(String(row.variant_id ?? ""));
+      const productRow = productsById.get(String(row.product_id ?? ""));
+      if (!variant || !productRow) return [];
+      const lastAutoPrice = Number(variant.last_auto_price);
+      const cost = Number(row.normalized_cost);
+      if (
+        !Number.isFinite(lastAutoPrice) ||
+        lastAutoPrice <= 0 ||
+        !Number.isFinite(cost) ||
+        cost <= 0
+      ) {
+        return [];
+      }
+      const name = String(row.product_name ?? productRow.name ?? "");
+      const storedKey = String(productRow.category_key ?? "").trim();
+      const key =
+        storedKey ||
+        inferDevirCategoryKey({
+          name,
+          url: String(row.source_url ?? ""),
+        });
+      const profile = commercialPricingProfile({ name, categoryKey: key });
+      if (!profile.offerEligible || isBookSku(String(row.canonical_sku ?? ""))) {
+        return [];
+      }
+      return [
+        {
+          row,
+          key,
+          profile,
+          lastAutoPrice,
+          score: deterministicOfferScore(
+            calendar.dayKey,
+            String(row.variant_id ?? ""),
+          ),
+        },
+      ];
+    })
+    .sort((left, right) => left.score - right.score);
+
+  const targetCount = calendar.saturday ? 16 : 8;
+  const perProfileCap = calendar.saturday ? 4 : 2;
+  const selected: Array<{
+    variantId: string;
+    spreeVariantId: string;
+    productId: string;
+    sku: string;
+    amount: number;
+    compareAtAmount: number;
+    profile: string;
+    discount: number;
+    hadSale: boolean;
+    hadFeatured: boolean;
+  }> = [];
+  const profileCounts = new Map<string, number>();
+  const seenProducts = new Set<string>();
+
+  for (const candidate of ranked.slice(0, 120)) {
+    if (selected.length >= targetCount) break;
+    const row = candidate.row;
+    const productId = String(row.spree_product_id ?? "");
+    const spreeVariantId = String(row.spree_variant_id ?? "");
+    if (!productId || !spreeVariantId || seenProducts.has(productId)) continue;
+    const used = profileCounts.get(candidate.profile.code) ?? 0;
+    if (used >= perProfileCap) continue;
+
+    try {
+      const [spreeProduct, spreeVariant, selectedSupply] = await Promise.all([
+        spreeRequest<SpreeProduct>(
+          config,
+          "GET",
+          "/products/" + encodeURIComponent(productId),
+        ),
+        spreeRequest<SpreeVariant>(
+          config,
+          "GET",
+          "/products/" +
+            encodeURIComponent(productId) +
+            "/variants/" +
+            encodeURIComponent(spreeVariantId),
+        ),
+        selectedSupplyForSpreeVariant(spreeVariantId),
+      ]);
+      if (
+        spreeProduct.status !== "active" ||
+        (spreeProduct.tags ?? []).some((tag) =>
+          ["REVISION-HUMANA", "NECESITA-TU-AYUDA", "catalog-review"].includes(tag),
+        )
+      ) {
+        continue;
+      }
+      const currentPrice = variantPrice(spreeVariant);
+      if (
+        currentPrice === null ||
+        Math.abs(currentPrice - candidate.lastAutoPrice) >= 0.005 ||
+        !selectedSupply?.supplier_code
+      ) {
+        // A base price that differs from last_auto_price is an operator override.
+        continue;
+      }
+
+      const purchasePrice = Number(selectedSupply.normalized_cost);
+      if (!Number.isFinite(purchasePrice) || purchasePrice <= 0) continue;
+      const referencePriceNet = Number(selectedSupply.reference_price_net);
+      const product: DevirProduct = {
+        sku: selectedSupply.canonical_sku || String(row.canonical_sku ?? ""),
+        name: selectedSupply.product_name || String(row.product_name ?? ""),
+        url: selectedSupply.source_url ?? String(row.source_url ?? ""),
+        purchasePrice,
+        referencePriceNet:
+          Number.isFinite(referencePriceNet) && referencePriceNet > 0
+            ? referencePriceNet
+            : null,
+        availability: selectedSupply.availability ?? "available",
+        availabilityLabel: null,
+        releaseDate: null,
+        imageUrls: [],
+        categoryKeyOverride: candidate.key,
+        supplierMinimumQuantity: selectedSupply.minimum_order_quantity ?? null,
+      };
+      if (isBookProduct(product, candidate.key)) continue;
+
+      const surchargeNet = minimumOrderRiskSurcharge(
+        product,
+        selectedSupply.supplier_code,
+        selectedSupply.supplier_config,
+      );
+      const vatRate = supplierVatRate({
+        supplierCode: selectedSupply.supplier_code,
+        isBook: false,
+      });
+      const offerFloor = paymentAwareFloor(
+        purchasePrice + surchargeNet,
+        vatRate,
+        candidate.profile.offerFloorMargin,
+      );
+      const discount = calendar.saturday
+        ? candidate.profile.saturdayOfferDiscount
+        : candidate.profile.dailyOfferDiscount;
+      const desired = currentPrice * (1 - discount);
+      const amount = roundUpToProfessionalPrice(Math.max(offerFloor, desired));
+      const realisedDiscount = (currentPrice - amount) / currentPrice;
+      if (
+        amount + 0.005 >= currentPrice ||
+        realisedDiscount < 0.025 ||
+        currentPrice - amount < 0.5
+      ) {
+        continue;
+      }
+
+      selected.push({
+        variantId: String(row.variant_id ?? ""),
+        spreeVariantId,
+        productId,
+        sku: String(row.canonical_sku ?? ""),
+        amount,
+        compareAtAmount: currentPrice,
+        profile: candidate.profile.code,
+        discount: realisedDiscount,
+        hadSale: (spreeProduct.tags ?? []).includes("sale"),
+        hadFeatured: (spreeProduct.tags ?? []).includes("featured"),
+      });
+      profileCounts.set(candidate.profile.code, used + 1);
+      seenProducts.add(productId);
+    } catch (error) {
+      console.error("Candidato de oferta descartado", {
+        variantId: String(row.variant_id ?? ""),
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  const priceList = await spreeRequest<SpreePriceList>(
+    config,
+    "POST",
+    "/price_lists",
+    {
+      name: calendar.saturday
+        ? "Bison · Especial sábado · " + calendar.dayKey
+        : "Bison · Ofertas 24h · " + calendar.dayKey,
+      description: calendar.saturday
+        ? "Selección automática de sábado. Mantiene un suelo de contribución por perfil."
+        : "Selección automática diaria. Rota por perfil comercial y respeta precios manuales.",
+      match_policy: "all",
+      starts_at: new Date().toISOString(),
+    },
+  );
+
+  if (selected.length > 0) {
+    await spreeRequest(config, "POST", "/prices/bulk_upsert", {
+      prices: selected.map((offer) => ({
+        variant_id: offer.spreeVariantId,
+        currency: "EUR",
+        price_list_id: priceList.id,
+        amount: offer.amount,
+        compare_at_amount: offer.compareAtAmount,
+      })),
+    });
+  }
+
+  if (currentState?.spree_price_list_id) {
+    try {
+      await spreeRequest(
+        config,
+        "PATCH",
+        "/price_lists/" +
+          encodeURIComponent(currentState.spree_price_list_id) +
+          "/deactivate",
+      );
+    } catch {
+      // An already-expired or manually removed list is harmless.
+    }
+  }
+  await restoreDailyOfferTags(config, currentState);
+
+  if (selected.length > 0) {
+    await spreeRequest(
+      config,
+      "PATCH",
+      "/price_lists/" + encodeURIComponent(priceList.id) + "/activate",
+    );
+  }
+
+  for (const offer of selected) {
+    const product = await spreeRequest<SpreeProduct>(
+      config,
+      "GET",
+      "/products/" + encodeURIComponent(offer.productId),
+    );
+    const tags = Array.from(
+      new Set([
+        ...(product.tags ?? []),
+        "sale",
+        "featured",
+        calendar.saturday ? "saturday-special" : "daily-offer",
+        "offer-date:" + calendar.dayKey,
+        "offer-profile:" + offer.profile,
+      ]),
+    );
+    await spreeRequest(
+      config,
+      "PATCH",
+      "/products/" + encodeURIComponent(offer.productId),
+      { tags },
+    );
+  }
+
+  const now = new Date().toISOString();
+  const { error: stateError } = await supabase
+    .from("catalog_daily_offer_state")
+    .upsert(
+      {
+        id: "primary",
+        day_key: calendar.dayKey,
+        spree_price_list_id: priceList.id,
+        special: calendar.saturday,
+        active_products: selected.map((offer) => ({
+          productId: offer.productId,
+          hadSale: offer.hadSale,
+          hadFeatured: offer.hadFeatured,
+        })),
+        last_rotated_at: now,
+        last_error: null,
+        updated_at: now,
+      },
+      { onConflict: "id" },
+    );
+  if (stateError) throw stateError;
+
+  return {
+    status: "rotated",
+    dayKey: calendar.dayKey,
+    saturday: calendar.saturday,
+    priceListId: priceList.id,
+    selected: selected.map((offer) => ({
+      productId: offer.productId,
+      sku: offer.sku,
+      profile: offer.profile,
+      amount: offer.amount,
+      compareAtAmount: offer.compareAtAmount,
+      discount: Math.round(offer.discount * 1000) / 10,
+    })),
+  };
+}
+
 async function validateSpreeAdminKey(
   spreeApiUrl: string,
   key: string,
@@ -9317,6 +9739,17 @@ async function operatorAction(
     return json({ ok: true, categories });
   }
 
+  if (action === "daily-offers-status") {
+    return json({ ok: true, state: await dailyOfferState() });
+  }
+
+  if (action === "daily-offers-rotate") {
+    return json({
+      ok: true,
+      ...(await rotateDailyOffers(config, body.force === true)),
+    });
+  }
+
   if (action === "merchandising-offers") {
     const offers = Array.isArray(body.offers) ? body.offers : [];
     return json({
@@ -9898,6 +10331,26 @@ Deno.serve(async (req) => {
       }
       tcgFactoryResult = { status: "error", error: message };
     }
+
+    let dailyOffersResult: Record<string, unknown>;
+    try {
+      dailyOffersResult = await rotateDailyOffers(config);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("Daily offer rotation failed", message);
+      await supabase
+        .from("catalog_daily_offer_state")
+        .upsert(
+          {
+            id: "primary",
+            last_error: message,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "id" },
+        );
+      dailyOffersResult = { status: "error", error: message };
+    }
+
     if (!config.enabled) {
       return json({
         ok: true,
@@ -9905,6 +10358,7 @@ Deno.serve(async (req) => {
         catalog_reconciliation: staleReconciliation,
         review_markers: reviewMarkers,
         tcgfactory: tcgFactoryResult,
+        daily_offers: dailyOffersResult,
       });
     }
     if (!config.session_state) {
@@ -9919,6 +10373,7 @@ Deno.serve(async (req) => {
           ok: true,
           skipped: "not_due",
           next_due_at: config.next_due_at,
+          daily_offers: dailyOffersResult,
         });
       }
       cycleId = await startCycle(config);
