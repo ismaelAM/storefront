@@ -41,7 +41,7 @@ export function DocumentShell({ children, locale }: DocumentShellProps) {
         )}
       </head>
       <body
-        className={`${geist.variable} antialiased min-h-screen flex flex-col`}
+        className={`${geist.variable} antialiased min-h-screen min-h-dvh flex flex-col`}
       >
         <Suspense fallback={null}>{children}</Suspense>
         {gtmId && <CookieConsent gtmId={gtmId} />}
