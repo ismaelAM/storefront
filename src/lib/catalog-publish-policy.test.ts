@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   canWriteManagedCatalogPrice,
   catalogReviewFingerprint,
+  effectiveCatalogFulfillmentMode,
   isCatalogReviewApproved,
   shouldAllowSupplierBackorder,
   shouldAutoPublishCatalogProduct,
@@ -78,6 +79,27 @@ describe("catalog publish policy", () => {
         fulfillmentMode: "supplier_or_physical",
       }),
     ).toBe(true);
+  });
+
+  it("forces unresolved supplier packs away from supplier backorder", () => {
+    expect(
+      effectiveCatalogFulfillmentMode({
+        fulfillmentMode: "supplier_or_physical",
+        requiresPackSplit: true,
+      }),
+    ).toBe("physical_only");
+    expect(
+      effectiveCatalogFulfillmentMode({
+        fulfillmentMode: "disabled",
+        requiresPackSplit: true,
+      }),
+    ).toBe("disabled");
+    expect(
+      effectiveCatalogFulfillmentMode({
+        fulfillmentMode: "supplier_or_physical",
+        requiresPackSplit: false,
+      }),
+    ).toBe("supplier_or_physical");
   });
 
   it("persists a human approval only for the exact reviewed reasons", () => {
