@@ -826,9 +826,10 @@ export function PaymentSection({
                   {pm.session_required ? (
                     <>
                       {/* Stripe: saved cards selector */}
-                      {pmGatewayId === "stripe" &&
-                        savedCards.length > 0 && (
-                          <div className="px-4 pt-3">
+                      {pmGatewayId === "stripe" && (
+                        <>
+                          {savedCards.length > 0 && (
+                            <div className="px-4 pt-3">
                               <RadioGroup
                                 value={selectedCardId ?? "__new__"}
                                 onValueChange={(val) =>
@@ -900,8 +901,10 @@ export function PaymentSection({
                                   </span>
                                 </label>
                               </RadioGroup>
-                          </div>
-                        )}
+                            </div>
+                          )}
+                        </>
+                      )}
 
                       {/* Shared: loading spinner */}
                       {loading && (
