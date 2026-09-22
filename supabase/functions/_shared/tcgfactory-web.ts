@@ -329,6 +329,7 @@ export function parseTcgFactoryMinimumOrderQuantity(
   const patterns = [
     /(?:minimal[_-]?quantity|minimum[_-]?quantity|min[_-]?order[_-]?quantity|minimumOrderQuantity)["']?\s*[:=]\s*["']?(\d+)/i,
     /(?:cantidad|compra|pedido)\s+m[ií]nima(?:\s+de\s+compra)?\s*:?\s*(\d+)/i,
+    /cantidad\s+m[ií]nima[\s\S]{0,120}?(?:es|:)\s*(\d+)/i,
     /m[ií]nimo(?:\s+de\s+compra)?\s*:?\s*(\d+)\s+unidades?/i,
     /m[uú]ltiplo(?:\s+de\s+compra)?\s*:?\s*(\d+)/i,
   ];
