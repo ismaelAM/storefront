@@ -1,6 +1,7 @@
 export interface CommercialProductInput {
   name: string;
   categoryKey?: string | null;
+  unitCostNet?: number | null;
 }
 
 export interface CommercialPricingProfile {
@@ -262,9 +263,13 @@ export function commercialPricingProfile(
     ) {
       return PROFILES.mtg_collector_box;
     }
+    const unitCostNet = Number(input.unitCostNet);
     if (
       /\b(?:display|booster\s*box|caja\s+(?:de\s+)?sobres)\b/.test(name) ||
-      /\bplay\s+booster\b.*\b(?:30|36)\b/.test(name)
+      /\bplay\s+booster\b.*\b(?:30|36)\b/.test(name) ||
+      (/\b(?:play|draft|set)\s+booster\b/.test(name) &&
+        Number.isFinite(unitCostNet) &&
+        unitCostNet >= 40)
     ) {
       return PROFILES.mtg_booster_box;
     }
