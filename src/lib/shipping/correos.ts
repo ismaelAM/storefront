@@ -100,11 +100,9 @@ export interface CorreosPickupResponse extends Record<string, unknown> {
   codRequests?: string;
 }
 
-export interface CorreosPreregisterRequest
-  extends Record<string, unknown> {}
+export type CorreosPreregisterRequest = Record<string, unknown>;
 
-export interface CorreosPreregisterResponse
-  extends Record<string, unknown> {}
+export type CorreosPreregisterResponse = Record<string, unknown>;
 
 type CorreosAuthPolicy = {
   bearer: boolean;
