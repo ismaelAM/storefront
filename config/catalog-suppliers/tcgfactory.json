@@ -14,5 +14,11 @@
       "email": "TCGFACTORY_B2B_EMAIL",
       "password": "TCGFACTORY_B2B_PASSWORD"
     }
+  },
+  "minimumOrder": {
+    "surchargeThreshold": 4,
+    "excessCoverageRate": 0.08,
+    "maxUnitCostShare": 0.3,
+    "quantityBySku": {}
   }
 }

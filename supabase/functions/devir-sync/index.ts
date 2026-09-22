@@ -20,15 +20,20 @@ import {
   normalizeDevirRetailUnit,
 } from "../_shared/devir-catalog-policy.ts";
 import { requiresManualPackSplitReview } from "../_shared/mtg-precon-policy.ts";
-import { supplierVatRate } from "../_shared/supplier-pricing-policy.ts";
+import {
+  supplierMinimumOrderRiskSurcharge,
+  supplierVatRate,
+} from "../_shared/supplier-pricing-policy.ts";
 import {
   requireTcgFactoryCredentials,
   TCGFACTORY_SUPPLIER_CODE,
   tcgFactoryRecordToCatalogItem,
 } from "../_shared/tcgfactory-adapter.ts";
 import {
+  isTcgFactoryProductImageReference,
   parseTcgFactoryAuthenticatedPrice,
   parseTcgFactoryListing,
+  parseTcgFactoryMinimumOrderQuantity,
   parseTcgFactoryPublicProduct,
   TCGFACTORY_ACCESSORIES_URL,
   TCGFACTORY_ACCESSORY_CATEGORY_SPECS,
@@ -141,6 +146,7 @@ interface DevirProduct {
   categoryKeyOverride?: string | null;
   retailUnitNormalized?: boolean;
   supplierPackUnits?: number;
+  supplierMinimumQuantity?: number | null;
 }
 
 interface CatalogSupplierRow {
@@ -154,6 +160,7 @@ interface CatalogSupplierRow {
   stale_after_hours: number;
   sync_interval_hours?: number;
   last_completed_run_id?: string | null;
+  config?: Record<string, unknown> | null;
 }
 
 interface CatalogProductRow {
@@ -239,6 +246,9 @@ interface SelectedSupplyRow {
   availability: DevirProduct["availability"] | null;
   source_url: string | null;
   last_seen_at: string | null;
+  supplier_config?: Record<string, unknown> | null;
+  selected_offer_payload?: Record<string, unknown> | null;
+  minimum_order_quantity?: number | null;
 }
 
 interface CatalogSpreeContext {
@@ -1847,7 +1857,7 @@ async function configuredCatalogSupplier(
   const { data, error } = await supabase
     .from("catalog_suppliers")
     .select(
-      "id,code,name,adapter_key,enabled,priority,default_currency,stale_after_hours,sync_interval_hours,last_completed_run_id",
+      "id,code,name,adapter_key,enabled,priority,default_currency,stale_after_hours,sync_interval_hours,last_completed_run_id,config",
     )
     .eq("code", normalizedCode)
     .maybeSingle();
@@ -1885,6 +1895,19 @@ async function loadCatalogVariant(
   return { product: productData as CatalogProductRow, variant };
 }
 
+function minimumOrderQuantityFromOfferPayload(
+  payload: Record<string, unknown> | null | undefined,
+): number | null {
+  const metadata =
+    payload?.metadata &&
+    typeof payload.metadata === "object" &&
+    !Array.isArray(payload.metadata)
+      ? (payload.metadata as Record<string, unknown>)
+      : {};
+  const quantity = Number(metadata.minimumOrderQuantity);
+  return Number.isInteger(quantity) && quantity > 1 ? quantity : null;
+}
+
 async function selectedSupplyForSpreeVariant(
   spreeVariantId: string,
 ): Promise<SelectedSupplyRow | null> {
@@ -1897,7 +1920,39 @@ async function selectedSupplyForSpreeVariant(
     .eq("spree_variant_id", spreeVariantId)
     .maybeSingle();
   if (error) throw error;
-  return data as SelectedSupplyRow | null;
+  if (!data) return null;
+
+  const row = data as SelectedSupplyRow;
+  if (row.supplier_code) {
+    const supplier = await configuredCatalogSupplier(row.supplier_code);
+    row.supplier_config = supplier.config ?? null;
+  }
+
+  if (row.supplier_code === TCGFACTORY_SUPPLIER_CODE) {
+    const { data: variant, error: variantError } = await supabase
+      .from("catalog_variants")
+      .select("selected_offer_id")
+      .eq("spree_variant_id", spreeVariantId)
+      .maybeSingle();
+    if (variantError) throw variantError;
+    if (variant?.selected_offer_id) {
+      const { data: offer, error: offerError } = await supabase
+        .from("catalog_supplier_offers")
+        .select("raw_payload")
+        .eq("id", variant.selected_offer_id)
+        .maybeSingle();
+      if (offerError) throw offerError;
+      row.selected_offer_payload =
+        offer?.raw_payload && typeof offer.raw_payload === "object"
+          ? (offer.raw_payload as Record<string, unknown>)
+          : null;
+      row.minimum_order_quantity = minimumOrderQuantityFromOfferPayload(
+        row.selected_offer_payload,
+      );
+    }
+  }
+
+  return row;
 }
 
 async function reconcileSpreeVariantFromCatalog(
@@ -2375,6 +2430,11 @@ function supplierItemAsProduct(
     releaseDate: item.releaseDate ?? null,
     imageUrls: item.imageUrls,
     categoryKeyOverride: item.categoryKey ?? null,
+    supplierMinimumQuantity:
+      Number.isInteger(Number(item.metadata?.minimumOrderQuantity)) &&
+      Number(item.metadata?.minimumOrderQuantity) > 1
+        ? Number(item.metadata?.minimumOrderQuantity)
+        : null,
   };
 }
 
@@ -2595,6 +2655,7 @@ async function syncProductToSpree(
     key,
     targetMargin,
     catalogContext?.supplier.code,
+    catalogContext?.supplier.config,
   );
   const shipping = shippingDefaults(key, product);
   const packRequiresSplit = isPack(product);
@@ -2829,8 +2890,7 @@ async function syncProductToSpree(
       ]),
     ).filter(
       (tag) =>
-        review ||
-        (tag !== "REVISION-HUMANA" && tag !== "NECESITA-TU-AYUDA"),
+        review || (tag !== "REVISION-HUMANA" && tag !== "NECESITA-TU-AYUDA"),
     );
     const refreshManagedMetadata =
       managed && (!active || forceDraftForSplit || needsManagedCleanup);
@@ -4158,11 +4218,106 @@ function paymentAwareFloor(
   return (costNet + STANDARD_EEA_CARD_FIXED_EUR) / denominator;
 }
 
+const TCGFACTORY_MOQ_DEFAULT_THRESHOLD = 4;
+const TCGFACTORY_MOQ_DEFAULT_EXCESS_COVERAGE_RATE = 0.08;
+const TCGFACTORY_MOQ_DEFAULT_MAX_UNIT_COST_SHARE = 0.3;
+
+function tcgFactoryMoqPricingConfig(
+  supplierConfig?: Record<string, unknown> | null,
+): {
+  threshold: number;
+  excessCoverageRate: number;
+  maxUnitCostShare: number;
+  quantityBySku: Record<string, number>;
+} {
+  const raw =
+    supplierConfig?.minimumOrder &&
+    typeof supplierConfig.minimumOrder === "object" &&
+    !Array.isArray(supplierConfig.minimumOrder)
+      ? (supplierConfig.minimumOrder as Record<string, unknown>)
+      : {};
+  const threshold = Number(raw.surchargeThreshold);
+  const excessCoverageRate = Number(raw.excessCoverageRate);
+  const maxUnitCostShare = Number(raw.maxUnitCostShare);
+  const rawQuantities =
+    raw.quantityBySku &&
+    typeof raw.quantityBySku === "object" &&
+    !Array.isArray(raw.quantityBySku)
+      ? (raw.quantityBySku as Record<string, unknown>)
+      : {};
+  const quantityBySku = Object.fromEntries(
+    Object.entries(rawQuantities).flatMap(([sku, value]) => {
+      const quantity = Number(value);
+      return Number.isInteger(quantity) && quantity > 1
+        ? [[sku.trim().toUpperCase(), quantity] as const]
+        : [];
+    }),
+  );
+
+  return {
+    threshold:
+      Number.isInteger(threshold) && threshold >= 2
+        ? threshold
+        : TCGFACTORY_MOQ_DEFAULT_THRESHOLD,
+    excessCoverageRate:
+      Number.isFinite(excessCoverageRate) &&
+      excessCoverageRate >= 0 &&
+      excessCoverageRate <= 1
+        ? excessCoverageRate
+        : TCGFACTORY_MOQ_DEFAULT_EXCESS_COVERAGE_RATE,
+    maxUnitCostShare:
+      Number.isFinite(maxUnitCostShare) &&
+      maxUnitCostShare >= 0 &&
+      maxUnitCostShare <= 1
+        ? maxUnitCostShare
+        : TCGFACTORY_MOQ_DEFAULT_MAX_UNIT_COST_SHARE,
+    quantityBySku,
+  };
+}
+
+function tcgFactoryMinimumOrderQuantity(
+  supplier: CatalogSupplierRow,
+  sku: string,
+  detected: number | null,
+): number | null {
+  const config = tcgFactoryMoqPricingConfig(supplier.config);
+  const override = config.quantityBySku[sku.trim().toUpperCase()];
+  return override ?? detected;
+}
+
+function minimumOrderRiskSurcharge(
+  product: DevirProduct,
+  supplierCode?: string | null,
+  supplierConfig?: Record<string, unknown> | null,
+): number {
+  if (
+    !supplierCode ||
+    normalizeSupplierCode(supplierCode) !== TCGFACTORY_SUPPLIER_CODE
+  ) {
+    return 0;
+  }
+  const quantity = Number(product.supplierMinimumQuantity);
+  if (!Number.isInteger(quantity) || quantity <= 1 || !product.purchasePrice) {
+    return 0;
+  }
+  const config = tcgFactoryMoqPricingConfig(supplierConfig);
+  if (quantity < config.threshold) return 0;
+  return supplierMinimumOrderRiskSurcharge({
+    supplierCode,
+    unitCostNet: product.purchasePrice,
+    minimumOrderQuantity: quantity,
+    threshold: config.threshold,
+    excessCoverageRate: config.excessCoverageRate,
+    maxUnitCostShare: config.maxUnitCostShare,
+  });
+}
+
 function competitivePricing(
   product: DevirProduct,
   key: string,
   targetProfitRate = DEFAULT_CATEGORY_MARGINS[key] ?? 0.05,
   supplierCode?: string | null,
+  supplierConfig?: Record<string, unknown> | null,
 ): {
   retail: number;
   vatRate: number;
@@ -4171,6 +4326,7 @@ function competitivePricing(
   effectiveProfitRate: number;
   ruleSource: string;
   reviewReason: string | null;
+  minimumOrderSurchargeNet: number;
 } {
   if (!product.purchasePrice || product.purchasePrice <= 0) {
     throw new Error("Producto sin coste Devir: " + product.sku);
@@ -4178,11 +4334,13 @@ function competitivePricing(
 
   const book = isBookProduct(product, key);
   const vatRate = supplierVatRate({ supplierCode, isBook: book });
-  const floor = paymentAwareFloor(
-    product.purchasePrice,
-    vatRate,
-    targetProfitRate,
+  const minimumOrderSurchargeNet = minimumOrderRiskSurcharge(
+    product,
+    supplierCode,
+    supplierConfig,
   );
+  const pricingCostNet = product.purchasePrice + minimumOrderSurchargeNet;
+  const floor = paymentAwareFloor(pricingCostNet, vatRate, targetProfitRate);
   const referenceNet = Number(product.referencePriceNet);
   const hasReference =
     Number.isFinite(referenceNet) && referenceNet > product.purchasePrice;
@@ -4225,8 +4383,11 @@ function competitivePricing(
   const stripeFee =
     retail * STANDARD_EEA_CARD_RATE + STANDARD_EEA_CARD_FIXED_EUR;
   const netSale = retail / (1 + vatRate);
-  const profit = netSale - product.purchasePrice - stripeFee;
+  const profit = netSale - pricingCostNet - stripeFee;
   const effectiveProfitRate = retail > 0 ? profit / retail : 0;
+  if (minimumOrderSurchargeNet > 0) {
+    ruleSource += "+tcgfactory_moq_risk";
+  }
 
   return {
     retail,
@@ -4237,6 +4398,7 @@ function competitivePricing(
     effectiveProfitRate,
     ruleSource,
     reviewReason,
+    minimumOrderSurchargeNet: Math.round(minimumOrderSurchargeNet * 100) / 100,
   };
 }
 
@@ -4678,6 +4840,7 @@ async function categorizeDraftBatch(
       availabilityLabel: null,
       releaseDate: null,
       imageUrls: [],
+      supplierMinimumQuantity: selectedSupply.minimum_order_quantity ?? null,
     };
     const key = categoryKey(product);
     const category = categoryForKey(categories, key);
@@ -4695,6 +4858,7 @@ async function categorizeDraftBatch(
       key,
       margin,
       selectedSupply.supplier_code,
+      selectedSupply.supplier_config,
     );
 
     const patch = async () => {
@@ -4881,6 +5045,7 @@ async function repriceCommercialBooksBatch(
       availabilityLabel: null,
       releaseDate: null,
       imageUrls: [],
+      supplierMinimumQuantity: selectedSupply.minimum_order_quantity ?? null,
     };
 
     try {
@@ -4890,6 +5055,7 @@ async function repriceCommercialBooksBatch(
         key,
         DEFAULT_CATEGORY_MARGINS[key] ?? 0.05,
         selectedSupply.supplier_code,
+        selectedSupply.supplier_config,
       );
 
       let resolvedProductId = productId;
@@ -5605,6 +5771,7 @@ async function preparePublishBatch(
             ? selectedReference
             : legacyProduct.referencePriceNet,
         availability: selectedSupply.availability ?? "unknown",
+        supplierMinimumQuantity: selectedSupply.minimum_order_quantity ?? null,
       };
       const targetMargin = DEFAULT_CATEGORY_MARGINS[key] ?? 0.05;
       const pricing = competitivePricing(
@@ -5612,6 +5779,7 @@ async function preparePublishBatch(
         key,
         targetMargin,
         selectedSupply.supplier_code,
+        selectedSupply.supplier_config,
       );
       if (pricing.reviewReason) productReasons.add(pricing.reviewReason);
 
@@ -6020,6 +6188,222 @@ async function repairTcgFactorySellabilityBatch(
   };
 }
 
+function spreeMediaReference(media: Record<string, unknown>): string | null {
+  for (const key of [
+    "original_url",
+    "download_url",
+    "xlarge_url",
+    "large_url",
+    "medium_url",
+    "small_url",
+    "mini_url",
+  ]) {
+    const value = media[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+function mediaFilename(value: string): string {
+  try {
+    return decodeURIComponent(new URL(value).pathname.split("/").pop() ?? "");
+  } catch {
+    return value;
+  }
+}
+
+async function repairTcgFactoryImagesBatch(
+  config: ConfigRow,
+  offset: number,
+  limit: number,
+  dryRun = true,
+): Promise<Record<string, unknown>> {
+  const supplier = await tcgFactorySupplierRow();
+  const { data, error, count } = await supabase
+    .from("catalog_selected_supply")
+    .select(
+      "variant_id,spree_product_id,supplier_sku,source_url,supplier_code",
+      { count: "exact" },
+    )
+    .eq("supplier_code", TCGFACTORY_SUPPLIER_CODE)
+    .not("spree_product_id", "is", null)
+    .not("source_url", "is", null)
+    .order("variant_id")
+    .range(offset, offset + limit - 1);
+  if (error) throw error;
+
+  const uniqueProducts = new Map<
+    string,
+    { productId: string; supplierSku: string; sourceUrl: string }
+  >();
+  for (const row of data ?? []) {
+    const productId = String(row.spree_product_id ?? "");
+    const sourceUrl = String(row.source_url ?? "");
+    const supplierSku = String(row.supplier_sku ?? "");
+    if (
+      productId &&
+      sourceUrl &&
+      supplierSku &&
+      !uniqueProducts.has(productId)
+    ) {
+      uniqueProducts.set(productId, { productId, supplierSku, sourceUrl });
+    }
+  }
+
+  let inspected = 0;
+  let productsWithInvalidMedia = 0;
+  let deleted = 0;
+  let uploaded = 0;
+  let failed = 0;
+  const results: Array<Record<string, unknown>> = [];
+
+  for (const product of uniqueProducts.values()) {
+    try {
+      const media = await spreeList<Record<string, unknown>>(
+        config,
+        "/products/" + encodeURIComponent(product.productId) + "/media",
+      );
+      const { data: discovery, error: discoveryError } = await supabase
+        .from("catalog_supplier_discovery")
+        .select("id,image_urls")
+        .eq("supplier_id", supplier.id)
+        .eq("supplier_sku", product.supplierSku)
+        .maybeSingle();
+      if (discoveryError) throw discoveryError;
+
+      const originalImageUrls = Array.isArray(discovery?.image_urls)
+        ? discovery.image_urls.filter(
+            (value): value is string => typeof value === "string",
+          )
+        : [];
+      const supplierImportedFilenames = new Set(
+        originalImageUrls.map(mediaFilename),
+      );
+      const filteredImageUrls = originalImageUrls.filter((value) =>
+        isTcgFactoryProductImageReference(value, product.sourceUrl),
+      );
+      const invalid = media.filter((item) => {
+        const reference = spreeMediaReference(item);
+        return (
+          typeof item.id === "string" &&
+          reference !== null &&
+          supplierImportedFilenames.has(mediaFilename(reference)) &&
+          !isTcgFactoryProductImageReference(reference, product.sourceUrl)
+        );
+      });
+      const valid = media.filter((item) => {
+        const reference = spreeMediaReference(item);
+        return (
+          reference !== null &&
+          isTcgFactoryProductImageReference(reference, product.sourceUrl)
+        );
+      });
+      inspected += 1;
+      if (invalid.length > 0) productsWithInvalidMedia += 1;
+
+      if (!dryRun) {
+        for (const item of invalid) {
+          await spreeRequest(
+            config,
+            "DELETE",
+            "/products/" +
+              encodeURIComponent(product.productId) +
+              "/media/" +
+              encodeURIComponent(String(item.id)),
+          );
+          deleted += 1;
+        }
+
+        if (discovery?.id) {
+          const { error: updateDiscoveryError } = await supabase
+            .from("catalog_supplier_discovery")
+            .update({
+              image_urls: filteredImageUrls,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", discovery.id);
+          if (updateDiscoveryError) throw updateDiscoveryError;
+        }
+
+        const { data: offers, error: offersError } = await supabase
+          .from("catalog_supplier_offers")
+          .select("id,raw_payload")
+          .eq("supplier_id", supplier.id)
+          .eq("supplier_sku", product.supplierSku);
+        if (offersError) throw offersError;
+        for (const offer of offers ?? []) {
+          const payload =
+            offer.raw_payload && typeof offer.raw_payload === "object"
+              ? (offer.raw_payload as Record<string, unknown>)
+              : {};
+          const { error: updateOfferError } = await supabase
+            .from("catalog_supplier_offers")
+            .update({
+              raw_payload: {
+                ...payload,
+                imageUrls: filteredImageUrls,
+              },
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", offer.id);
+          if (updateOfferError) throw updateOfferError;
+        }
+
+        if (valid.length === 0) {
+          for (const [index, url] of filteredImageUrls.entries()) {
+            await spreeRequest(
+              config,
+              "POST",
+              "/products/" + encodeURIComponent(product.productId) + "/media",
+              { url, position: index + 1 },
+            );
+            uploaded += 1;
+          }
+        }
+      }
+
+      results.push({
+        productId: product.productId,
+        supplierSku: product.supplierSku,
+        valid: valid.length,
+        invalid: invalid.length,
+        invalidFiles: invalid
+          .map(spreeMediaReference)
+          .filter((value): value is string => Boolean(value))
+          .map(mediaFilename)
+          .slice(0, 20),
+        cleanSourceImages: filteredImageUrls.length,
+        dryRun,
+      });
+    } catch (repairError) {
+      failed += 1;
+      results.push({
+        productId: product.productId,
+        supplierSku: product.supplierSku,
+        error:
+          repairError instanceof Error
+            ? repairError.message
+            : String(repairError),
+      });
+    }
+  }
+
+  const total = count ?? 0;
+  const consumed = data?.length ?? 0;
+  return {
+    dryRun,
+    inspected,
+    productsWithInvalidMedia,
+    deleted,
+    uploaded,
+    failed,
+    total,
+    offset,
+    nextOffset: offset + consumed < total ? offset + consumed : null,
+    results,
+  };
+}
+
 async function repairRetailUnitProducts(
   config: ConfigRow,
 ): Promise<Record<string, unknown>> {
@@ -6151,9 +6535,14 @@ async function repairRetailUnitProducts(
 const HUMAN_REVIEW_MARKER_VERSION = "catalog-review-v1";
 
 function reviewReasonsFromLastError(value: unknown): string[] {
-  const text = String(value ?? "").replace(/^REVIEW:\s*/i, "").trim();
+  const text = String(value ?? "")
+    .replace(/^REVIEW:\s*/i, "")
+    .trim();
   if (!text) return ["manual_review_required"];
-  return text.split(", ").map((item) => item.trim()).filter(Boolean);
+  return text
+    .split(", ")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 async function refreshHumanReviewMarkersBatch(
@@ -6162,10 +6551,9 @@ async function refreshHumanReviewMarkersBatch(
 ): Promise<{ processed: number; remaining: number }> {
   const { data, error, count } = await supabase
     .from("devir_sync_catalog")
-    .select(
-      "spree_product_id,last_error,review_marker_version,updated_at",
-      { count: "exact" },
-    )
+    .select("spree_product_id,last_error,review_marker_version,updated_at", {
+      count: "exact",
+    })
     .eq("catalog_state", "review")
     .not("spree_product_id", "is", null)
     .or(
@@ -6995,7 +7383,7 @@ async function upsertCatalogSupplier(
       { onConflict: "code" },
     )
     .select(
-      "id,code,name,adapter_key,enabled,priority,default_currency,stale_after_hours,sync_interval_hours,last_completed_run_id",
+      "id,code,name,adapter_key,enabled,priority,default_currency,stale_after_hours,sync_interval_hours,last_completed_run_id,config",
     )
     .single();
   if (error) throw error;
@@ -7073,7 +7461,7 @@ async function repriceCatalogSupplierBatch(
   results: Array<Record<string, unknown>>;
 }> {
   const supplierCode = normalizeSupplierCode(String(body.supplierCode ?? ""));
-  await configuredCatalogSupplier(supplierCode);
+  const supplier = await configuredCatalogSupplier(supplierCode);
   const limit = Math.min(100, Math.max(1, Number(body.limit ?? 50) || 50));
   const offset = Math.max(0, Number(body.offset ?? 0) || 0);
 
@@ -7102,7 +7490,9 @@ async function repriceCatalogSupplierBatch(
   ] = await Promise.all([
     supabase
       .from("catalog_variants")
-      .select("id,last_auto_price,spree_variant_id,product_id")
+      .select(
+        "id,last_auto_price,spree_variant_id,product_id,selected_offer_id",
+      )
       .in("id", variantIds),
     supabase
       .from("catalog_products")
@@ -7111,6 +7501,25 @@ async function repriceCatalogSupplierBatch(
   ]);
   if (variantsError) throw variantsError;
   if (productsError) throw productsError;
+
+  const selectedOfferIds = Array.from(
+    new Set(
+      (variants ?? [])
+        .map((row) => String(row.selected_offer_id ?? ""))
+        .filter(Boolean),
+    ),
+  );
+  const { data: selectedOffers, error: selectedOffersError } =
+    selectedOfferIds.length > 0
+      ? await supabase
+          .from("catalog_supplier_offers")
+          .select("id,raw_payload")
+          .in("id", selectedOfferIds)
+      : { data: [], error: null };
+  if (selectedOffersError) throw selectedOffersError;
+  const selectedOffersById = new Map(
+    (selectedOffers ?? []).map((row) => [String(row.id), row]),
+  );
 
   const variantsById = new Map(
     (variants ?? []).map((row) => [String(row.id), row]),
@@ -7181,12 +7590,17 @@ async function repriceCatalogSupplierBatch(
         releaseDate: null,
         imageUrls: [],
         categoryKeyOverride: key || null,
+        supplierMinimumQuantity: minimumOrderQuantityFromOfferPayload(
+          selectedOffersById.get(String(variant.selected_offer_id ?? ""))
+            ?.raw_payload as Record<string, unknown> | null | undefined,
+        ),
       };
       const pricing = competitivePricing(
         product,
         key,
         marginByKey.get(key) ?? DEFAULT_CATEGORY_MARGINS[key] ?? 0.05,
         supplierCode,
+        supplier.config,
       );
 
       const spreeVariant = await spreeRequest<SpreeVariant>(
@@ -7520,7 +7934,7 @@ async function tcgFactorySupplierRow(): Promise<
   const { data, error } = await supabase
     .from("catalog_suppliers")
     .select(
-      "id,code,name,adapter_key,enabled,priority,default_currency,stale_after_hours,sync_interval_hours,last_completed_run_id,next_sync_at,last_error",
+      "id,code,name,adapter_key,enabled,priority,default_currency,stale_after_hours,sync_interval_hours,last_completed_run_id,config,next_sync_at,last_error",
     )
     .eq("code", TCGFACTORY_SUPPLIER_CODE)
     .single();
@@ -7642,6 +8056,7 @@ function safeTcgFactoryB2bPrice(
 function tcgFactoryCatalogItem(
   product: TcgFactoryPublicProduct,
   authenticatedPriceNet: number,
+  minimumOrderQuantity: number | null,
 ): SupplierCatalogItem {
   return tcgFactoryRecordToCatalogItem({
     externalProductId: product.externalProductId,
@@ -7661,7 +8076,131 @@ function tcgFactoryCatalogItem(
     releaseDate: product.releaseDate,
     imageUrls: product.imageUrls,
     referencePriceNet: product.referencePriceNet,
+    minimumOrderQuantity,
   });
+}
+
+async function backfillTcgFactoryMinimumOrders(
+  offset: number,
+  limit: number,
+  dryRun = true,
+): Promise<Record<string, unknown>> {
+  const supplier = await tcgFactorySupplierRow();
+  let session = await tcgFactoryLogin();
+  const { data, error, count } = await supabase
+    .from("catalog_supplier_discovery")
+    .select("id,supplier_sku,source_url,metadata")
+    .eq("supplier_id", supplier.id)
+    .eq("active", true)
+    .not("source_url", "is", null)
+    .order("id")
+    .range(offset, offset + limit - 1);
+  if (error) throw error;
+
+  let detected = 0;
+  let highMinimum = 0;
+  let persisted = 0;
+  let failed = 0;
+  const results: Array<Record<string, unknown>> = [];
+
+  for (const row of data ?? []) {
+    const supplierSku = String(row.supplier_sku ?? "");
+    const sourceUrl = String(row.source_url ?? "");
+    try {
+      const detail = await tcgFactoryTextFetch(sourceUrl, session);
+      session = detail.session;
+      const parsed = parseTcgFactoryMinimumOrderQuantity(detail.html);
+      const quantity = tcgFactoryMinimumOrderQuantity(
+        supplier,
+        supplierSku,
+        parsed,
+      );
+      const pricingConfig = tcgFactoryMoqPricingConfig(supplier.config);
+      const isHighMinimum =
+        quantity !== null && quantity >= pricingConfig.threshold;
+      if (quantity) detected += 1;
+      if (isHighMinimum) highMinimum += 1;
+
+      if (!dryRun && quantity) {
+        const metadata =
+          row.metadata &&
+          typeof row.metadata === "object" &&
+          !Array.isArray(row.metadata)
+            ? (row.metadata as Record<string, unknown>)
+            : {};
+        const now = new Date().toISOString();
+        const { error: discoveryError } = await supabase
+          .from("catalog_supplier_discovery")
+          .update({
+            metadata: { ...metadata, minimumOrderQuantity: quantity },
+            updated_at: now,
+          })
+          .eq("id", row.id);
+        if (discoveryError) throw discoveryError;
+
+        const { data: offers, error: offersError } = await supabase
+          .from("catalog_supplier_offers")
+          .select("id,raw_payload")
+          .eq("supplier_id", supplier.id)
+          .eq("supplier_sku", supplierSku);
+        if (offersError) throw offersError;
+        for (const offer of offers ?? []) {
+          const payload =
+            offer.raw_payload && typeof offer.raw_payload === "object"
+              ? (offer.raw_payload as Record<string, unknown>)
+              : {};
+          const metadata =
+            payload.metadata &&
+            typeof payload.metadata === "object" &&
+            !Array.isArray(payload.metadata)
+              ? (payload.metadata as Record<string, unknown>)
+              : {};
+          const { error: offerError } = await supabase
+            .from("catalog_supplier_offers")
+            .update({
+              raw_payload: {
+                ...payload,
+                metadata: { ...metadata, minimumOrderQuantity: quantity },
+              },
+              updated_at: now,
+            })
+            .eq("id", offer.id);
+          if (offerError) throw offerError;
+        }
+        persisted += 1;
+      }
+
+      results.push({
+        supplierSku,
+        minimumOrderQuantity: quantity,
+        detectedFromPage: parsed,
+        overrideApplied: quantity !== null && parsed !== quantity,
+        surchargeEligible: isHighMinimum,
+      });
+    } catch (scanError) {
+      failed += 1;
+      results.push({
+        supplierSku,
+        error:
+          scanError instanceof Error ? scanError.message : String(scanError),
+      });
+    }
+  }
+
+  const total = count ?? 0;
+  const consumed = data?.length ?? 0;
+  return {
+    dryRun,
+    processed: consumed,
+    detected,
+    highMinimum,
+    persisted,
+    failed,
+    total,
+    offset,
+    nextOffset: offset + consumed < total ? offset + consumed : null,
+    results,
+  };
 }
 
 async function tcgFactoryStatus(): Promise<Record<string, unknown>> {
@@ -7827,6 +8366,11 @@ async function tcgFactoryTick(
         authenticatedDetail.html,
         publicProduct.referencePriceNet,
       );
+      const minimumOrderQuantity = tcgFactoryMinimumOrderQuantity(
+        supplier,
+        publicProduct.reference ?? publicProduct.externalVariantId,
+        parseTcgFactoryMinimumOrderQuantity(authenticatedDetail.html),
+      );
       const rawItem = tcgFactoryCatalogItem(
         {
           ...publicProduct,
@@ -7836,6 +8380,7 @@ async function tcgFactoryTick(
             publicProduct.reportedAvailability,
         },
         price,
+        minimumOrderQuantity,
       );
       await ingestCatalogItem(config, rawItem, state.run_id, categories, defs);
       processed += 1;
@@ -7843,7 +8388,10 @@ async function tcgFactoryTick(
         supplier.id,
         publicProduct,
         state.run_id,
-        { b2bPriceValidated: true },
+        {
+          b2bPriceValidated: true,
+          ...(minimumOrderQuantity ? { minimumOrderQuantity } : {}),
+        },
       );
     } catch (error) {
       failed += 1;
@@ -8424,6 +8972,16 @@ async function operatorAction(
     });
   }
 
+  if (action === "tcgfactory-backfill-minimum-orders") {
+    const offset = Math.max(0, Number(body.offset ?? 0) || 0);
+    const limit = Math.min(25, Math.max(1, Number(body.limit ?? 10) || 10));
+    const dryRun = body.dryRun !== false;
+    return json({
+      ok: true,
+      ...(await backfillTcgFactoryMinimumOrders(offset, limit, dryRun)),
+    });
+  }
+
   if (action === "tcgfactory-status") {
     return json({ ok: true, ...(await tcgFactoryStatus()) });
   }
@@ -8535,6 +9093,16 @@ async function operatorAction(
     return json({
       ok: true,
       ...(await repairSellabilityBatch(config, limit)),
+    });
+  }
+
+  if (action === "repair-tcgfactory-images") {
+    const offset = Math.max(0, Number(body.offset ?? 0) || 0);
+    const limit = Math.min(100, Math.max(1, Number(body.limit ?? 25) || 25));
+    const dryRun = body.dryRun !== false;
+    return json({
+      ok: true,
+      ...(await repairTcgFactoryImagesBatch(config, offset, limit, dryRun)),
     });
   }
 
@@ -9236,7 +9804,6 @@ Deno.serve(async (req) => {
         ok: true,
         skipped: "disabled",
         catalog_reconciliation: staleReconciliation,
-        review_markers: reviewMarkers,
         review_markers: reviewMarkers,
         tcgfactory: tcgFactoryResult,
       });

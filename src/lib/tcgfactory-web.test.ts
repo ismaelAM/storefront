@@ -3,6 +3,7 @@ import {
   mapTcgFactoryPublicAvailability,
   parseTcgFactoryAuthenticatedPrice,
   parseTcgFactoryListing,
+  parseTcgFactoryMinimumOrderQuantity,
   parseTcgFactoryPublicProduct,
   tcgFactoryAccessoryCategory,
 } from "../../supabase/functions/_shared/tcgfactory-web";
@@ -25,18 +26,24 @@ describe("TcgFactory public web parser", () => {
   });
 
   it("maps the supplier accessory taxonomy to storefront categories", () => {
-    expect(tcgFactoryAccessoryCategory("Fundas Standard Matte", "Fundas Standard"))
-      .toBe("accesorios/fundas-standard");
-    expect(tcgFactoryAccessoryCategory("Caja de mazo Charizard", "Caja de mazo"))
-      .toBe("accesorios/cajas-mazo");
-    expect(tcgFactoryAccessoryCategory("Tapete Pikachu", "Tapetes"))
-      .toBe("accesorios/tapetes");
-    expect(tcgFactoryAccessoryCategory("Set d20", "Dados"))
-      .toBe("accesorios/dados");
+    expect(
+      tcgFactoryAccessoryCategory("Fundas Standard Matte", "Fundas Standard"),
+    ).toBe("accesorios/fundas-standard");
+    expect(
+      tcgFactoryAccessoryCategory("Caja de mazo Charizard", "Caja de mazo"),
+    ).toBe("accesorios/cajas-mazo");
+    expect(tcgFactoryAccessoryCategory("Tapete Pikachu", "Tapetes")).toBe(
+      "accesorios/tapetes",
+    );
+    expect(tcgFactoryAccessoryCategory("Set d20", "Dados")).toBe(
+      "accesorios/dados",
+    );
   });
 
   it("treats replenishment as unavailable instead of inventing stock", () => {
-    expect(mapTcgFactoryPublicAvailability("En reposición")).toBe("unavailable");
+    expect(mapTcgFactoryPublicAvailability("En reposición")).toBe(
+      "unavailable",
+    );
     expect(mapTcgFactoryPublicAvailability("Disponible")).toBe("available");
     expect(mapTcgFactoryPublicAvailability("Preventa")).toBe("preorder");
   });
@@ -64,6 +71,48 @@ describe("TcgFactory public web parser", () => {
     expect(product.categoryKey).toBe("accesorios/tapetes");
     expect(product.availability).toBe("unavailable");
     expect(product.metadata.publicReferenceOnly).toBe(true);
+  });
+
+  it("keeps only images that belong to the current product", () => {
+    const html = `
+      <h1>Caja de mazo Ashen White Blanco Dragon Shield</h1>
+      <meta property="og:image" content="https://tcgfactory.com/34773-thickbox_default/caja-de-mazo-ashen-white-blanco-dragon-shield.jpg">
+      <img src="https://tcgfactory.com/img/cms/juego-cartas.png">
+      <img src="https://tcgfactory.com/34773-home_default/caja-de-mazo-ashen-white-blanco-dragon-shield.jpg">
+      <img src="https://tcgfactory.com/34774-home_default/caja-de-mazo-ashen-white-blanco-dragon-shield.jpg">
+      <img src="https://tcgfactory.com/img/m/4.jpg">
+      <img src="https://tcgfactory.com/99999-home_default/otro-producto.jpg">
+    `;
+    const product = parseTcgFactoryPublicProduct(
+      html,
+      "https://tcgfactory.com/es/distribucion/caja-de-mazo-ashen-white-blanco-dragon-shield.html",
+    );
+
+    expect(product.imageUrls).toEqual([
+      "https://tcgfactory.com/34773-thickbox_default/caja-de-mazo-ashen-white-blanco-dragon-shield.jpg",
+      "https://tcgfactory.com/34774-home_default/caja-de-mazo-ashen-white-blanco-dragon-shield.jpg",
+    ]);
+  });
+
+  it("parses only explicit per-product minimum quantities", () => {
+    expect(parseTcgFactoryMinimumOrderQuantity('"minimal_quantity": 6')).toBe(
+      6,
+    );
+    expect(parseTcgFactoryMinimumOrderQuantity("Cantidad mínima: 4")).toBe(4);
+    expect(
+      parseTcgFactoryMinimumOrderQuantity(
+        "<span>Cantidad mínima</span><strong>6</strong>",
+      ),
+    ).toBe(6);
+    expect(parseTcgFactoryMinimumOrderQuantity("Múltiplo de compra: 12")).toBe(
+      12,
+    );
+    expect(
+      parseTcgFactoryMinimumOrderQuantity('"minimalPurchase": 150'),
+    ).toBeNull();
+    expect(
+      parseTcgFactoryMinimumOrderQuantity("Pack de 100 fundas"),
+    ).toBeNull();
   });
 
   it("extracts authenticated current-price markup separately", () => {

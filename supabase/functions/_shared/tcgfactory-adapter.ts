@@ -42,6 +42,7 @@ export interface TcgFactoryFeedRecord {
   stockQuantity?: number | string | null;
   releaseDate?: string | null;
   imageUrls?: string[];
+  minimumOrderQuantity?: number | string | null;
 }
 
 function record(value: unknown): TcgFactoryFeedRecord {
@@ -87,6 +88,15 @@ function optionalNumber(value: unknown, field: string): number | undefined {
     typeof value === "string" ? value.trim().replace(",", ".") : value;
   const number = Number(normalized);
   if (!Number.isFinite(number)) throw new Error(`${field} no es válido`);
+  return number;
+}
+
+function optionalPositiveInteger(value: unknown, field: string): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  if (!Number.isInteger(number) || number < 1) {
+    throw new Error(`${field} debe ser un entero positivo`);
+  }
   return number;
 }
 
@@ -174,6 +184,10 @@ export function tcgFactoryRecordToCatalogItem(
   if (stockQuantity !== undefined && stockQuantity < 0) {
     throw new Error("stockQuantity no puede ser negativo");
   }
+  const minimumOrderQuantity = optionalPositiveInteger(
+    input.minimumOrderQuantity,
+    "minimumOrderQuantity",
+  );
   const reportedAvailability = requiredText(input.availability, "availability");
   const mappedAvailability = mapTcgFactoryAvailability(reportedAvailability);
   const availability =
@@ -218,6 +232,9 @@ export function tcgFactoryRecordToCatalogItem(
     metadata: {
       feedContract: TCGFACTORY_ADAPTER_KEY,
       reportedAvailability,
+      ...(minimumOrderQuantity && minimumOrderQuantity > 1
+        ? { minimumOrderQuantity }
+        : {}),
     },
   };
 }

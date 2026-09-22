@@ -47,6 +47,20 @@ describe("TcgFactory adapter", () => {
     expect(item.normalizedCost).toBe(7.75);
   });
 
+  it("preserves an explicit supplier minimum order quantity as metadata", () => {
+    const item = normalizeTcgFactoryRecord(
+      record({ minimumOrderQuantity: "6" }),
+    );
+
+    expect(item.metadata?.minimumOrderQuantity).toBe(6);
+  });
+
+  it("rejects malformed supplier minimum order quantities", () => {
+    expect(() =>
+      normalizeTcgFactoryRecord(record({ minimumOrderQuantity: 2.5 })),
+    ).toThrow(/entero positivo/);
+  });
+
   it("normalizes the observed Spanish availability labels", () => {
     expect(mapTcgFactoryAvailability("Disponible")).toBe("available");
     expect(mapTcgFactoryAvailability("Preventa")).toBe("preorder");
