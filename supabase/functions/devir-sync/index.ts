@@ -7264,7 +7264,44 @@ async function loadDailyOfferSupplyRows(): Promise<Array<Record<string, unknown>
   return rows;
 }
 
-async function rotateDailyOffers(
+async function acquireDailyOfferRotationLock(): Promise<string | null> {
+  const token = crypto.randomUUID();
+  const now = new Date();
+  const lockUntil = new Date(now.getTime() + 120_000).toISOString();
+  const { data, error } = await supabase
+    .from("catalog_daily_offer_state")
+    .update({
+      rotation_lock_until: lockUntil,
+      rotation_token: token,
+      updated_at: now.toISOString(),
+    })
+    .eq("id", "primary")
+    .or(
+      "rotation_lock_until.is.null,rotation_lock_until.lt." +
+        now.toISOString(),
+    )
+    .select("rotation_token")
+    .maybeSingle();
+  if (error) throw error;
+  return data?.rotation_token === token ? token : null;
+}
+
+async function releaseDailyOfferRotationLock(token: string): Promise<void> {
+  const { error } = await supabase
+    .from("catalog_daily_offer_state")
+    .update({
+      rotation_lock_until: null,
+      rotation_token: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", "primary")
+    .eq("rotation_token", token);
+  if (error) {
+    console.error("No se pudo liberar el lock de ofertas diarias", error);
+  }
+}
+
+async function rotateDailyOffersUnlocked(
   config: ConfigRow,
   force = false,
 ): Promise<Record<string, unknown>> {
@@ -7603,6 +7640,21 @@ async function rotateDailyOffers(
       discount: Math.round(offer.discount * 1000) / 10,
     })),
   };
+}
+
+async function rotateDailyOffers(
+  config: ConfigRow,
+  force = false,
+): Promise<Record<string, unknown>> {
+  const token = await acquireDailyOfferRotationLock();
+  if (!token) {
+    return { status: "locked" };
+  }
+  try {
+    return await rotateDailyOffersUnlocked(config, force);
+  } finally {
+    await releaseDailyOfferRotationLock(token);
+  }
 }
 
 async function validateSpreeAdminKey(
