@@ -62,7 +62,7 @@ export function AccountShellSkeleton() {
         </div>
 
         <div className="min-w-0 space-y-6">
-          <div className="h-9 w-56 max-w-3/4 rounded bg-gray-200" />
+          <div className="h-9 w-56 max-w-[75%] rounded bg-gray-200" />
           <div className="grid gap-5 md:grid-cols-2 sm:gap-6">
             {Array.from({ length: 4 }).map((_, index) => (
               <div
