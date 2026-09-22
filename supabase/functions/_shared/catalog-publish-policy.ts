@@ -5,12 +5,74 @@ export type CatalogAvailability =
   | "unknown"
   | "missing";
 
+export type CatalogReviewDecision = "pending" | "approved" | "rejected";
+
+export type CatalogFulfillmentMode =
+  | "supplier_or_physical"
+  | "physical_only"
+  | "disabled";
+
+export function catalogReviewFingerprint(reasons: Iterable<string>): string {
+  return Array.from(new Set(Array.from(reasons).map((reason) => reason.trim()).filter(Boolean)))
+    .sort()
+    .join("|");
+}
+
+export function isCatalogReviewApproved(input: {
+  reasons: Iterable<string>;
+  decision?: CatalogReviewDecision | null;
+  approvedFingerprint?: string | null;
+}): boolean {
+  if (input.decision !== "approved") return false;
+  const fingerprint = catalogReviewFingerprint(input.reasons);
+  return Boolean(fingerprint) && fingerprint === (input.approvedFingerprint ?? "");
+}
+
+export function shouldRequireCatalogReview(input: {
+  reasons: Iterable<string>;
+  decision?: CatalogReviewDecision | null;
+  approvedFingerprint?: string | null;
+}): boolean {
+  const reasons = Array.from(input.reasons);
+  if (reasons.length === 0) return false;
+  if (input.decision === "rejected") return true;
+  return !isCatalogReviewApproved({
+    reasons,
+    decision: input.decision,
+    approvedFingerprint: input.approvedFingerprint,
+  });
+}
+
+export function supplierAvailabilityIsSellable(
+  availability: CatalogAvailability,
+): boolean {
+  return availability === "available" || availability === "preorder";
+}
+
+export function shouldAllowSupplierBackorder(input: {
+  availability: CatalogAvailability;
+  fulfillmentMode?: CatalogFulfillmentMode | null;
+}): boolean {
+  const mode = input.fulfillmentMode ?? "supplier_or_physical";
+  return mode === "supplier_or_physical" &&
+    supplierAvailabilityIsSellable(input.availability);
+}
+
 export function shouldAutoPublishCatalogProduct(input: {
   review: boolean;
   availability: CatalogAvailability;
+  physicalStockOnHand?: number | null;
+  fulfillmentMode?: CatalogFulfillmentMode | null;
 }): boolean {
-  return !input.review &&
-    (input.availability === "available" || input.availability === "preorder");
+  if (input.review || input.fulfillmentMode === "disabled") return false;
+  const physicalStock =
+    Number.isFinite(Number(input.physicalStockOnHand)) &&
+    Number(input.physicalStockOnHand) > 0;
+  return physicalStock ||
+    shouldAllowSupplierBackorder({
+      availability: input.availability,
+      fulfillmentMode: input.fulfillmentMode,
+    });
 }
 
 export function isAutoManagedPrice(input: {
