@@ -52,18 +52,15 @@ async function probeCheckout() {
     throw new Error("No hay un producto físico disponible para la prueba");
   }
 
-  const cart = await client.carts.create({
-    currency: "EUR",
-    locale: "es",
-  });
+  const cart = await client.carts.create(
+    {
+      items: [{ variant_id: product.default_variant_id, quantity: 1 }],
+    },
+    { locale: "es", country: "es" },
+  );
 
   try {
     const options = { spreeToken: cart.token };
-    await client.carts.items.create(
-      cart.id,
-      { variant_id: product.default_variant_id, quantity: 1 },
-      options,
-    );
 
     const madrid = await client.carts.update(
       cart.id,
