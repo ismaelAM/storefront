@@ -54,6 +54,17 @@ describe("catalog publish policy", () => {
     ).toBe(true);
   });
 
+  it("keeps disabled variants unsellable even with physical stock", () => {
+    expect(
+      shouldAutoPublishCatalogProduct({
+        review: false,
+        availability: "available",
+        physicalStockOnHand: 2,
+        fulfillmentMode: "disabled",
+      }),
+    ).toBe(false);
+  });
+
   it("never backorders physical-only variants", () => {
     expect(
       shouldAllowSupplierBackorder({

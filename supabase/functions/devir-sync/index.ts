@@ -1733,46 +1733,6 @@ async function appendToExistingGroupedProduct(
 
     if (!(parent.tags ?? []).includes("devir-group")) continue;
 
-    const { data: catalogProductPolicy, error: catalogProductPolicyError } =
-      await supabase
-        .from("catalog_products")
-        .select(
-          "id,review_decision,approved_review_fingerprint,review_decided_at,review_note",
-        )
-        .eq("spree_product_id", productId)
-        .maybeSingle();
-    if (catalogProductPolicyError) throw catalogProductPolicyError;
-
-    const reviewDecision =
-      (catalogProductPolicy?.review_decision as CatalogReviewDecision | null) ??
-      "pending";
-    const approvedReviewFingerprint =
-      typeof catalogProductPolicy?.approved_review_fingerprint === "string"
-        ? catalogProductPolicy.approved_review_fingerprint
-        : null;
-
-    const { data: catalogVariantPolicies, error: catalogVariantPoliciesError } =
-      catalogProductPolicy?.id
-        ? await supabase
-            .from("catalog_variants")
-            .select("spree_variant_id,fulfillment_mode")
-            .eq("product_id", catalogProductPolicy.id)
-        : { data: [], error: null };
-    if (catalogVariantPoliciesError) throw catalogVariantPoliciesError;
-    const fulfillmentModeByVariant = new Map<string, CatalogFulfillmentMode>(
-      (catalogVariantPolicies ?? []).flatMap((row) => {
-        const variantId = String(row.spree_variant_id ?? "");
-        if (!variantId) return [];
-        return [
-          [
-            variantId,
-            (row.fulfillment_mode as CatalogFulfillmentMode | null) ??
-              "supplier_or_physical",
-          ] as const,
-        ];
-      }),
-    );
-
     const variants = await spreeList<SpreeVariant>(
       config,
       "/products/" + encodeURIComponent(productId) + "/variants",
@@ -5889,16 +5849,62 @@ async function preparePublishBatch(
       return;
     }
 
+    // Product-level policy is required below for every variant in this batch.
+    const { data: catalogProductPolicy, error: catalogProductPolicyError } =
+      await supabase
+        .from("catalog_products")
+        .select(
+          "id,review_decision,approved_review_fingerprint,review_decided_at,review_note",
+        )
+        .eq("spree_product_id", productId)
+        .maybeSingle();
+    if (catalogProductPolicyError) throw catalogProductPolicyError;
+
+    const reviewDecision =
+      (catalogProductPolicy?.review_decision as CatalogReviewDecision | null) ??
+      "pending";
+    const approvedReviewFingerprint =
+      typeof catalogProductPolicy?.approved_review_fingerprint === "string"
+        ? catalogProductPolicy.approved_review_fingerprint
+        : null;
+
+    const { data: catalogVariantPolicies, error: catalogVariantPoliciesError } =
+      catalogProductPolicy?.id
+        ? await supabase
+            .from("catalog_variants")
+            .select("spree_variant_id,fulfillment_mode")
+            .eq("product_id", catalogProductPolicy.id)
+        : { data: [], error: null };
+    if (catalogVariantPoliciesError) throw catalogVariantPoliciesError;
+    const fulfillmentModeByVariant = new Map<string, CatalogFulfillmentMode>(
+      (catalogVariantPolicies ?? []).flatMap((row) => {
+        const variantId = String(row.spree_variant_id ?? "");
+        if (!variantId) return [];
+        return [
+          [
+            variantId,
+            (row.fulfillment_mode as CatalogFulfillmentMode | null) ??
+              "supplier_or_physical",
+          ] as const,
+        ];
+      }),
+    );
+
     const variants = await spreeList<SpreeVariant>(
       config,
       "/products/" + encodeURIComponent(productId) + "/variants",
     );
     const productReasons = new Set<string>();
     const categoryKeys = new Set<string>();
-    let anySellable = false;
+    const hasAnyPhysicalRetailStock = variants.some((variant) => {
+      const mode =
+        fulfillmentModeByVariant.get(variant.id) ?? "supplier_or_physical";
+      return mode !== "disabled" && Number(variant.total_on_hand ?? 0) > 0;
+    });
+    let anySellable = hasAnyPhysicalRetailStock;
     let anyWaiting = false;
     let hasPreorder = false;
-    let hasAvailable = false;
+    let hasAvailable = hasAnyPhysicalRetailStock;
     let updatedForProduct = 0;
 
     for (const row of rows) {
