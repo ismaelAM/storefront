@@ -106,7 +106,9 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [x] Implementada lógica de back-office para guardar tracking, marcar enviado y marcar entregado sobre el fulfillment nativo de Spree.
 - [x] Implementadas operaciones Correos para Trackpub, Labels, Requests y BoxEntry, condicionadas a credenciales válidas.
 - [ ] Configurar secretos de producción y hacer una prueba real controlada.
-- [ ] Mostrar al cliente el estado/tracking del fulfillment si la página de pedido todavía no lo presenta con claridad.
+- [ ] Configurar una Secret API Key de Spree específica para logística con permisos de lectura/escritura de pedidos/fulfillments; la clave de catálogo devuelve 403 al intentar leer pedidos, como debe por separación de privilegios.
+- [ ] Verificar en producción un pedido real con fulfillment `pending` → `shipped` → `delivered` y tracking visible en la cuenta del cliente.
+- [x] Mostrar al cliente el estado/tracking del fulfillment: historial/detalle y confirmación de pedido enseñan estado traducido, número de tracking aunque no exista `tracking_url`, y enlace cuando Spree aporta URL.
 
 ## Storefront / UI
 
