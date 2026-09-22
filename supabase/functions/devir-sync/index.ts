@@ -5978,6 +5978,22 @@ async function preparePublishBatch(
         if (!physicalSellable) anyWaiting = true;
         continue;
       }
+
+      // Safety policy must be enforced before source/audit checks. A product can
+      // remain in human review while an old Spree backorder flag would
+      // otherwise continue accepting orders against a supplier pack.
+      if (fulfillmentMode !== "supplier_or_physical") {
+        await patchVariantInventory(
+          config,
+          productId,
+          variant.id,
+          physicalStockOnHand,
+          false,
+          false,
+          null,
+        );
+      }
+
       if (
         selectedSupply.supplier_code === "devir" &&
         (!sourceVerified || !sourceVerifiedAt)
