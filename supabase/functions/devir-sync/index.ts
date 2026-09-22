@@ -10862,6 +10862,8 @@ Deno.serve(async (req) => {
     }
     const reviewMarkers = await refreshHumanReviewMarkersBatch(config);
     const staleReconciliation = await reconcileStaleCatalogBatch(config);
+    const physicalOnlyReconciliation =
+      await reconcilePhysicalOnlyCatalogBatch(config);
     let tcgFactoryResult: Record<string, unknown>;
     try {
       tcgFactoryResult = await tcgFactoryTick(config);
@@ -10904,6 +10906,7 @@ Deno.serve(async (req) => {
         ok: true,
         skipped: "disabled",
         catalog_reconciliation: staleReconciliation,
+        physical_only_reconciliation: physicalOnlyReconciliation,
         review_markers: reviewMarkers,
         tcgfactory: tcgFactoryResult,
         daily_offers: dailyOffersResult,
@@ -10922,6 +10925,7 @@ Deno.serve(async (req) => {
           skipped: "not_due",
           next_due_at: config.next_due_at,
           daily_offers: dailyOffersResult,
+          physical_only_reconciliation: physicalOnlyReconciliation,
         });
       }
       cycleId = await startCycle(config);
