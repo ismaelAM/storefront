@@ -18,6 +18,7 @@ import StorefrontLayout from "./layout";
 
 interface LayoutElementProps {
   children?: ReactNode;
+  className?: string;
   mobileNavigation?: ReactElement<{ fallback: ReactNode }>;
   categoryLinks?: ReactElement<{ fallback: ReactNode }>;
   fallback?: ReactNode;
@@ -32,6 +33,8 @@ describe("StorefrontLayout", () => {
     })) as ReactElement<LayoutElementProps>;
 
     expect(layout.type).toBe("div");
+    expect(layout.props.className).toContain("min-h-dvh");
+    expect(layout.props.className).toContain("flex-col");
 
     const [header, hiddenNavigation, main, footer] = Children.toArray(
       layout.props.children,
@@ -40,6 +43,7 @@ describe("StorefrontLayout", () => {
     expect(header.type).toBe(Header);
     expect(hiddenNavigation.type).toBe(Suspense);
     expect(main.type).toBe("main");
+    expect(main.props.className).toContain("flex-1");
     expect(main.props.children).toBe(content);
     expect(footer.type).toBe(Footer);
 
