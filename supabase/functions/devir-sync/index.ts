@@ -6173,13 +6173,14 @@ async function refreshHumanReviewMarkersBatch(
         HUMAN_REVIEW_MARKER_VERSION,
     )
     .order("updated_at")
-    .limit(limit);
+    .limit(limit * 10);
   if (error) throw error;
 
   const groups = new Map<string, Set<string>>();
   for (const row of data ?? []) {
     const productId = String(row.spree_product_id ?? "");
     if (!productId) continue;
+    if (!groups.has(productId) && groups.size >= limit) continue;
     const reasons = groups.get(productId) ?? new Set<string>();
     for (const reason of reviewReasonsFromLastError(row.last_error)) {
       reasons.add(reason);
@@ -6235,7 +6236,7 @@ async function refreshHumanReviewMarkersBatch(
 
   return {
     processed,
-    remaining: Math.max(0, (count ?? 0) - (data?.length ?? 0)),
+    remaining: Math.max(0, (count ?? 0) - processed),
   };
 }
 
