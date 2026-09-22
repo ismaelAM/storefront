@@ -8066,6 +8066,129 @@ function tcgFactoryCatalogItem(
   });
 }
 
+async function backfillTcgFactoryMinimumOrders(
+  offset: number,
+  limit: number,
+  dryRun = true,
+): Promise<Record<string, unknown>> {
+  const supplier = await tcgFactorySupplierRow();
+  let session = await tcgFactoryLogin();
+  const { data, error, count } = await supabase
+    .from("catalog_supplier_discovery")
+    .select("id,supplier_sku,source_url,metadata")
+    .eq("supplier_id", supplier.id)
+    .eq("active", true)
+    .not("source_url", "is", null)
+    .order("id")
+    .range(offset, offset + limit - 1);
+  if (error) throw error;
+
+  let detected = 0;
+  let highMinimum = 0;
+  let persisted = 0;
+  let failed = 0;
+  const results: Array<Record<string, unknown>> = [];
+
+  for (const row of data ?? []) {
+    const supplierSku = String(row.supplier_sku ?? "");
+    const sourceUrl = String(row.source_url ?? "");
+    try {
+      const detail = await tcgFactoryTextFetch(sourceUrl, session);
+      session = detail.session;
+      const parsed = parseTcgFactoryMinimumOrderQuantity(detail.html);
+      const quantity = tcgFactoryMinimumOrderQuantity(
+        supplier,
+        supplierSku,
+        parsed,
+      );
+      const pricingConfig = tcgFactoryMoqPricingConfig(supplier.config);
+      const isHighMinimum =
+        quantity !== null && quantity >= pricingConfig.threshold;
+      if (quantity) detected += 1;
+      if (isHighMinimum) highMinimum += 1;
+
+      if (!dryRun && quantity) {
+        const metadata =
+          row.metadata &&
+          typeof row.metadata === "object" &&
+          !Array.isArray(row.metadata)
+            ? (row.metadata as Record<string, unknown>)
+            : {};
+        const now = new Date().toISOString();
+        const { error: discoveryError } = await supabase
+          .from("catalog_supplier_discovery")
+          .update({
+            metadata: { ...metadata, minimumOrderQuantity: quantity },
+            updated_at: now,
+          })
+          .eq("id", row.id);
+        if (discoveryError) throw discoveryError;
+
+        const { data: offers, error: offersError } = await supabase
+          .from("catalog_supplier_offers")
+          .select("id,raw_payload")
+          .eq("supplier_id", supplier.id)
+          .eq("supplier_sku", supplierSku);
+        if (offersError) throw offersError;
+        for (const offer of offers ?? []) {
+          const payload =
+            offer.raw_payload && typeof offer.raw_payload === "object"
+              ? (offer.raw_payload as Record<string, unknown>)
+              : {};
+          const metadata =
+            payload.metadata &&
+            typeof payload.metadata === "object" &&
+            !Array.isArray(payload.metadata)
+              ? (payload.metadata as Record<string, unknown>)
+              : {};
+          const { error: offerError } = await supabase
+            .from("catalog_supplier_offers")
+            .update({
+              raw_payload: {
+                ...payload,
+                metadata: { ...metadata, minimumOrderQuantity: quantity },
+              },
+              updated_at: now,
+            })
+            .eq("id", offer.id);
+          if (offerError) throw offerError;
+        }
+        persisted += 1;
+      }
+
+      results.push({
+        supplierSku,
+        minimumOrderQuantity: quantity,
+        detectedFromPage: parsed,
+        overrideApplied:
+          quantity !== null && parsed !== quantity,
+        surchargeEligible: isHighMinimum,
+      });
+    } catch (scanError) {
+      failed += 1;
+      results.push({
+        supplierSku,
+        error: scanError instanceof Error ? scanError.message : String(scanError),
+      });
+    }
+  }
+
+  const total = count ?? 0;
+  const consumed = data?.length ?? 0;
+  return {
+    dryRun,
+    processed: consumed,
+    detected,
+    highMinimum,
+    persisted,
+    failed,
+    total,
+    offset,
+    nextOffset: offset + consumed < total ? offset + consumed : null,
+    results,
+  };
+}
+
 async function tcgFactoryStatus(): Promise<Record<string, unknown>> {
   const supplier = await tcgFactorySupplierRow();
   const { data: state, error: stateError } = await supabase
@@ -8834,6 +8957,16 @@ async function operatorAction(
       stored: true,
       validated: true,
       supplier: TCGFACTORY_SUPPLIER_CODE,
+    });
+  }
+
+  if (action === "tcgfactory-backfill-minimum-orders") {
+    const offset = Math.max(0, Number(body.offset ?? 0) || 0);
+    const limit = Math.min(25, Math.max(1, Number(body.limit ?? 10) || 10));
+    const dryRun = body.dryRun !== false;
+    return json({
+      ok: true,
+      ...(await backfillTcgFactoryMinimumOrders(offset, limit, dryRun)),
     });
   }
 
