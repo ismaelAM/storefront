@@ -925,6 +925,8 @@ function humanizeReviewReason(reason: string): string {
         : "Las variantes apuntan a categorías distintas.";
     case "manual_review_required":
       return "Este producto está marcado para revisión manual.";
+    case "operator_rejected":
+      return "Has decidido mantener este producto fuera de venta.";
     default:
       return detail
         ? `Revisión manual: ${code.trim()} (${detail}).`
@@ -1729,6 +1731,46 @@ async function appendToExistingGroupedProduct(
     }
 
     if (!(parent.tags ?? []).includes("devir-group")) continue;
+
+    const { data: catalogProductPolicy, error: catalogProductPolicyError } =
+      await supabase
+        .from("catalog_products")
+        .select(
+          "id,review_decision,approved_review_fingerprint,review_decided_at,review_note",
+        )
+        .eq("spree_product_id", productId)
+        .maybeSingle();
+    if (catalogProductPolicyError) throw catalogProductPolicyError;
+
+    const reviewDecision =
+      (catalogProductPolicy?.review_decision as CatalogReviewDecision | null) ??
+      "pending";
+    const approvedReviewFingerprint =
+      typeof catalogProductPolicy?.approved_review_fingerprint === "string"
+        ? catalogProductPolicy.approved_review_fingerprint
+        : null;
+
+    const { data: catalogVariantPolicies, error: catalogVariantPoliciesError } =
+      catalogProductPolicy?.id
+        ? await supabase
+            .from("catalog_variants")
+            .select("spree_variant_id,fulfillment_mode")
+            .eq("product_id", catalogProductPolicy.id)
+        : { data: [], error: null };
+    if (catalogVariantPoliciesError) throw catalogVariantPoliciesError;
+    const fulfillmentModeByVariant = new Map<string, CatalogFulfillmentMode>(
+      (catalogVariantPolicies ?? []).flatMap((row) => {
+        const variantId = String(row.spree_variant_id ?? "");
+        if (!variantId) return [];
+        return [
+          [
+            variantId,
+            (row.fulfillment_mode as CatalogFulfillmentMode | null) ??
+              "supplier_or_physical",
+          ] as const,
+        ];
+      }),
+    );
 
     const variants = await spreeList<SpreeVariant>(
       config,
@@ -2717,6 +2759,9 @@ async function syncProductToSpree(
     grouping.itemKind === "standalone" ? languageGroupingInfo(product) : null;
   if (grouping.confidence === "ambiguous")
     reasons.push("grouping_requires_operator_review");
+  if (catalogContext?.reviewDecision === "rejected") {
+    reasons.push("operator_rejected");
+  }
   const review = shouldRequireCatalogReview({
     reasons,
     decision: catalogContext?.reviewDecision ?? "pending",
@@ -5811,6 +5856,19 @@ async function preparePublishBatch(
         continue;
       }
 
+      const fulfillmentMode =
+        fulfillmentModeByVariant.get(variant.id) ?? "supplier_or_physical";
+      const physicalStockOnHand = Math.max(
+        0,
+        Number(variant.total_on_hand ?? 0),
+      );
+      const physicalSellable =
+        fulfillmentMode !== "disabled" && physicalStockOnHand > 0;
+      if (physicalSellable) {
+        anySellable = true;
+        hasAvailable = true;
+      }
+
       if (variant.id !== row.spree_variant_id) {
         await supabase
           .from("devir_sync_catalog")
@@ -5823,7 +5881,13 @@ async function preparePublishBatch(
 
       const selectedSupply = await selectedSupplyForSpreeVariant(variant.id);
       if (!selectedSupply?.supplier_code) {
-        anyWaiting = true;
+        await syncBackorderability(
+          config,
+          variant.id,
+          "unavailable",
+          fulfillmentMode,
+        );
+        if (!physicalSellable) anyWaiting = true;
         continue;
       }
       if (
@@ -5885,13 +5949,20 @@ async function preparePublishBatch(
 
       variantsUpdated += 1;
       updatedForProduct += 1;
-      if (selectedSupply.availability === "available") {
+      const supplierSellable = shouldAllowSupplierBackorder({
+        availability: selectedSupply.availability ?? "unknown",
+        fulfillmentMode,
+      });
+      if (supplierSellable && selectedSupply.availability === "available") {
         anySellable = true;
         hasAvailable = true;
-      } else if (selectedSupply.availability === "preorder") {
+      } else if (
+        supplierSellable &&
+        selectedSupply.availability === "preorder"
+      ) {
         anySellable = true;
         hasPreorder = true;
-      } else {
+      } else if (!physicalSellable) {
         anyWaiting = true;
       }
     }
@@ -5902,7 +5973,14 @@ async function preparePublishBatch(
       );
     }
 
-    const human = productReasons.size > 0;
+    if (reviewDecision === "rejected") {
+      productReasons.add("operator_rejected");
+    }
+    const human = shouldRequireCatalogReview({
+      reasons: productReasons,
+      decision: reviewDecision,
+      approvedFingerprint: approvedReviewFingerprint,
+    });
     const publish = !human && anySellable;
     const waiting = !human && !anySellable && anyWaiting;
     const catalogState = human
@@ -6012,10 +6090,16 @@ async function preparePublishBatch(
     }
 
     await upsertProductFields(config, productId, defs, {
-      "catalog.review_status": human ? "⚠ NECESITA TU AYUDA" : "LISTO",
+      "catalog.review_status": human
+        ? "⚠ NECESITA TU AYUDA"
+        : productReasons.size > 0 && reviewDecision === "approved"
+          ? "✓ APROBADO"
+          : "LISTO",
       "catalog.review_reason": human
         ? humanizeReviewReasons(productReasons)
-        : "Sin revisión pendiente.",
+        : productReasons.size > 0 && reviewDecision === "approved"
+          ? "Aprobado por ti: " + humanizeReviewReasons(productReasons)
+          : "Sin revisión pendiente.",
       ...(human
         ? {
             "devir.review_status": "⚠ REVISIÓN HUMANA",
