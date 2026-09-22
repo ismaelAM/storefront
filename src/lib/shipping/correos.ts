@@ -2,24 +2,19 @@ export type CorreosApi =
   | "preregister"
   | "labels"
   | "trackpub"
-  | "requests"
-  | "boxentry";
+  | "requests";
 
 export type CorreosEnvironment = Record<string, string | undefined>;
 
 export interface CorreosConfig {
   clientId: string;
   clientSecret: string;
-  requestsSubscriptionKey?: string;
-  allowDeprecatedPreregister: boolean;
-  baseUrls: Record<"labels" | "trackpub", string> &
-    Partial<Record<"preregister" | "requests" | "boxentry", string>>;
+  baseUrls: Record<CorreosApi, string>;
 }
 
 export interface CorreosConfigurationStatus {
   ready: boolean;
   requestsEnabled: boolean;
-  boxEntryEnabled: boolean;
   preregisterEnabled: boolean;
   missing: string[];
   invalid: string[];
@@ -105,63 +100,41 @@ export interface CorreosPickupResponse extends Record<string, unknown> {
   codRequests?: string;
 }
 
-export interface CorreosBoxEntryRequest {
-  box: {
-    boxId: string;
-    boxEvents?: {
-      totalElements: number;
-      elements?: Array<{ elementCode?: string }>;
-      [key: string]: unknown;
-    };
-    [key: string]: unknown;
-  };
-  [key: string]: unknown;
-}
+export type CorreosPreregisterRequest = Record<string, unknown>;
 
-export interface CorreosBoxEntryResponse {
-  success: string;
-  description?: string;
-}
+export type CorreosPreregisterResponse = Record<string, unknown>;
 
 type CorreosAuthPolicy = {
   bearer: boolean;
   clientCredentials: boolean;
-  subscriptionKey: boolean;
 };
 
 const AUTH_POLICIES: Record<CorreosApi, CorreosAuthPolicy> = {
   preregister: {
     bearer: true,
     clientCredentials: false,
-    subscriptionKey: false,
   },
   labels: {
     bearer: true,
     clientCredentials: false,
-    subscriptionKey: false,
   },
   trackpub: {
     bearer: true,
     clientCredentials: true,
-    subscriptionKey: false,
   },
   requests: {
     bearer: true,
-    clientCredentials: false,
-    subscriptionKey: true,
-  },
-  boxentry: {
-    bearer: false,
     clientCredentials: true,
-    subscriptionKey: false,
   },
 };
 
 const REQUIRED_ENV = [
   "CORREOS_CLIENT_ID",
   "CORREOS_CLIENT_SECRET",
+  "CORREOS_PREREGISTER_BASE_URL",
   "CORREOS_LABELS_BASE_URL",
   "CORREOS_TRACKPUB_BASE_URL",
+  "CORREOS_REQUESTS_BASE_URL",
 ] as const;
 
 const URL_ENV = {
@@ -169,7 +142,6 @@ const URL_ENV = {
   labels: "CORREOS_LABELS_BASE_URL",
   trackpub: "CORREOS_TRACKPUB_BASE_URL",
   requests: "CORREOS_REQUESTS_BASE_URL",
-  boxentry: "CORREOS_BOXENTRY_BASE_URL",
 } as const satisfies Record<CorreosApi, string>;
 
 const MASKED_VALUES = new Set([
@@ -186,10 +158,6 @@ function usableValue(
   const value = env[name]?.trim();
   if (!value || MASKED_VALUES.has(value.toUpperCase())) return undefined;
   return value;
-}
-
-function enabledFlag(env: CorreosEnvironment, name: string): boolean {
-  return usableValue(env, name)?.toLowerCase() === "true";
 }
 
 function validatedHttpsUrl(name: string, value: string): string {
@@ -223,24 +191,10 @@ export function getCorreosConfigurationStatus(
     }
   }
 
-  const requestsUrl = usableValue(env, URL_ENV.requests);
-  const requestsSubscriptionKey = usableValue(
-    env,
-    "CORREOS_REQUESTS_SUBSCRIPTION_KEY",
-  );
-  if (requestsUrl && !requestsSubscriptionKey) {
-    missing.add("CORREOS_REQUESTS_SUBSCRIPTION_KEY");
-  }
-
-  const preregisterEnabled =
-    Boolean(usableValue(env, URL_ENV.preregister)) &&
-    enabledFlag(env, "CORREOS_ALLOW_DEPRECATED_PREREGISTER");
-
   return {
     ready: missing.size === 0 && invalid.length === 0,
-    requestsEnabled: Boolean(requestsUrl && requestsSubscriptionKey),
-    boxEntryEnabled: Boolean(usableValue(env, URL_ENV.boxentry)),
-    preregisterEnabled,
+    requestsEnabled: Boolean(usableValue(env, URL_ENV.requests)),
+    preregisterEnabled: Boolean(usableValue(env, URL_ENV.preregister)),
     missing: [...missing],
     invalid,
     requiresCorreosIdToken: ["preregister", "labels", "trackpub", "requests"],
@@ -277,11 +231,6 @@ export function loadCorreosConfig(
   return {
     clientId: usableValue(env, "CORREOS_CLIENT_ID") as string,
     clientSecret: usableValue(env, "CORREOS_CLIENT_SECRET") as string,
-    requestsSubscriptionKey: usableValue(
-      env,
-      "CORREOS_REQUESTS_SUBSCRIPTION_KEY",
-    ),
-    allowDeprecatedPreregister: status.preregisterEnabled,
     baseUrls,
   };
 }
@@ -304,12 +253,6 @@ export class CorreosClient {
   ) {}
 
   private endpoint(api: CorreosApi, path: string): URL {
-    if (api === "preregister" && !this.config.allowDeprecatedPreregister) {
-      throw new Error(
-        "La API Preregister está deprecada y permanece desactivada",
-      );
-    }
-
     const baseUrl = this.config.baseUrls[api];
     if (!baseUrl) {
       throw new Error(`La API de Correos ${api} no está configurada`);
@@ -340,18 +283,6 @@ export class CorreosClient {
     if (policy.clientCredentials) {
       headers.set("client_id", this.config.clientId);
       headers.set("client_secret", this.config.clientSecret);
-    }
-
-    if (policy.subscriptionKey) {
-      if (!this.config.requestsSubscriptionKey) {
-        throw new Error(
-          "La API Requests requiere CORREOS_REQUESTS_SUBSCRIPTION_KEY",
-        );
-      }
-      headers.set(
-        "Ocp-Apim-Subscription-Key",
-        this.config.requestsSubscriptionKey,
-      );
     }
 
     if (policy.bearer) {
@@ -451,12 +382,12 @@ export class CorreosClient {
     });
   }
 
-  registerBox(
-    request: CorreosBoxEntryRequest,
-  ): Promise<CorreosBoxEntryResponse> {
-    return this.request("boxentry", {
+  createShipment(
+    request: CorreosPreregisterRequest,
+  ): Promise<CorreosPreregisterResponse> {
+    return this.request("preregister", {
       method: "POST",
-      path: "box",
+      path: "delivery",
       json: request,
     });
   }
