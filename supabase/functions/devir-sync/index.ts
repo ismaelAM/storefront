@@ -5720,6 +5720,7 @@ async function preparePublishBatch(
   config: ConfigRow,
   offset: number,
   limit: number,
+  targetSpreeProductId?: string | null,
 ): Promise<{
   processed_products: number;
   published: number;
@@ -5728,13 +5729,17 @@ async function preparePublishBatch(
   variants_updated: number;
   next_offset: number | null;
 }> {
-  const { data, error } = await supabase
+  let pendingQuery = supabase
     .from("devir_sync_catalog")
     .select(
       "supplier_sku,source_url,name,snapshot,image_urls,spree_product_id,spree_variant_id,supplier_status,item_kind,grouping_confidence,last_error,catalog_version,catalog_state",
     )
     .not("spree_product_id", "is", null)
-    .or("catalog_version.is.null,catalog_version.neq.devir-taxonomy-v2")
+    .or("catalog_version.is.null,catalog_version.neq.devir-taxonomy-v2");
+  if (targetSpreeProductId) {
+    pendingQuery = pendingQuery.eq("spree_product_id", targetSpreeProductId);
+  }
+  const { data, error } = await pendingQuery
     .order("spree_product_id")
     .order("supplier_sku");
   if (error) throw error;
