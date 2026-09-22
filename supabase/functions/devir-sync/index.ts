@@ -6937,6 +6937,28 @@ async function hideCatalogPolicyViolations(
     channels[0];
   const hidden: Array<Record<string, unknown>> = [];
   for (const [productId, reasons] of violations) {
+    const { data: reviewPolicy, error: reviewPolicyError } = await supabase
+      .from("catalog_products")
+      .select("review_decision,approved_review_fingerprint")
+      .eq("spree_product_id", productId)
+      .maybeSingle();
+    if (reviewPolicyError) throw reviewPolicyError;
+    if (
+      reviewPolicy &&
+      !shouldRequireCatalogReview({
+        reasons,
+        decision:
+          (reviewPolicy.review_decision as CatalogReviewDecision | null) ??
+          "pending",
+        approvedFingerprint:
+          typeof reviewPolicy.approved_review_fingerprint === "string"
+            ? reviewPolicy.approved_review_fingerprint
+            : null,
+      })
+    ) {
+      continue;
+    }
+
     const product = await spreeRequest<SpreeProduct>(
       config,
       "GET",
