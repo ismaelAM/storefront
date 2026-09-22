@@ -2072,7 +2072,7 @@ async function reconcileStaleCatalogBatch(
 
 async function reconcilePhysicalOnlyCatalogBatch(
   config: ConfigRow,
-  limit = 40,
+  limit = 5,
 ): Promise<{ products: number; reconciled: number; failed: number }> {
   const { data: variants, error: variantsError } = await supabase
     .from("catalog_variants")
