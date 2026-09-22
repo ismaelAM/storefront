@@ -2890,8 +2890,7 @@ async function syncProductToSpree(
       ]),
     ).filter(
       (tag) =>
-        review ||
-        (tag !== "REVISION-HUMANA" && tag !== "NECESITA-TU-AYUDA"),
+        review || (tag !== "REVISION-HUMANA" && tag !== "NECESITA-TU-AYUDA"),
     );
     const refreshManagedMetadata =
       managed && (!active || forceDraftForSplit || needsManagedCleanup);
@@ -4399,8 +4398,7 @@ function competitivePricing(
     effectiveProfitRate,
     ruleSource,
     reviewReason,
-    minimumOrderSurchargeNet:
-      Math.round(minimumOrderSurchargeNet * 100) / 100,
+    minimumOrderSurchargeNet: Math.round(minimumOrderSurchargeNet * 100) / 100,
   };
 }
 
@@ -6242,7 +6240,12 @@ async function repairTcgFactoryImagesBatch(
     const productId = String(row.spree_product_id ?? "");
     const sourceUrl = String(row.source_url ?? "");
     const supplierSku = String(row.supplier_sku ?? "");
-    if (productId && sourceUrl && supplierSku && !uniqueProducts.has(productId)) {
+    if (
+      productId &&
+      sourceUrl &&
+      supplierSku &&
+      !uniqueProducts.has(productId)
+    ) {
       uniqueProducts.set(productId, { productId, supplierSku, sourceUrl });
     }
   }
@@ -6527,9 +6530,14 @@ async function repairRetailUnitProducts(
 const HUMAN_REVIEW_MARKER_VERSION = "catalog-review-v1";
 
 function reviewReasonsFromLastError(value: unknown): string[] {
-  const text = String(value ?? "").replace(/^REVIEW:\s*/i, "").trim();
+  const text = String(value ?? "")
+    .replace(/^REVIEW:\s*/i, "")
+    .trim();
   if (!text) return ["manual_review_required"];
-  return text.split(", ").map((item) => item.trim()).filter(Boolean);
+  return text
+    .split(", ")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 async function refreshHumanReviewMarkersBatch(
@@ -6538,10 +6546,9 @@ async function refreshHumanReviewMarkersBatch(
 ): Promise<{ processed: number; remaining: number }> {
   const { data, error, count } = await supabase
     .from("devir_sync_catalog")
-    .select(
-      "spree_product_id,last_error,review_marker_version,updated_at",
-      { count: "exact" },
-    )
+    .select("spree_product_id,last_error,review_marker_version,updated_at", {
+      count: "exact",
+    })
     .eq("catalog_state", "review")
     .not("spree_product_id", "is", null)
     .or(
@@ -7478,7 +7485,9 @@ async function repriceCatalogSupplierBatch(
   ] = await Promise.all([
     supabase
       .from("catalog_variants")
-      .select("id,last_auto_price,spree_variant_id,product_id,selected_offer_id")
+      .select(
+        "id,last_auto_price,spree_variant_id,product_id,selected_offer_id",
+      )
       .in("id", variantIds),
     supabase
       .from("catalog_products")
@@ -8160,15 +8169,15 @@ async function backfillTcgFactoryMinimumOrders(
         supplierSku,
         minimumOrderQuantity: quantity,
         detectedFromPage: parsed,
-        overrideApplied:
-          quantity !== null && parsed !== quantity,
+        overrideApplied: quantity !== null && parsed !== quantity,
         surchargeEligible: isHighMinimum,
       });
     } catch (scanError) {
       failed += 1;
       results.push({
         supplierSku,
-        error: scanError instanceof Error ? scanError.message : String(scanError),
+        error:
+          scanError instanceof Error ? scanError.message : String(scanError),
       });
     }
   }
@@ -8376,9 +8385,7 @@ async function tcgFactoryTick(
         state.run_id,
         {
           b2bPriceValidated: true,
-          ...(minimumOrderQuantity
-            ? { minimumOrderQuantity }
-            : {}),
+          ...(minimumOrderQuantity ? { minimumOrderQuantity } : {}),
         },
       );
     } catch (error) {

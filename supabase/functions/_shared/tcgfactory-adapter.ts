@@ -91,10 +91,7 @@ function optionalNumber(value: unknown, field: string): number | undefined {
   return number;
 }
 
-function optionalPositiveInteger(
-  value: unknown,
-  field: string,
-): number | null {
+function optionalPositiveInteger(value: unknown, field: string): number | null {
   if (value === null || value === undefined || value === "") return null;
   const number = Number(value);
   if (!Number.isInteger(number) || number < 1) {
