@@ -2,7 +2,6 @@
 
 import type { Config } from "@puckeditor/core";
 import { useEffect, useState } from "react";
-import { PuckProductGrid } from "@/components/puck/PuckProductGrid";
 import { colorField } from "@/puck/fields";
 import { HomeHeroBlock } from "@/puck/HomeHeroBlock";
 import { HomeWholesaleBlock } from "@/puck/HomeWholesaleBlock";
@@ -43,20 +42,6 @@ type BannerProps = {
   spacing: PuckDensity;
 };
 
-type ProductGridProps = {
-  title: string;
-  subtitle: string;
-  columns: "2" | "3" | "4";
-  imageAspect: "square" | "4/3" | "16/9";
-  cardRadius: "none" | "small" | "medium" | "large";
-  backgroundColor: string;
-  cardBackgroundColor: string;
-  titleColor: string;
-  textColor: string;
-  priceColor: string;
-  spacing: PuckDensity;
-};
-
 type SectionProps = {
   backgroundColor: string;
   backgroundImage: string;
@@ -76,7 +61,6 @@ type Components = {
   Text: TextProps;
   Image: ImageProps;
   Banner: BannerProps;
-  ProductGrid: ProductGridProps;
   WholesaleHome: WholesaleHomeProps;
   Section: SectionProps;
   Spacer: SpacerProps;
@@ -723,140 +707,6 @@ export const config: Config<Components> = {
             </div>
           </section>
         );
-      },
-    },
-
-    /* =====================================================
-       PRODUCT GRID
-       ===================================================== */
-
-    ProductGrid: {
-      label: "Productos",
-
-      fields: {
-        title: {
-          type: "text",
-          label: "Título",
-        },
-
-        subtitle: {
-          type: "textarea",
-          label: "Subtítulo",
-        },
-
-        columns: {
-          type: "select",
-          label: "Columnas",
-          options: [
-            {
-              label: "2 columnas",
-              value: "2",
-            },
-            {
-              label: "3 columnas",
-              value: "3",
-            },
-            {
-              label: "4 columnas",
-              value: "4",
-            },
-          ],
-        },
-
-        imageAspect: {
-          type: "select",
-          label: "Proporción de imagen",
-          options: [
-            {
-              label: "Cuadrada",
-              value: "square",
-            },
-            {
-              label: "4:3",
-              value: "4/3",
-            },
-            {
-              label: "16:9",
-              value: "16/9",
-            },
-          ],
-        },
-
-        cardRadius: {
-          type: "select",
-          label: "Redondeado de tarjeta",
-          options: [
-            {
-              label: "Sin redondeo",
-              value: "none",
-            },
-            {
-              label: "Pequeño",
-              value: "small",
-            },
-            {
-              label: "Medio",
-              value: "medium",
-            },
-            {
-              label: "Grande",
-              value: "large",
-            },
-          ],
-        },
-
-        backgroundColor: {
-          type: "text",
-          label: "Fondo de sección",
-        },
-
-        cardBackgroundColor: {
-          type: "text",
-          label: "Fondo de tarjeta",
-        },
-
-        titleColor: {
-          type: "text",
-          label: "Color del título",
-        },
-
-        textColor: {
-          type: "text",
-          label: "Color del texto",
-        },
-
-        priceColor: {
-          type: "text",
-          label: "Color del precio",
-        },
-
-        spacing: {
-          type: "select",
-          label: "Densidad vertical",
-          options: [
-            { label: "Compacta", value: "compact" },
-            { label: "Normal", value: "normal" },
-            { label: "Amplia", value: "airy" },
-          ],
-        },
-      },
-
-      defaultProps: {
-        title: "Nuestros productos",
-        subtitle: "Descubre nuestra selección.",
-        columns: "4",
-        imageAspect: "square",
-        cardRadius: "medium",
-        backgroundColor: "#ffffff",
-        cardBackgroundColor: "#ffffff",
-        titleColor: "#111827",
-        textColor: "#6b7280",
-        priceColor: DEFAULT_PALETTE_VALUES.text,
-        spacing: "normal",
-      },
-
-      render: (props) => {
-        return <PuckProductGrid basePath="/us/es" {...props} />;
       },
     },
 
