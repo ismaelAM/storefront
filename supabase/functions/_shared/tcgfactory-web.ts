@@ -273,9 +273,33 @@ export function isTcgFactoryProductImageReference(
   value: string,
   sourceUrl: string,
 ): boolean {
+  if (isTcgFactoryKnownPollutionMediaReference(value)) return false;
   const slug = tcgFactoryProductSlug(sourceUrl);
   if (!slug) return false;
   return normalizeTcgFactoryMediaStem(imageFilename(value)) === slug;
+}
+
+function isTcgFactorySourceProductImageReference(
+  value: string,
+  sourceUrl: string,
+): boolean {
+  if (!isTcgFactoryProductImageReference(value, sourceUrl)) return false;
+  try {
+    const url = new URL(value);
+    if (
+      url.hostname !== "tcgfactory.com" &&
+      !url.hostname.endsWith(".tcgfactory.com")
+    ) {
+      return false;
+    }
+    const parts = url.pathname.split("/").filter(Boolean);
+    const rendition = parts.length > 1 ? parts[parts.length - 2] : "";
+    return /^\d+-(?:thickbox_default|large_default|medium_default|home_default|imagen_producto_newsletter)$/i.test(
+      rendition,
+    );
+  } catch {
+    return false;
+  }
 }
 
 const TCGFACTORY_SITE_CHROME_MEDIA_STEMS = new Set([
@@ -330,7 +354,7 @@ function images(html: string, sourceUrl: string): string[] {
   ]) {
     for (const match of html.matchAll(pattern)) {
       const url = absoluteOfficialUrl(match[1], sourceUrl);
-      if (url && isTcgFactoryProductImageReference(url, sourceUrl)) {
+      if (url && isTcgFactorySourceProductImageReference(url, sourceUrl)) {
         candidates.push(url);
       }
     }

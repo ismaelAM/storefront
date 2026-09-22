@@ -122,12 +122,14 @@ seguir siendo explícitos.
 
 ## Calidad de imágenes y pedido mínimo
 
-Las imágenes de TcgFactory se filtran con una regla estricta: el nombre del
-fichero debe corresponder al slug de la ficha actual. Esto evita importar
-banners, imágenes CMS, logos de fabricante, categorías y recomendaciones
-laterales. El comparador normaliza guiones iniciales heredados en algunas URLs
-de producto, pero no relaja la pertenencia de la imagen a la ficha. Si la misma
-foto aparece en varias resoluciones, se conserva la mejor disponible.
+Las imágenes de TcgFactory se filtran con dos reglas simultáneas: el nombre del
+fichero debe corresponder al slug de la ficha actual y la URL de origen debe usar
+una rendición real de producto (`/<id>-<rendición>/<slug>.<ext>`). Esto evita
+importar banners, imágenes CMS, logos de fabricante, categorías,
+recomendaciones laterales y botones globales incluso si su nombre coincide con
+el slug. El comparador normaliza guiones iniciales heredados en algunas URLs de
+producto. Si la misma foto aparece en varias resoluciones, se conserva la mejor
+disponible.
 
 La reparación de galerías existentes se ejecuta con
 `repair-tcgfactory-images` y usa `dryRun: true` por defecto. El reparador
