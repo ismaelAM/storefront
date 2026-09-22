@@ -1671,6 +1671,41 @@ async function syncBackorderability(
   return changed;
 }
 
+async function enforceVariantFulfillmentFlags(
+  config: ConfigRow,
+  productId: string | null,
+  variantId: string | null,
+  availability: DevirProduct["availability"],
+  fulfillmentMode: CatalogFulfillmentMode,
+): Promise<number> {
+  const changed = await syncBackorderability(
+    config,
+    variantId,
+    availability,
+    fulfillmentMode,
+  );
+  if (!productId || !variantId) return changed;
+
+  const supplierPreorderable =
+    fulfillmentMode === "supplier_or_physical" &&
+    availability === "preorder";
+  if (!supplierPreorderable) {
+    await spreeRequest(
+      config,
+      "PATCH",
+      "/products/" +
+        encodeURIComponent(productId) +
+        "/variants/" +
+        encodeURIComponent(variantId),
+      {
+        preorderable: false,
+        preorder_ships_at: null,
+      },
+    );
+  }
+  return changed;
+}
+
 async function syncImages(
   config: ConfigRow,
   productId: string,
@@ -2603,8 +2638,9 @@ async function reconcileCatalogVariantUnlocked(
 
   if (!selection.selected || !selection.selectedSupplier) {
     if (resolution.variant.spree_variant_id) {
-      await syncBackorderability(
+      await enforceVariantFulfillmentFlags(
         config,
+        mapping.product?.id ?? resolution.product.spree_product_id,
         resolution.variant.spree_variant_id,
         "unavailable",
         resolution.variant.fulfillment_mode ?? "supplier_or_physical",
@@ -5969,14 +6005,28 @@ async function preparePublishBatch(
 
       const selectedSupply = await selectedSupplyForSpreeVariant(variant.id);
       if (!selectedSupply?.supplier_code) {
-        await syncBackorderability(
+        await enforceVariantFulfillmentFlags(
           config,
+          productId,
           variant.id,
           "unavailable",
           fulfillmentMode,
         );
         if (!physicalSellable) anyWaiting = true;
         continue;
+      }
+
+      // Fulfillment policy is a safety control, not a merchandising decision.
+      // Apply it before any review-related early exit so a draft/review product
+      // cannot retain stale supplier backorder or preorder flags in Spree.
+      if (fulfillmentMode !== "supplier_or_physical") {
+        await enforceVariantFulfillmentFlags(
+          config,
+          productId,
+          variant.id,
+          selectedSupply.availability ?? "unavailable",
+          fulfillmentMode,
+        );
       }
       if (
         selectedSupply.supplier_code === "devir" &&
@@ -10299,6 +10349,14 @@ async function operatorAction(
     return json({
       ok: true,
       ...(await repairSellabilityBatch(config, limit)),
+    });
+  }
+
+  if (action === "repair-physical-only-stock") {
+    const limit = Math.min(200, Math.max(1, Number(body.limit ?? 100) || 100));
+    return json({
+      ok: true,
+      ...(await reconcilePhysicalOnlyCatalogBatch(config, limit)),
     });
   }
 
