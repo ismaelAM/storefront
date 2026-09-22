@@ -184,22 +184,22 @@ export default function AccountPage() {
   return (
     <AccountShell>
       <div>
-        <h1 className="mb-7 text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">
+        <h1 className="mb-7 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
           {t("accountOverview")}
         </h1>
 
-        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 sm:gap-6">
+        <div className="grid grid-cols-1 gap-5 sm:gap-6 md:grid-cols-2">
           <Link href={`${basePath}/account/orders`}>
-            <Card className="h-full min-h-32 transition-colors hover:border-gray-300 sm:min-h-36">
+            <Card className="h-full min-h-32 transition-colors hover:border-foreground/20 sm:min-h-36">
               <CardContent className="flex h-full items-center gap-4 py-2 sm:gap-5 sm:py-3">
-                <div className="shrink-0 rounded-xl bg-gray-100 p-3.5">
+                <div className="shrink-0 rounded-xl bg-muted p-3.5">
                   <ShoppingBag className="w-6 h-6 text-primary" />
                 </div>
                 <div>
-                  <h2 className="text-lg font-medium text-gray-900">
+                  <h2 className="text-lg font-medium text-foreground">
                     {t("orderHistory")}
                   </h2>
-                  <p className="mt-1 text-sm text-gray-500">
+                  <p className="mt-1 text-sm text-muted-foreground">
                     {t("orderHistoryDescription")}
                   </p>
                 </div>
@@ -208,16 +208,16 @@ export default function AccountPage() {
           </Link>
 
           <Link href={`${basePath}/account/addresses`}>
-            <Card className="h-full min-h-32 transition-colors hover:border-gray-300 sm:min-h-36">
+            <Card className="h-full min-h-32 transition-colors hover:border-foreground/20 sm:min-h-36">
               <CardContent className="flex h-full items-center gap-4 py-2 sm:gap-5 sm:py-3">
-                <div className="shrink-0 rounded-xl bg-gray-100 p-3.5">
+                <div className="shrink-0 rounded-xl bg-muted p-3.5">
                   <MapPin className="w-6 h-6 text-primary" />
                 </div>
                 <div>
-                  <h2 className="text-lg font-medium text-gray-900">
+                  <h2 className="text-lg font-medium text-foreground">
                     {t("addresses")}
                   </h2>
-                  <p className="mt-1 text-sm text-gray-500">
+                  <p className="mt-1 text-sm text-muted-foreground">
                     {t("addressesDescription")}
                   </p>
                 </div>
@@ -226,16 +226,16 @@ export default function AccountPage() {
           </Link>
 
           <Link href={`${basePath}/account/credit-cards`}>
-            <Card className="h-full min-h-32 transition-colors hover:border-gray-300 sm:min-h-36">
+            <Card className="h-full min-h-32 transition-colors hover:border-foreground/20 sm:min-h-36">
               <CardContent className="flex h-full items-center gap-4 py-2 sm:gap-5 sm:py-3">
-                <div className="shrink-0 rounded-xl bg-gray-100 p-3.5">
+                <div className="shrink-0 rounded-xl bg-muted p-3.5">
                   <CreditCard className="w-6 h-6 text-primary" />
                 </div>
                 <div>
-                  <h2 className="text-lg font-medium text-gray-900">
+                  <h2 className="text-lg font-medium text-foreground">
                     {t("paymentMethods")}
                   </h2>
-                  <p className="mt-1 text-sm text-gray-500">
+                  <p className="mt-1 text-sm text-muted-foreground">
                     {t("paymentMethodsDescription")}
                   </p>
                 </div>
@@ -244,16 +244,16 @@ export default function AccountPage() {
           </Link>
 
           <Link href={`${basePath}/account/profile`}>
-            <Card className="h-full min-h-32 transition-colors hover:border-gray-300 sm:min-h-36">
+            <Card className="h-full min-h-32 transition-colors hover:border-foreground/20 sm:min-h-36">
               <CardContent className="flex h-full items-center gap-4 py-2 sm:gap-5 sm:py-3">
-                <div className="shrink-0 rounded-xl bg-gray-100 p-3.5">
+                <div className="shrink-0 rounded-xl bg-muted p-3.5">
                   <User className="w-6 h-6 text-primary" />
                 </div>
                 <div>
-                  <h2 className="text-lg font-medium text-gray-900">
+                  <h2 className="text-lg font-medium text-foreground">
                     {t("profile")}
                   </h2>
-                  <p className="mt-1 text-sm text-gray-500">
+                  <p className="mt-1 text-sm text-muted-foreground">
                     {t("profileDescription")}
                   </p>
                 </div>
