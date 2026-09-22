@@ -1,4 +1,3 @@
-import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import {
   getConfiguredCorreosClient,
@@ -7,6 +6,7 @@ import {
   type CorreosPickupRequest,
   type CorreosPreregisterRequest,
 } from "@/lib/shipping/correos";
+import { isShippingOperationsAuthorized } from "@/lib/shipping/operations-auth";
 import {
   fulfillFulfillment,
   getSpreeShippingConfigurationStatus,
@@ -14,20 +14,6 @@ import {
   markFulfillmentDelivered,
   updateFulfillmentTracking,
 } from "@/lib/shipping/spree-fulfillment";
-
-function secureEqual(left: string, right: string): boolean {
-  const a = Buffer.from(left);
-  const b = Buffer.from(right);
-  return a.length === b.length && timingSafeEqual(a, b);
-}
-
-function authorized(request: Request): boolean {
-  const expected = process.env.SHIPPING_OPERATIONS_TOKEN?.trim();
-  if (!expected) return false;
-  const header = request.headers.get("authorization") ?? "";
-  const provided = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
-  return Boolean(provided && secureEqual(provided, expected));
-}
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -43,7 +29,7 @@ function requiredString(
 }
 
 export async function GET(request: Request) {
-  if (!authorized(request)) return unauthorized();
+  if (!isShippingOperationsAuthorized(request)) return unauthorized();
   const correos = getCorreosConfigurationStatus(process.env);
   return NextResponse.json({
     ok: true,
@@ -58,7 +44,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (!authorized(request)) return unauthorized();
+  if (!isShippingOperationsAuthorized(request)) return unauthorized();
 
   let body: Record<string, unknown>;
   try {
