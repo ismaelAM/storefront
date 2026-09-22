@@ -39,9 +39,6 @@ const configuredCategoryUrls = (
 const profilePath = resolve(
   process.env.DEVIR_B2B_PROFILE_DIR ?? ".secrets/devir-b2b-profile",
 );
-const statePath = resolve(
-  process.env.DEVIR_B2B_STATE_PATH ?? ".secrets/devir-b2b-state.json",
-);
 const outputPath = resolve(
   process.env.DEVIR_B2B_OUTPUT ?? ".local/devir-b2b-catalog.json",
 );
@@ -149,14 +146,14 @@ function isLikelyCategoryUrl(value: string): boolean {
       "/cookie",
       "/cart",
       "/actualidad",
-    ].some((prefix) => path === prefix || path.startsWith(prefix + "/"));
+    ].some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
   } catch {
     return false;
   }
 }
 
 async function discoverCategoryUrls(page: Page): Promise<string[]> {
-  await page.goto(baseUrl + "/", {
+  await page.goto(`${baseUrl}/`, {
     waitUntil: "domcontentloaded",
     timeout: timeoutMs,
   });
