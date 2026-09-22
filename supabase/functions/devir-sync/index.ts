@@ -2112,14 +2112,14 @@ async function reconcileStaleCatalogBatch(
 
 async function reconcilePhysicalOnlyCatalogBatch(
   config: ConfigRow,
-  limit = 100,
+  limit = 40,
 ): Promise<{ products: number; reconciled: number; failed: number }> {
   const { data: variants, error: variantsError } = await supabase
     .from("catalog_variants")
-    .select("product_id")
+    .select("product_id,updated_at")
     .eq("fulfillment_mode", "physical_only")
     .not("spree_variant_id", "is", null)
-    .order("product_id")
+    .order("updated_at", { ascending: true })
     .limit(limit);
   if (variantsError) throw variantsError;
 
@@ -2145,6 +2145,12 @@ async function reconcilePhysicalOnlyCatalogBatch(
     try {
       await markCatalogProductDirty(spreeProductId);
       await preparePublishBatch(config, 0, 1, spreeProductId);
+      const { error: checkpointError } = await supabase
+        .from("catalog_variants")
+        .update({ updated_at: new Date().toISOString() })
+        .eq("product_id", product.id)
+        .eq("fulfillment_mode", "physical_only");
+      if (checkpointError) throw checkpointError;
       reconciled += 1;
     } catch (error) {
       failed += 1;
