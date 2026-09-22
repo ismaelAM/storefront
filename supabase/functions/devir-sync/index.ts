@@ -2524,6 +2524,7 @@ async function reconcileCatalogVariantUnlocked(
   variantId: string | null;
   images: number;
   review: boolean;
+  reviewReasons: string[];
   backorderItems: number;
   lastAutoPrice: number | null;
   selectedSupplierCode: string | null;
@@ -3108,6 +3109,7 @@ async function syncProductToSpree(
     variantId,
     images,
     review,
+    reviewReasons: reasons,
     backorderItems,
     lastAutoPrice: manualPrice ? null : pricing.retail,
   };
@@ -10205,12 +10207,28 @@ async function processProducts(
             last_seen_at: now,
             last_synced_at: now,
             ...(packRequiresSplit
-              ? {
-                  catalog_state: "review",
-                  catalog_version: null,
-                  catalog_prepared_at: null,
-                  last_error: "REVIEW: pack_requires_operator_split",
-                }
+              ? synced.review
+                ? {
+                    catalog_state: "review",
+                    catalog_version: null,
+                    catalog_prepared_at: null,
+                    last_error:
+                      "REVIEW: " +
+                      (synced.reviewReasons.length
+                        ? synced.reviewReasons.join(", ")
+                        : "pack_requires_operator_split"),
+                  }
+                : {
+                    catalog_state:
+                      product.availability === "available"
+                        ? "published"
+                        : product.availability === "preorder"
+                          ? "preorder"
+                          : "waiting_supplier",
+                    catalog_version: "devir-taxonomy-v2",
+                    catalog_prepared_at: now,
+                    last_error: null,
+                  }
               : { last_error: null }),
             updated_at: now,
           },
