@@ -1632,13 +1632,13 @@ async function syncBackorderability(
   config: ConfigRow,
   variantId: string | null,
   availability: DevirProduct["availability"],
+  fulfillmentMode: CatalogFulfillmentMode = "supplier_or_physical",
 ): Promise<number> {
-  if (
-    !variantId ||
-    (availability !== "available" && availability !== "unavailable")
-  )
-    return 0;
-  const desired = availability === "available";
+  if (!variantId) return 0;
+  const desired = shouldAllowSupplierBackorder({
+    availability,
+    fulfillmentMode,
+  });
   const attempts = [
     "/stock_items?q[variant_id_eq]=" + encodeURIComponent(variantId),
     "/stock_items?q[variant_prefixed_id_eq]=" + encodeURIComponent(variantId),
@@ -2716,7 +2716,11 @@ async function syncProductToSpree(
     grouping.itemKind === "standalone" ? languageGroupingInfo(product) : null;
   if (grouping.confidence === "ambiguous")
     reasons.push("grouping_requires_operator_review");
-  const review = reasons.length > 0;
+  const review = shouldRequireCatalogReview({
+    reasons,
+    decision: catalogContext?.reviewDecision ?? "pending",
+    approvedFingerprint: catalogContext?.approvedReviewFingerprint ?? null,
+  });
   const spreeSku = catalogContext?.canonicalSku ?? product.sku;
   const spreeProductName = catalogContext?.productName ?? product.name;
   const variantOptions = Object.entries(catalogContext?.options ?? {}).map(
@@ -2906,7 +2910,7 @@ async function syncProductToSpree(
     const managed =
       (existing.product.tags ?? []).includes("devir") ||
       (existing.product.tags ?? []).includes("catalog-managed");
-    const forceDraftForSplit = packRequiresSplit && managed;
+    const forceDraftForSplit = packRequiresSplit && managed && review;
     const canWritePrice = canWriteManagedCatalogPrice({
       createdVariant,
       managed,
@@ -3035,6 +3039,7 @@ async function syncProductToSpree(
     config,
     variantId,
     product.availability,
+    catalogContext?.fulfillmentMode ?? "supplier_or_physical",
   );
   if (
     sourceCode === TCGFACTORY_SUPPLIER_CODE &&
@@ -3055,7 +3060,11 @@ async function syncProductToSpree(
       productId,
       variantId,
       Number(current.total_on_hand ?? 0),
-      true,
+      shouldAllowSupplierBackorder({
+        availability: product.availability,
+        fulfillmentMode:
+          catalogContext?.fulfillmentMode ?? "supplier_or_physical",
+      }),
       product.availability === "preorder",
       product.availability === "preorder" ? product.releaseDate : null,
     );
@@ -3063,9 +3072,15 @@ async function syncProductToSpree(
   }
   const images = await syncImages(config, productId, product);
 
+  const physicalStockOnHand = existing
+    ? Number(existing.variant.total_on_hand ?? 0)
+    : 0;
   const autoPublish = shouldAutoPublishCatalogProduct({
     review,
     availability: product.availability,
+    physicalStockOnHand,
+    fulfillmentMode:
+      catalogContext?.fulfillmentMode ?? "supplier_or_physical",
   });
   if (autoPublish) {
     await spreeRequest(
