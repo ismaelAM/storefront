@@ -1,3 +1,4 @@
+import type { Cart } from "@spree/sdk";
 import { NextResponse } from "next/server";
 import { getClient } from "@/lib/spree";
 import {
@@ -9,17 +10,9 @@ type DiagnosticResult =
   | { ok: true; data: unknown }
   | { ok: false; status?: number; error: string };
 
-function summarizeCart(cart: {
-  fulfillments?: Array<{
-    id: string;
-    delivery_rates?: Array<{
-      id: string;
-      name?: string | null;
-      display_cost?: string | null;
-      selected?: boolean;
-    }>;
-  }> | null;
-}) {
+function summarizeCart(
+  cart: Pick<Cart, "fulfillments" | "warnings" | "requirements">,
+) {
   return {
     fulfillmentCount: cart.fulfillments?.length ?? 0,
     fulfillments:
@@ -32,6 +25,19 @@ function summarizeCart(cart: {
             displayCost: rate.display_cost ?? null,
             selected: Boolean(rate.selected),
           })) ?? [],
+      })) ?? [],
+    warnings:
+      cart.warnings?.map((warning) => ({
+        code: warning.code,
+        message: warning.message,
+        lineItemId: warning.line_item_id,
+        variantId: warning.variant_id,
+      })) ?? [],
+    requirements:
+      cart.requirements?.map((requirement) => ({
+        step: requirement.step,
+        field: requirement.field,
+        message: requirement.message,
       })) ?? [],
   };
 }
