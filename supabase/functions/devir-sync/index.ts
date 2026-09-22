@@ -2663,6 +2663,7 @@ async function syncProductToSpree(
   const commercialProfile = commercialPricingProfile({
     name: product.name,
     categoryKey: key,
+    unitCostNet: product.purchasePrice,
   });
   const categoryBaseMargin =
     configuredMargin ?? DEFAULT_CATEGORY_MARGINS[key] ?? 0.08;
@@ -4206,6 +4207,7 @@ function commercialTargetMargin(
   const profile = commercialPricingProfile({
     name: product.name,
     categoryKey: key,
+    unitCostNet: product.purchasePrice,
   });
   const base =
     Number.isFinite(Number(categoryBaseMargin)) && Number(categoryBaseMargin) >= 0
@@ -7334,7 +7336,11 @@ async function rotateDailyOffers(
           name,
           url: String(row.source_url ?? ""),
         });
-      const profile = commercialPricingProfile({ name, categoryKey: key });
+      const profile = commercialPricingProfile({
+        name,
+        categoryKey: key,
+        unitCostNet: cost,
+      });
       if (!profile.offerEligible || isBookSku(String(row.canonical_sku ?? ""))) {
         return [];
       }
@@ -8094,6 +8100,7 @@ async function repriceCatalogSupplierBatch(
       const profile = commercialPricingProfile({
         name: product.name,
         categoryKey: key,
+        unitCostNet: product.purchasePrice,
       });
       const pricing = competitivePricing(
         product,
