@@ -24,6 +24,18 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Check files changed by manual shipping feature
+        run: >-
+          pnpm exec biome check
+          src/app/api/internal/shipping/route.ts
+          src/app/api/internal/shipping/session/route.ts
+          src/app/ops/layout.tsx
+          src/app/ops/shipping/page.tsx
+          src/app/ops/shipping/ShippingOperationsPanel.tsx
+          src/lib/shipping/operations-auth.ts
+          src/lib/shipping/__tests__/operations-auth.test.ts
+          src/proxy.ts
+          --max-diagnostics=100
       - run: pnpm run check
 
   typecheck:
