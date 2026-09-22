@@ -4388,6 +4388,7 @@ function competitivePricing(
     const commercialProfile = commercialPricingProfile({
       name: product.name,
       categoryKey: key,
+      unitCostNet: product.purchasePrice,
     });
     const discount = book ? 0.05 : commercialProfile.referenceDiscount;
     const marketTarget = referenceGross * (1 - discount);
