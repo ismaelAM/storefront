@@ -27,8 +27,10 @@ import {
   tcgFactoryRecordToCatalogItem,
 } from "../_shared/tcgfactory-adapter.ts";
 import {
+  isTcgFactoryProductImageReference,
   parseTcgFactoryAuthenticatedPrice,
   parseTcgFactoryListing,
+  parseTcgFactoryMinimumOrderQuantity,
   parseTcgFactoryPublicProduct,
   TCGFACTORY_ACCESSORIES_URL,
   TCGFACTORY_ACCESSORY_CATEGORY_SPECS,
@@ -141,6 +143,7 @@ interface DevirProduct {
   categoryKeyOverride?: string | null;
   retailUnitNormalized?: boolean;
   supplierPackUnits?: number;
+  supplierMinimumQuantity?: number | null;
 }
 
 interface CatalogSupplierRow {
@@ -154,6 +157,7 @@ interface CatalogSupplierRow {
   stale_after_hours: number;
   sync_interval_hours?: number;
   last_completed_run_id?: string | null;
+  config?: Record<string, unknown> | null;
 }
 
 interface CatalogProductRow {
@@ -1847,7 +1851,7 @@ async function configuredCatalogSupplier(
   const { data, error } = await supabase
     .from("catalog_suppliers")
     .select(
-      "id,code,name,adapter_key,enabled,priority,default_currency,stale_after_hours,sync_interval_hours,last_completed_run_id",
+      "id,code,name,adapter_key,enabled,priority,default_currency,stale_after_hours,sync_interval_hours,last_completed_run_id,config",
     )
     .eq("code", normalizedCode)
     .maybeSingle();
@@ -2375,6 +2379,11 @@ function supplierItemAsProduct(
     releaseDate: item.releaseDate ?? null,
     imageUrls: item.imageUrls,
     categoryKeyOverride: item.categoryKey ?? null,
+    supplierMinimumQuantity:
+      Number.isInteger(Number(item.metadata?.minimumOrderQuantity)) &&
+      Number(item.metadata?.minimumOrderQuantity) > 1
+        ? Number(item.metadata?.minimumOrderQuantity)
+        : null,
   };
 }
 
@@ -2595,6 +2604,7 @@ async function syncProductToSpree(
     key,
     targetMargin,
     catalogContext?.supplier.code,
+    catalogContext?.supplier.config,
   );
   const shipping = shippingDefaults(key, product);
   const packRequiresSplit = isPack(product);
@@ -4158,11 +4168,101 @@ function paymentAwareFloor(
   return (costNet + STANDARD_EEA_CARD_FIXED_EUR) / denominator;
 }
 
+const TCGFACTORY_MOQ_DEFAULT_THRESHOLD = 4;
+const TCGFACTORY_MOQ_DEFAULT_EXCESS_COVERAGE_RATE = 0.08;
+const TCGFACTORY_MOQ_DEFAULT_MAX_UNIT_COST_SHARE = 0.3;
+
+function tcgFactoryMoqPricingConfig(
+  supplierConfig?: Record<string, unknown> | null,
+): {
+  threshold: number;
+  excessCoverageRate: number;
+  maxUnitCostShare: number;
+  quantityBySku: Record<string, number>;
+} {
+  const raw =
+    supplierConfig?.minimumOrder &&
+    typeof supplierConfig.minimumOrder === "object" &&
+    !Array.isArray(supplierConfig.minimumOrder)
+      ? (supplierConfig.minimumOrder as Record<string, unknown>)
+      : {};
+  const threshold = Number(raw.surchargeThreshold);
+  const excessCoverageRate = Number(raw.excessCoverageRate);
+  const maxUnitCostShare = Number(raw.maxUnitCostShare);
+  const rawQuantities =
+    raw.quantityBySku &&
+    typeof raw.quantityBySku === "object" &&
+    !Array.isArray(raw.quantityBySku)
+      ? (raw.quantityBySku as Record<string, unknown>)
+      : {};
+  const quantityBySku = Object.fromEntries(
+    Object.entries(rawQuantities).flatMap(([sku, value]) => {
+      const quantity = Number(value);
+      return Number.isInteger(quantity) && quantity > 1
+        ? [[sku.trim().toUpperCase(), quantity] as const]
+        : [];
+    }),
+  );
+
+  return {
+    threshold:
+      Number.isInteger(threshold) && threshold >= 2
+        ? threshold
+        : TCGFACTORY_MOQ_DEFAULT_THRESHOLD,
+    excessCoverageRate:
+      Number.isFinite(excessCoverageRate) &&
+      excessCoverageRate >= 0 &&
+      excessCoverageRate <= 1
+        ? excessCoverageRate
+        : TCGFACTORY_MOQ_DEFAULT_EXCESS_COVERAGE_RATE,
+    maxUnitCostShare:
+      Number.isFinite(maxUnitCostShare) &&
+      maxUnitCostShare >= 0 &&
+      maxUnitCostShare <= 1
+        ? maxUnitCostShare
+        : TCGFACTORY_MOQ_DEFAULT_MAX_UNIT_COST_SHARE,
+    quantityBySku,
+  };
+}
+
+function tcgFactoryMinimumOrderQuantity(
+  supplier: CatalogSupplierRow,
+  sku: string,
+  detected: number | null,
+): number | null {
+  const config = tcgFactoryMoqPricingConfig(supplier.config);
+  const override = config.quantityBySku[sku.trim().toUpperCase()];
+  return override ?? detected;
+}
+
+function minimumOrderRiskSurcharge(
+  product: DevirProduct,
+  supplierCode?: string | null,
+  supplierConfig?: Record<string, unknown> | null,
+): number {
+  if (normalizeSupplierCode(supplierCode ?? "") !== TCGFACTORY_SUPPLIER_CODE) {
+    return 0;
+  }
+  const quantity = Number(product.supplierMinimumQuantity);
+  if (!Number.isInteger(quantity) || quantity <= 1 || !product.purchasePrice) {
+    return 0;
+  }
+  const config = tcgFactoryMoqPricingConfig(supplierConfig);
+  if (quantity < config.threshold) return 0;
+  const excessExposure =
+    (quantity - 1) * product.purchasePrice * config.excessCoverageRate;
+  return Math.min(
+    excessExposure,
+    product.purchasePrice * config.maxUnitCostShare,
+  );
+}
+
 function competitivePricing(
   product: DevirProduct,
   key: string,
   targetProfitRate = DEFAULT_CATEGORY_MARGINS[key] ?? 0.05,
   supplierCode?: string | null,
+  supplierConfig?: Record<string, unknown> | null,
 ): {
   retail: number;
   vatRate: number;
@@ -4171,6 +4271,7 @@ function competitivePricing(
   effectiveProfitRate: number;
   ruleSource: string;
   reviewReason: string | null;
+  minimumOrderSurchargeNet: number;
 } {
   if (!product.purchasePrice || product.purchasePrice <= 0) {
     throw new Error("Producto sin coste Devir: " + product.sku);
@@ -4178,11 +4279,13 @@ function competitivePricing(
 
   const book = isBookProduct(product, key);
   const vatRate = supplierVatRate({ supplierCode, isBook: book });
-  const floor = paymentAwareFloor(
-    product.purchasePrice,
-    vatRate,
-    targetProfitRate,
+  const minimumOrderSurchargeNet = minimumOrderRiskSurcharge(
+    product,
+    supplierCode,
+    supplierConfig,
   );
+  const pricingCostNet = product.purchasePrice + minimumOrderSurchargeNet;
+  const floor = paymentAwareFloor(pricingCostNet, vatRate, targetProfitRate);
   const referenceNet = Number(product.referencePriceNet);
   const hasReference =
     Number.isFinite(referenceNet) && referenceNet > product.purchasePrice;
@@ -4225,8 +4328,11 @@ function competitivePricing(
   const stripeFee =
     retail * STANDARD_EEA_CARD_RATE + STANDARD_EEA_CARD_FIXED_EUR;
   const netSale = retail / (1 + vatRate);
-  const profit = netSale - product.purchasePrice - stripeFee;
+  const profit = netSale - pricingCostNet - stripeFee;
   const effectiveProfitRate = retail > 0 ? profit / retail : 0;
+  if (minimumOrderSurchargeNet > 0) {
+    ruleSource += "+tcgfactory_moq_risk";
+  }
 
   return {
     retail,
@@ -4237,6 +4343,8 @@ function competitivePricing(
     effectiveProfitRate,
     ruleSource,
     reviewReason,
+    minimumOrderSurchargeNet:
+      Math.round(minimumOrderSurchargeNet * 100) / 100,
   };
 }
 
@@ -6995,7 +7103,7 @@ async function upsertCatalogSupplier(
       { onConflict: "code" },
     )
     .select(
-      "id,code,name,adapter_key,enabled,priority,default_currency,stale_after_hours,sync_interval_hours,last_completed_run_id",
+      "id,code,name,adapter_key,enabled,priority,default_currency,stale_after_hours,sync_interval_hours,last_completed_run_id,config",
     )
     .single();
   if (error) throw error;
@@ -7520,7 +7628,7 @@ async function tcgFactorySupplierRow(): Promise<
   const { data, error } = await supabase
     .from("catalog_suppliers")
     .select(
-      "id,code,name,adapter_key,enabled,priority,default_currency,stale_after_hours,sync_interval_hours,last_completed_run_id,next_sync_at,last_error",
+      "id,code,name,adapter_key,enabled,priority,default_currency,stale_after_hours,sync_interval_hours,last_completed_run_id,config,next_sync_at,last_error",
     )
     .eq("code", TCGFACTORY_SUPPLIER_CODE)
     .single();
@@ -7642,6 +7750,7 @@ function safeTcgFactoryB2bPrice(
 function tcgFactoryCatalogItem(
   product: TcgFactoryPublicProduct,
   authenticatedPriceNet: number,
+  minimumOrderQuantity: number | null,
 ): SupplierCatalogItem {
   return tcgFactoryRecordToCatalogItem({
     externalProductId: product.externalProductId,
@@ -7661,6 +7770,7 @@ function tcgFactoryCatalogItem(
     releaseDate: product.releaseDate,
     imageUrls: product.imageUrls,
     referencePriceNet: product.referencePriceNet,
+    minimumOrderQuantity,
   });
 }
 
@@ -7827,6 +7937,11 @@ async function tcgFactoryTick(
         authenticatedDetail.html,
         publicProduct.referencePriceNet,
       );
+      const minimumOrderQuantity = tcgFactoryMinimumOrderQuantity(
+        supplier,
+        publicProduct.reference ?? publicProduct.externalVariantId,
+        parseTcgFactoryMinimumOrderQuantity(authenticatedDetail.html),
+      );
       const rawItem = tcgFactoryCatalogItem(
         {
           ...publicProduct,
@@ -7836,6 +7951,7 @@ async function tcgFactoryTick(
             publicProduct.reportedAvailability,
         },
         price,
+        minimumOrderQuantity,
       );
       await ingestCatalogItem(config, rawItem, state.run_id, categories, defs);
       processed += 1;
@@ -7843,7 +7959,12 @@ async function tcgFactoryTick(
         supplier.id,
         publicProduct,
         state.run_id,
-        { b2bPriceValidated: true },
+        {
+          b2bPriceValidated: true,
+          ...(minimumOrderQuantity
+            ? { minimumOrderQuantity }
+            : {}),
+        },
       );
     } catch (error) {
       failed += 1;
