@@ -784,7 +784,7 @@ export function PaymentSection({
       <RadioGroup
         value={effectiveSelectedMethodId}
         onValueChange={handleMethodSelect}
-        className="rounded-xl border overflow-hidden gap-0 mt-3"
+        className="mt-3 gap-0 overflow-hidden rounded-xl border border-gray-200 bg-white"
       >
         {paymentMethods.map((pm, index) => {
           const isSelected = pm.id === effectiveSelectedMethodId;
@@ -837,7 +837,7 @@ export function PaymentSection({
                                     val === "__new__" ? null : val,
                                   )
                                 }
-                                className="gap-0 rounded-xl border overflow-hidden"
+                                className="gap-0 overflow-hidden rounded-xl border border-gray-200 bg-white"
                               >
                                 {savedCards.map((card, cardIndex) => (
                                   <label
