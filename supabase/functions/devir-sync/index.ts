@@ -6302,17 +6302,19 @@ async function repairTcgFactoryImagesBatch(
       if (invalid.length > 0) productsWithInvalidMedia += 1;
 
       if (!dryRun) {
-        for (const item of invalid) {
-          await spreeRequest(
-            config,
-            "DELETE",
-            "/products/" +
-              encodeURIComponent(product.productId) +
-              "/media/" +
-              encodeURIComponent(String(item.id)),
-          );
-          deleted += 1;
-        }
+        await Promise.all(
+          invalid.map((item) =>
+            spreeRequest(
+              config,
+              "DELETE",
+              "/products/" +
+                encodeURIComponent(product.productId) +
+                "/media/" +
+                encodeURIComponent(String(item.id)),
+            ),
+          ),
+        );
+        deleted += invalid.length;
 
         if (discovery?.id) {
           const { error: updateDiscoveryError } = await supabase
@@ -6350,15 +6352,17 @@ async function repairTcgFactoryImagesBatch(
         }
 
         if (valid.length === 0) {
-          for (const [index, url] of filteredImageUrls.entries()) {
-            await spreeRequest(
-              config,
-              "POST",
-              "/products/" + encodeURIComponent(product.productId) + "/media",
-              { url, position: index + 1 },
-            );
-            uploaded += 1;
-          }
+          await Promise.all(
+            filteredImageUrls.map((url, index) =>
+              spreeRequest(
+                config,
+                "POST",
+                "/products/" + encodeURIComponent(product.productId) + "/media",
+                { url, position: index + 1 },
+              ),
+            ),
+          );
+          uploaded += filteredImageUrls.length;
         }
       }
 
