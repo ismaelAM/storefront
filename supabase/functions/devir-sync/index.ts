@@ -4342,6 +4342,8 @@ function competitivePricing(
   );
   const pricingCostNet = product.purchasePrice + minimumOrderSurchargeNet;
   const floor = paymentAwareFloor(pricingCostNet, vatRate, targetProfitRate);
+  // Convert the net inventory-risk amount into the gross checkout amount
+  // required to recover it after VAT and Stripe's percentage fee.
   const surchargeRecoveryDenominator =
     1 / (1 + vatRate) - STANDARD_EEA_CARD_RATE;
   const minimumOrderSurchargeGross =
