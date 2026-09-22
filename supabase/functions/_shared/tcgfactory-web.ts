@@ -220,18 +220,93 @@ export function parseTcgFactoryAuthenticatedPrice(html: string): number | null {
   return null;
 }
 
+function tcgFactoryProductSlug(sourceUrl: string): string | null {
+  try {
+    return decodeURIComponent(new URL(sourceUrl).pathname.split("/").pop() ?? "")
+      .replace(/\.html$/i, "")
+      .trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+function imageFilename(value: string): string {
+  try {
+    return decodeURIComponent(new URL(value).pathname.split("/").pop() ?? "");
+  } catch {
+    return "";
+  }
+}
+
+export function isTcgFactoryProductImageReference(
+  value: string,
+  sourceUrl: string,
+): boolean {
+  const slug = tcgFactoryProductSlug(sourceUrl);
+  if (!slug) return false;
+  const filename = imageFilename(value).replace(/\.[a-z0-9]{2,5}$/i, "");
+  return filename === slug;
+}
+
+function tcgFactoryImageAssetKey(value: string): string {
+  try {
+    const parts = new URL(value).pathname.split("/").filter(Boolean);
+    const rendition = parts.length > 1 ? parts[parts.length - 2] : "";
+    const match = rendition.match(/^(\d+)-[a-z0-9_-]+$/i);
+    return match?.[1] ?? value;
+  } catch {
+    return value;
+  }
+}
+
+function tcgFactoryImageQuality(value: string): number {
+  if (/thickbox_default/i.test(value)) return 5;
+  if (/large_default/i.test(value)) return 4;
+  if (/medium_default/i.test(value)) return 3;
+  if (/home_default/i.test(value)) return 2;
+  if (/imagen_producto_newsletter/i.test(value)) return 1;
+  return 0;
+}
+
 function images(html: string, sourceUrl: string): string[] {
-  const found: string[] = [];
+  const candidates: string[] = [];
   for (const pattern of [
     /<meta\b[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/gi,
-    /<img\b[^>]*(?:class=["'][^"']*(?:product|js-qv-product-cover)[^"']*["'][^>]*)?src=["']([^"']+)["']/gi,
+    /<img\b[^>]*src=["']([^"']+)["']/gi,
   ]) {
     for (const match of html.matchAll(pattern)) {
       const url = absoluteOfficialUrl(match[1], sourceUrl);
-      if (url && !/logo|icon|sprite/i.test(url)) found.push(url);
+      if (url && isTcgFactoryProductImageReference(url, sourceUrl)) {
+        candidates.push(url);
+      }
     }
   }
-  return Array.from(new Set(found)).slice(0, 12);
+
+  const bestByAsset = new Map<string, string>();
+  for (const url of candidates) {
+    const key = tcgFactoryImageAssetKey(url);
+    const current = bestByAsset.get(key);
+    if (!current || tcgFactoryImageQuality(url) > tcgFactoryImageQuality(current)) {
+      bestByAsset.set(key, url);
+    }
+  }
+
+  return Array.from(bestByAsset.values()).slice(0, 12);
+}
+
+export function parseTcgFactoryMinimumOrderQuantity(html: string): number | null {
+  const patterns = [
+    /(?:minimal[_-]?quantity|minimum[_-]?quantity|min[_-]?order[_-]?quantity|minimumOrderQuantity)\s*[:=]\s*["']?(\d+)/i,
+    /(?:cantidad|compra|pedido)\s+m[ií]nima(?:\s+de\s+compra)?\s*:?\s*(\d+)/i,
+    /m[ií]nimo(?:\s+de\s+compra)?\s*:?\s*(\d+)\s+unidades?/i,
+    /m[uú]ltiplo(?:\s+de\s+compra)?\s*:?\s*(\d+)/i,
+  ];
+
+  for (const pattern of patterns) {
+    const quantity = Number(html.match(pattern)?.[1]);
+    if (Number.isInteger(quantity) && quantity > 1) return quantity;
+  }
+  return null;
 }
 
 export function parseTcgFactoryListing(
