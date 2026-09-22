@@ -39,7 +39,14 @@ async function callWorker(
     | "catalog-supplier-upsert"
     | "catalog-ingest"
     | "catalog-complete-run"
-    | "catalog-sourcing-status",
+    | "catalog-sourcing-status"
+    | "catalog-review-status"
+    | "catalog-review-approve"
+    | "catalog-review-reject"
+    | "catalog-review-reset"
+    | "catalog-replenishment-link-status"
+    | "catalog-replenishment-link-upsert"
+    | "catalog-replenishment-link-remove",
   body: Record<string, unknown> = {},
 ): Promise<Record<string, unknown>> {
   const response = await fetch(workerUrl, {
@@ -206,8 +213,73 @@ async function status(): Promise<void> {
   console.log(JSON.stringify(result, null, 2));
 }
 
+async function reviewStatus(spreeProductId: string): Promise<void> {
+  if (!spreeProductId) throw new Error("review-status requiere SPREE_PRODUCT_ID");
+  const result = await callWorker("catalog-review-status", { spreeProductId });
+  console.log(JSON.stringify(result, null, 2));
+}
+
+async function reviewDecision(
+  action:
+    | "catalog-review-approve"
+    | "catalog-review-reject"
+    | "catalog-review-reset",
+  spreeProductId: string,
+  fulfillmentMode?: string,
+  note?: string,
+): Promise<void> {
+  if (!spreeProductId) throw new Error("Falta SPREE_PRODUCT_ID");
+  const result = await callWorker(action, {
+    spreeProductId,
+    ...(fulfillmentMode ? { fulfillmentMode } : {}),
+    ...(note ? { note } : {}),
+  });
+  console.log(JSON.stringify(result, null, 2));
+}
+
+async function replenishmentLink(
+  sourceSupplierCode: string,
+  sourceSupplierSku: string,
+  targetSpreeVariantId: string,
+  unitsRaw?: string,
+  note?: string,
+): Promise<void> {
+  if (!sourceSupplierCode || !sourceSupplierSku || !targetSpreeVariantId) {
+    throw new Error(
+      "link-supply requiere SUPPLIER_CODE SUPPLIER_SKU SPREE_VARIANT_ID [UNITS_PER_SOURCE] [NOTE]",
+    );
+  }
+  const unitsPerSource = unitsRaw ? Number(unitsRaw) : 1;
+  if (!Number.isInteger(unitsPerSource) || unitsPerSource <= 0) {
+    throw new Error("UNITS_PER_SOURCE debe ser un entero positivo");
+  }
+  const result = await callWorker("catalog-replenishment-link-upsert", {
+    sourceSupplierCode,
+    sourceSupplierSku,
+    targetSpreeVariantId,
+    unitsPerSource,
+    ...(note ? { note } : {}),
+  });
+  console.log(JSON.stringify(result, null, 2));
+}
+
+async function replenishmentLinks(targetSpreeVariantId?: string): Promise<void> {
+  const result = await callWorker("catalog-replenishment-link-status", {
+    ...(targetSpreeVariantId ? { targetSpreeVariantId } : {}),
+  });
+  console.log(JSON.stringify(result, null, 2));
+}
+
+async function removeReplenishmentLink(linkId: string): Promise<void> {
+  if (!linkId) throw new Error("unlink-supply requiere LINK_ID");
+  const result = await callWorker("catalog-replenishment-link-remove", {
+    linkId,
+  });
+  console.log(JSON.stringify(result, null, 2));
+}
+
 async function main(): Promise<void> {
-  const [command = "status", first = "", second = "", third] =
+  const [command = "status", first = "", second = "", third = "", fourth = "", ...rest] =
     process.argv.slice(2);
   if (command === "status") await status();
   else if (command === "register") await register(first);
@@ -216,9 +288,36 @@ async function main(): Promise<void> {
   else if (command === "ingest-tcgfactory")
     await ingestTcgFactory(first, second);
   else if (command === "complete") await complete(first, second);
+  else if (command === "review-status") await reviewStatus(first);
+  else if (command === "review-approve")
+    await reviewDecision(
+      "catalog-review-approve",
+      first,
+      second || undefined,
+      [third, fourth, ...rest].filter(Boolean).join(" ") || undefined,
+    );
+  else if (command === "review-reject")
+    await reviewDecision(
+      "catalog-review-reject",
+      first,
+      undefined,
+      [second, third, fourth, ...rest].filter(Boolean).join(" ") || undefined,
+    );
+  else if (command === "review-reset")
+    await reviewDecision("catalog-review-reset", first);
+  else if (command === "link-supply")
+    await replenishmentLink(
+      first,
+      second,
+      third,
+      fourth || undefined,
+      rest.join(" ") || undefined,
+    );
+  else if (command === "links") await replenishmentLinks(first || undefined);
+  else if (command === "unlink-supply") await removeReplenishmentLink(first);
   else {
     throw new Error(
-      "Uso: catalog-sourcing <status|register FILE|ingest SUPPLIER FILE [RUN_ID]|validate-tcgfactory FILE|ingest-tcgfactory FILE RUN_ID|complete SUPPLIER RUN_ID>",
+      "Uso: catalog-sourcing <status|register FILE|ingest SUPPLIER FILE [RUN_ID]|validate-tcgfactory FILE|ingest-tcgfactory FILE RUN_ID|complete SUPPLIER RUN_ID|review-status SPREE_PRODUCT_ID|review-approve SPREE_PRODUCT_ID [supplier_or_physical|physical_only|disabled] [NOTE]|review-reject SPREE_PRODUCT_ID [NOTE]|review-reset SPREE_PRODUCT_ID|link-supply SUPPLIER_CODE SUPPLIER_SKU SPREE_VARIANT_ID [UNITS_PER_SOURCE] [NOTE]|links [SPREE_VARIANT_ID]|unlink-supply LINK_ID>",
     );
   }
 }
