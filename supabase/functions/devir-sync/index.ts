@@ -2604,7 +2604,8 @@ async function reconcileCatalogVariantUnlocked(
       productId: mapping.product?.id ?? null,
       variantId: mapping.variant?.id ?? null,
       images: 0,
-      review: true,
+      review: false,
+      reviewReasons: [],
       backorderItems: 0,
       lastAutoPrice: null,
       selectedSupplierCode: null,
@@ -2716,6 +2717,7 @@ async function syncProductToSpree(
   variantId: string | null;
   images: number;
   review: boolean;
+  reviewReasons: string[];
   backorderItems: number;
   lastAutoPrice: number | null;
 }> {
@@ -2769,6 +2771,14 @@ async function syncProductToSpree(
     decision: catalogContext?.reviewDecision ?? "pending",
     approvedFingerprint: catalogContext?.approvedReviewFingerprint ?? null,
   });
+  const fulfillmentMode =
+    catalogContext?.fulfillmentMode ?? "supplier_or_physical";
+  const supplierSellable = shouldAllowSupplierBackorder({
+    availability: product.availability,
+    fulfillmentMode,
+  });
+  const supplierPreorderable =
+    product.availability === "preorder" && supplierSellable;
   const spreeSku = catalogContext?.canonicalSku ?? product.sku;
   const spreeProductName = catalogContext?.productName ?? product.name;
   const variantOptions = Object.entries(catalogContext?.options ?? {}).map(
@@ -2862,9 +2872,8 @@ async function syncProductToSpree(
           ...shipping,
           track_inventory: true,
           backorder_limit: null,
-          preorderable: product.availability === "preorder",
-          preorder_ships_at:
-            product.availability === "preorder" ? product.releaseDate : null,
+          preorderable: supplierPreorderable,
+          preorder_ships_at: supplierPreorderable ? product.releaseDate : null,
           options: variantOptions,
           prices: [{ currency: "EUR", amount: pricing.retail }],
         },
@@ -3087,7 +3096,7 @@ async function syncProductToSpree(
     config,
     variantId,
     product.availability,
-    catalogContext?.fulfillmentMode ?? "supplier_or_physical",
+    fulfillmentMode,
   );
   if (
     sourceCode === TCGFACTORY_SUPPLIER_CODE &&
@@ -3110,11 +3119,10 @@ async function syncProductToSpree(
       Number(current.total_on_hand ?? 0),
       shouldAllowSupplierBackorder({
         availability: product.availability,
-        fulfillmentMode:
-          catalogContext?.fulfillmentMode ?? "supplier_or_physical",
+        fulfillmentMode,
       }),
-      product.availability === "preorder",
-      product.availability === "preorder" ? product.releaseDate : null,
+      supplierPreorderable,
+      supplierPreorderable ? product.releaseDate : null,
     );
     backorderItems += 1;
   }
@@ -3127,8 +3135,7 @@ async function syncProductToSpree(
     review,
     availability: product.availability,
     physicalStockOnHand,
-    fulfillmentMode:
-      catalogContext?.fulfillmentMode ?? "supplier_or_physical",
+    fulfillmentMode,
   });
   if (autoPublish) {
     await spreeRequest(
