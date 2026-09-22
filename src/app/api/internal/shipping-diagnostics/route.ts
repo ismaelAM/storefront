@@ -87,23 +87,23 @@ async function probeCheckout() {
     );
     const madridFresh = await client.carts.get(cart.id, options);
 
-    const lugo = await client.carts.update(
+    const outsideMadrid = await client.carts.update(
       cart.id,
       {
         shipping_address: {
           first_name: "Prueba",
           last_name: "Checkout",
-          address1: "Rúa da Raíña 1",
-          city: "Lugo",
-          postal_code: "27001",
+          address1: "Carrer de la Pau 1",
+          city: "Valencia",
+          postal_code: "46001",
           country_iso: "ES",
-          state_name: "Lugo",
+          state_name: "Valencia",
           phone: "600000000",
         },
       },
       options,
     );
-    const lugoFresh = await client.carts.get(cart.id, options);
+    const outsideMadridFresh = await client.carts.get(cart.id, options);
 
     return {
       product: {
@@ -115,9 +115,9 @@ async function probeCheckout() {
         update: summarizeCart(madrid),
         fresh: summarizeCart(madridFresh),
       },
-      lugo: {
-        update: summarizeCart(lugo),
-        fresh: summarizeCart(lugoFresh),
+      outsideMadrid: {
+        update: summarizeCart(outsideMadrid),
+        fresh: summarizeCart(outsideMadridFresh),
       },
     };
   } finally {
