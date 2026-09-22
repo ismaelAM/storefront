@@ -4328,6 +4328,7 @@ function competitivePricing(
   ruleSource: string;
   reviewReason: string | null;
   minimumOrderSurchargeNet: number;
+  minimumOrderSurchargeGross: number;
 } {
   if (!product.purchasePrice || product.purchasePrice <= 0) {
     throw new Error("Producto sin coste Devir: " + product.sku);
@@ -4342,6 +4343,14 @@ function competitivePricing(
   );
   const pricingCostNet = product.purchasePrice + minimumOrderSurchargeNet;
   const floor = paymentAwareFloor(pricingCostNet, vatRate, targetProfitRate);
+  // Convert the net inventory-risk amount into the gross checkout amount
+  // required to recover it after VAT and Stripe's percentage fee.
+  const surchargeRecoveryDenominator =
+    1 / (1 + vatRate) - STANDARD_EEA_CARD_RATE;
+  const minimumOrderSurchargeGross =
+    minimumOrderSurchargeNet > 0 && surchargeRecoveryDenominator > 0
+      ? minimumOrderSurchargeNet / surchargeRecoveryDenominator
+      : 0;
   const referenceNet = Number(product.referencePriceNet);
   const hasReference =
     Number.isFinite(referenceNet) && referenceNet > product.purchasePrice;
@@ -4353,7 +4362,7 @@ function competitivePricing(
   if (referenceGross !== null) {
     const discount = book ? 0.05 : (CATEGORY_REFERENCE_DISCOUNTS[key] ?? 0.12);
     const marketTarget = referenceGross * (1 - discount);
-    raw = Math.max(floor, marketTarget);
+    raw = Math.max(floor, marketTarget + minimumOrderSurchargeGross);
     ruleSource = book
       ? "devir_rrp_fixed_book_5pct"
       : "devir_rrp_competitive_discount";
@@ -4400,6 +4409,8 @@ function competitivePricing(
     ruleSource,
     reviewReason,
     minimumOrderSurchargeNet: Math.round(minimumOrderSurchargeNet * 100) / 100,
+    minimumOrderSurchargeGross:
+      Math.round(minimumOrderSurchargeGross * 100) / 100,
   };
 }
 
@@ -7680,6 +7691,9 @@ async function repriceCatalogSupplierBatch(
         previousPrice: currentPrice,
         price: pricing.retail,
         vatRate: pricing.vatRate,
+        minimumOrderQuantity: product.supplierMinimumQuantity ?? null,
+        minimumOrderSurchargeNet: pricing.minimumOrderSurchargeNet,
+        minimumOrderSurchargeGross: pricing.minimumOrderSurchargeGross,
       });
     } catch (error) {
       failed += 1;
