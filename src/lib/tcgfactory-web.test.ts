@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   mapTcgFactoryPublicAvailability,
+  isTcgFactoryKnownPollutionMediaReference,
   parseTcgFactoryAuthenticatedPrice,
   parseTcgFactoryListing,
   parseTcgFactoryMinimumOrderQuantity,
@@ -92,6 +93,31 @@ describe("TcgFactory public web parser", () => {
       "https://tcgfactory.com/34773-thickbox_default/caja-de-mazo-ashen-white-blanco-dragon-shield.jpg",
       "https://tcgfactory.com/34774-home_default/caja-de-mazo-ashen-white-blanco-dragon-shield.jpg",
     ]);
+  });
+
+  it("recognizes legacy TCG Factory site-chrome media without matching product photos", () => {
+    for (const url of [
+      "https://console.spree.sh/blob/juego-cartas.png",
+      "https://console.spree.sh/blob/juego-de-mesa.png",
+      "https://console.spree.sh/blob/accesorios.png",
+      "https://console.spree.sh/blob/merchandising.png",
+      "https://console.spree.sh/blob/marcas.png",
+      "https://console.spree.sh/blob/nuestros-productos_2.png",
+      "https://console.spree.sh/blob/ofertas.png",
+      "https://console.spree.sh/blob/177.jpg",
+    ]) {
+      expect(isTcgFactoryKnownPollutionMediaReference(url)).toBe(true);
+    }
+    expect(
+      isTcgFactoryKnownPollutionMediaReference(
+        "https://console.spree.sh/blob/dados-runic-shimmering-negro-y-magenta-7-unidades-q-workshop.jpg",
+      ),
+    ).toBe(false);
+    expect(
+      isTcgFactoryKnownPollutionMediaReference(
+        "https://console.spree.sh/blob/manual-shop-photo.jpg",
+      ),
+    ).toBe(false);
   });
 
   it("parses only explicit per-product minimum quantities", () => {
