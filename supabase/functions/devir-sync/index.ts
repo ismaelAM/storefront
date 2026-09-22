@@ -1,7 +1,12 @@
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import {
   canWriteManagedCatalogPrice,
+  catalogReviewFingerprint,
+  type CatalogFulfillmentMode,
+  type CatalogReviewDecision,
+  shouldAllowSupplierBackorder,
   shouldAutoPublishCatalogProduct,
+  shouldRequireCatalogReview,
 } from "../_shared/catalog-publish-policy.ts";
 import {
   buildCanonicalIdentity,
@@ -177,6 +182,10 @@ interface CatalogProductRow {
   name: string;
   category_key: string | null;
   spree_product_id: string | null;
+  review_decision: CatalogReviewDecision;
+  approved_review_fingerprint: string | null;
+  review_decided_at?: string | null;
+  review_note?: string | null;
 }
 
 interface CatalogVariantRow {
@@ -190,6 +199,7 @@ interface CatalogVariantRow {
   spree_variant_id: string | null;
   selected_offer_id: string | null;
   last_auto_price: number | string | null;
+  fulfillment_mode: CatalogFulfillmentMode;
 }
 
 interface CatalogOfferRow {
@@ -272,6 +282,9 @@ interface CatalogSpreeContext {
   existingProduct: SpreeProduct | null;
   existingVariant: SpreeVariant | null;
   lastAutoPrice: number | null;
+  reviewDecision: CatalogReviewDecision;
+  approvedReviewFingerprint: string | null;
+  fulfillmentMode: CatalogFulfillmentMode;
 }
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -1893,7 +1906,7 @@ async function loadCatalogVariant(
   const { data: variantData, error: variantError } = await supabase
     .from("catalog_variants")
     .select(
-      "id,product_id,canonical_key,canonical_sku,name,option_values,option_signature,spree_variant_id,selected_offer_id,last_auto_price",
+      "id,product_id,canonical_key,canonical_sku,name,option_values,option_signature,spree_variant_id,selected_offer_id,last_auto_price,fulfillment_mode",
     )
     .eq("id", variantId)
     .single();
@@ -1902,7 +1915,7 @@ async function loadCatalogVariant(
 
   const { data: productData, error: productError } = await supabase
     .from("catalog_products")
-    .select("id,canonical_key,name,category_key,spree_product_id")
+    .select("id,canonical_key,name,category_key,spree_product_id,review_decision,approved_review_fingerprint,review_decided_at,review_note")
     .eq("id", variant.product_id)
     .single();
   if (productError) throw productError;
@@ -2146,7 +2159,7 @@ async function resolveCatalogVariant(
 
   const { data: productData, error: productError } = await supabase
     .from("catalog_products")
-    .select("id,canonical_key,name,category_key,spree_product_id")
+    .select("id,canonical_key,name,category_key,spree_product_id,review_decision,approved_review_fingerprint,review_decided_at,review_note")
     .eq("canonical_key", identity.productKey)
     .single();
   if (productError) throw productError;
@@ -2192,7 +2205,7 @@ async function resolveCatalogVariant(
   const { data: variantData, error: variantError } = await supabase
     .from("catalog_variants")
     .select(
-      "id,product_id,canonical_key,canonical_sku,name,option_values,option_signature,spree_variant_id,selected_offer_id,last_auto_price",
+      "id,product_id,canonical_key,canonical_sku,name,option_values,option_signature,spree_variant_id,selected_offer_id,last_auto_price,fulfillment_mode",
     )
     .eq("canonical_key", identity.variantKey)
     .single();
@@ -2570,6 +2583,11 @@ async function reconcileCatalogVariantUnlocked(
     existingProduct: mapping.product,
     existingVariant: mapping.variant,
     lastAutoPrice: Number.isFinite(lastAutoPrice) ? lastAutoPrice : null,
+    reviewDecision: resolution.product.review_decision ?? "pending",
+    approvedReviewFingerprint:
+      resolution.product.approved_review_fingerprint ?? null,
+    fulfillmentMode:
+      resolution.variant.fulfillment_mode ?? "supplier_or_physical",
   });
   await updateCatalogSpreeMapping(resolution, synced);
   return {
