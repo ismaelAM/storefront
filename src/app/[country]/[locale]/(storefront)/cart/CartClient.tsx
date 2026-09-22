@@ -2,25 +2,16 @@
 
 import type { LineItem } from "@spree/sdk";
 import { ShoppingBag } from "lucide-react";
-import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { QuantityPickerField } from "@/components/cart/QuantityPickerField";
 import { Button } from "@/components/ui/button";
 import { ProductImage } from "@/components/ui/product-image";
 import { useCart } from "@/contexts/CartContext";
 import { trackRemoveFromCart, trackViewCart } from "@/lib/analytics/gtm";
 import { extractBasePath } from "@/lib/utils/path";
-
-const ExpressCheckoutButton = dynamic(
-  () =>
-    import("@/components/checkout/ExpressCheckoutButton").then((m) => ({
-      default: m.ExpressCheckoutButton,
-    })),
-  { ssr: false },
-);
 
 export interface CartVisualConfig {
   title: string;
@@ -38,7 +29,6 @@ export interface CartVisualConfig {
 
 export default function CartClient({ config }: { config: CartVisualConfig }) {
   const { cart, loading, updating, updateItem, removeItem } = useCart();
-  const [expressProcessing, setExpressProcessing] = useState(false);
   const pathname = usePathname();
   const basePath = extractBasePath(pathname);
   const viewCartFiredRef = useRef(false);
@@ -122,8 +112,16 @@ export default function CartClient({ config }: { config: CartVisualConfig }) {
                 {cart.amount_due && cart.amount_due !== cart.total && parseFloat(cart.amount_due) > 0 && <div className="flex justify-between border-t pt-4"><dt className="text-lg font-medium">{t("amountDue")}</dt><dd className="text-lg font-bold">{cart.display_amount_due}</dd></div>}
               </dl>
               <div className="mt-6 space-y-3">
-                {parseFloat(cart.total ?? "0") > 0 && <ExpressCheckoutButton cart={cart} basePath={basePath} onComplete={() => {}} onProcessingChange={setExpressProcessing} />}
-                {!expressProcessing && <><Button size="lg" asChild className="w-full" style={{ backgroundColor: config.accentColor }}><Link href={`${basePath}/checkout/${cart.id}`}>{t("proceedToCheckout")}</Link></Button><Button variant="link" asChild className="w-full"><Link href={`${basePath}/products`}>{tc("continueShopping")}</Link></Button></>}
+                <Button size="lg" asChild className="w-full" style={{ backgroundColor: config.accentColor }}>
+                  <Link href={`${basePath}/checkout/${cart.id}`}>
+                    {t("proceedToCheckout")}
+                  </Link>
+                </Button>
+                <Button variant="link" asChild className="w-full">
+                  <Link href={`${basePath}/products`}>
+                    {tc("continueShopping")}
+                  </Link>
+                </Button>
               </div>
             </div>
           </div>

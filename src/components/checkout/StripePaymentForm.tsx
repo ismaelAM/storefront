@@ -73,7 +73,12 @@ function StripePaymentFormInner({
     <div>
       <PaymentElement
         options={{
-          layout: "tabs",
+          layout: {
+            type: "accordion",
+            defaultCollapsed: false,
+            radios: true,
+            spacedAccordionItems: false,
+          },
         }}
       />
       {error && (
@@ -100,15 +105,29 @@ export function StripePaymentForm({
           variables: {
             fontFamily: 'Geist, "Geist Fallback", system-ui, sans-serif',
             fontSizeBase: "14px",
-            colorPrimary: "#171717",
-            borderRadius: "6px",
-            focusBoxShadow: "0 0 0 1px #171717",
+            colorPrimary: "#111827",
+            colorBackground: "#ffffff",
+            colorText: "#111827",
+            colorTextSecondary: "#6b7280",
+            colorDanger: "#dc2626",
+            borderRadius: "8px",
+            spacingUnit: "4px",
+            focusBoxShadow: "0 0 0 2px rgba(17, 24, 39, 0.12)",
           },
           rules: {
             ".Input": {
               paddingTop: "13px",
               paddingBottom: "13px",
-              boxShadow: "",
+              border: "1px solid #d1d5db",
+              boxShadow: "none",
+            },
+            ".Input:focus": {
+              border: "1px solid #111827",
+              boxShadow: "0 0 0 2px rgba(17, 24, 39, 0.10)",
+            },
+            ".Label": {
+              color: "#374151",
+              fontWeight: "500",
             },
           },
         },
