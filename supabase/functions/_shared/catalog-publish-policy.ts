@@ -49,6 +49,17 @@ export function supplierAvailabilityIsSellable(
   return availability === "available" || availability === "preorder";
 }
 
+export function effectiveCatalogFulfillmentMode(input: {
+  fulfillmentMode?: CatalogFulfillmentMode | null;
+  requiresPackSplit?: boolean;
+}): CatalogFulfillmentMode {
+  const requested = input.fulfillmentMode ?? "supplier_or_physical";
+  if (input.requiresPackSplit && requested === "supplier_or_physical") {
+    return "physical_only";
+  }
+  return requested;
+}
+
 export function shouldAllowSupplierBackorder(input: {
   availability: CatalogAvailability;
   fulfillmentMode?: CatalogFulfillmentMode | null;
