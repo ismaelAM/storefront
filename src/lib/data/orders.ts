@@ -12,10 +12,15 @@ import {
 import { withFallback } from "./utils";
 
 export async function getOrders(params?: OrderListParams) {
+  const expandedParams = {
+    expand: ["fulfillments"],
+    ...(params ?? {}),
+  } as OrderListParams;
+
   return withFallback(
     async () => {
       return withAuthRefresh(async (options) => {
-        return getClient().customer.orders.list(params, options);
+        return getClient().customer.orders.list(expandedParams, options);
       });
     },
     {
@@ -48,6 +53,17 @@ export async function getOrder(
 ) {
   return withFallback(async () => {
     const options = await getCartOptions(surface);
-    return getClientForSurface(surface).orders.get(id, params, options);
+    const expandedParams = {
+      expand: [
+        "items",
+        "fulfillments",
+        "payments",
+        "billing_address",
+        "shipping_address",
+        "gift_card",
+      ],
+      ...(params ?? {}),
+    };
+    return getClientForSurface(surface).orders.get(id, expandedParams, options);
   }, null);
 }
