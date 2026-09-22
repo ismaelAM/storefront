@@ -79,6 +79,7 @@ describe("TcgFactory public web parser", () => {
       <h1>Caja de mazo Ashen White Blanco Dragon Shield</h1>
       <meta property="og:image" content="https://tcgfactory.com/34773-thickbox_default/caja-de-mazo-ashen-white-blanco-dragon-shield.jpg">
       <img src="https://tcgfactory.com/img/cms/juego-cartas.png">
+      <img src="https://tcgfactory.com/img/cms/caja-de-mazo-ashen-white-blanco-dragon-shield.jpg">
       <img src="https://tcgfactory.com/34773-home_default/caja-de-mazo-ashen-white-blanco-dragon-shield.jpg">
       <img src="https://tcgfactory.com/34774-home_default/caja-de-mazo-ashen-white-blanco-dragon-shield.jpg">
       <img src="https://tcgfactory.com/img/m/4.jpg">
