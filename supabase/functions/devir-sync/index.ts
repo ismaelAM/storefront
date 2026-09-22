@@ -9810,6 +9810,147 @@ async function operatorAction(
   }
 
   if (
+    action === "catalog-replenishment-link-status" ||
+    action === "catalog-replenishment-link-upsert" ||
+    action === "catalog-replenishment-link-remove"
+  ) {
+    const sourceSupplierCode =
+      typeof body.sourceSupplierCode === "string"
+        ? normalizeSupplierCode(body.sourceSupplierCode)
+        : "";
+    const sourceSupplierSku =
+      typeof body.sourceSupplierSku === "string"
+        ? body.sourceSupplierSku.trim()
+        : "";
+    const targetSpreeVariantId =
+      typeof body.targetSpreeVariantId === "string"
+        ? body.targetSpreeVariantId.trim()
+        : "";
+
+    if (action === "catalog-replenishment-link-status") {
+      let query = supabase
+        .from("catalog_replenishment_links_view")
+        .select("*")
+        .order("target_product_name")
+        .order("target_canonical_sku")
+        .limit(200);
+      if (sourceSupplierCode) {
+        query = query.eq("source_supplier_code", sourceSupplierCode);
+      }
+      if (sourceSupplierSku) {
+        query = query.eq("source_supplier_sku", sourceSupplierSku);
+      }
+      if (targetSpreeVariantId) {
+        query = query.eq("target_spree_variant_id", targetSpreeVariantId);
+      }
+      const { data, error } = await query;
+      if (error) throw error;
+      return json({ ok: true, links: data ?? [] });
+    }
+
+    if (action === "catalog-replenishment-link-remove") {
+      const linkId = typeof body.linkId === "string" ? body.linkId.trim() : "";
+      if (!linkId) return json({ error: "linkId_required" }, 400);
+      const { data, error } = await supabase
+        .from("catalog_replenishment_links")
+        .delete()
+        .eq("id", linkId)
+        .select("id")
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) return json({ error: "replenishment_link_not_found" }, 404);
+      return json({ ok: true, removed: linkId });
+    }
+
+    if (!sourceSupplierCode || !sourceSupplierSku || !targetSpreeVariantId) {
+      return json(
+        {
+          error:
+            "sourceSupplierCode_sourceSupplierSku_targetSpreeVariantId_required",
+        },
+        400,
+      );
+    }
+
+    const unitsPerSource = Number(body.unitsPerSource ?? 1);
+    if (!Number.isInteger(unitsPerSource) || unitsPerSource <= 0) {
+      return json({ error: "unitsPerSource_must_be_positive_integer" }, 400);
+    }
+
+    const { data: supplier, error: supplierError } = await supabase
+      .from("catalog_suppliers")
+      .select("id,code,name")
+      .eq("code", sourceSupplierCode)
+      .maybeSingle();
+    if (supplierError) throw supplierError;
+    if (!supplier) return json({ error: "source_supplier_not_found" }, 404);
+
+    const { data: sourceOffers, error: sourceOffersError } = await supabase
+      .from("catalog_supplier_offers")
+      .select("id,supplier_sku,availability,stock_quantity,normalized_cost")
+      .eq("supplier_id", supplier.id)
+      .eq("supplier_sku", sourceSupplierSku)
+      .limit(2);
+    if (sourceOffersError) throw sourceOffersError;
+    if (!sourceOffers?.length) {
+      return json({ error: "source_offer_not_found" }, 404);
+    }
+    if (sourceOffers.length > 1) {
+      return json(
+        {
+          error: "source_supplier_sku_ambiguous",
+          detail: "Usa un SKU de proveedor que identifique una sola oferta.",
+        },
+        409,
+      );
+    }
+
+    const { data: targetVariant, error: targetVariantError } = await supabase
+      .from("catalog_variants")
+      .select(
+        "id,product_id,canonical_sku,name,spree_variant_id,fulfillment_mode",
+      )
+      .eq("spree_variant_id", targetSpreeVariantId)
+      .maybeSingle();
+    if (targetVariantError) throw targetVariantError;
+    if (!targetVariant) return json({ error: "target_variant_not_found" }, 404);
+
+    const note = typeof body.note === "string" ? body.note.trim() : null;
+    const now = new Date().toISOString();
+    const { data: link, error: linkError } = await supabase
+      .from("catalog_replenishment_links")
+      .upsert(
+        {
+          source_offer_id: sourceOffers[0].id,
+          target_variant_id: targetVariant.id,
+          units_per_source: unitsPerSource,
+          active: body.active !== false,
+          note,
+          updated_at: now,
+        },
+        { onConflict: "source_offer_id,target_variant_id" },
+      )
+      .select("*")
+      .single();
+    if (linkError) throw linkError;
+
+    return json({
+      ok: true,
+      link,
+      source: {
+        supplier_code: sourceSupplierCode,
+        supplier_sku: sourceSupplierSku,
+        availability: sourceOffers[0].availability,
+        stock_quantity: sourceOffers[0].stock_quantity,
+      },
+      target: targetVariant,
+      affects_sellability: false,
+      detail:
+        "El enlace documenta reposición. No crea stock, backorder ni disponibilidad de venta.",
+    });
+  }
+
+  if (
     action === "catalog-review-status" ||
     action === "catalog-review-approve" ||
     action === "catalog-review-reject" ||
