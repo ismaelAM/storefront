@@ -1,0 +1,28 @@
+name: TCG Factory targeted lint
+on:
+  push:
+    branches:
+      - fix-tcgfactory-images-moq-surcharge
+
+jobs:
+  biome:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+        with:
+          version: 10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: >
+          pnpm exec biome check --max-diagnostics=200
+          supabase/functions/_shared/supplier-pricing-policy.ts
+          supabase/functions/_shared/tcgfactory-adapter.ts
+          supabase/functions/_shared/tcgfactory-web.ts
+          supabase/functions/devir-sync/index.ts
+          src/lib/supplier-pricing-policy.test.ts
+          src/lib/tcgfactory-adapter.test.ts
+          src/lib/tcgfactory-web.test.ts
