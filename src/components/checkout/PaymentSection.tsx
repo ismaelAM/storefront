@@ -708,7 +708,7 @@ export function PaymentSection({
         <h2 className="text-lg font-bold text-gray-900">
           {t("paymentMethod")}
         </h2>
-        <div className="mt-2 rounded-sm border bg-gray-50 px-4 py-6 text-center">
+        <div className="mt-2 rounded-xl border bg-gray-50 px-4 py-6 text-center">
           <Info
             className="w-8 h-8 text-gray-300 mx-auto mb-2"
             strokeWidth={1.5}
@@ -751,7 +751,7 @@ export function PaymentSection({
         <h2 className="text-lg font-bold text-gray-900">
           {t("paymentMethod")}
         </h2>
-        <div className="mt-2 rounded-sm border bg-gray-50 px-4 py-8 text-center">
+        <div className="mt-2 rounded-xl border bg-gray-50 px-4 py-8 text-center">
           <CreditCard
             className="w-10 h-10 text-gray-300 mx-auto mb-3"
             strokeWidth={1.5}
@@ -771,7 +771,7 @@ export function PaymentSection({
 
       {/* Inline requirement errors from parent */}
       {errors && errors.length > 0 && (
-        <div className="rounded-sm border border-red-300 bg-red-50 px-4 py-3 mb-3 mt-2">
+        <div className="rounded-xl border border-red-300 bg-red-50 px-4 py-3 mb-3 mt-2">
           {errors.map((err, i) => (
             <p key={i} className="text-sm text-red-700">
               {err}
@@ -784,7 +784,7 @@ export function PaymentSection({
       <RadioGroup
         value={effectiveSelectedMethodId}
         onValueChange={handleMethodSelect}
-        className="rounded-sm border overflow-hidden gap-0 mt-3"
+        className="rounded-xl border overflow-hidden gap-0 mt-3"
       >
         {paymentMethods.map((pm, index) => {
           const isSelected = pm.id === effectiveSelectedMethodId;
@@ -798,7 +798,7 @@ export function PaymentSection({
               {hasMultipleMethods && (
                 <label
                   className={`flex items-center gap-3 px-4 py-3.5 cursor-pointer transition-colors ${
-                    isSelected ? "bg-blue-50" : "bg-white hover:bg-gray-50"
+                    isSelected ? "bg-gray-50" : "bg-white hover:bg-gray-50"
                   } ${index > 0 ? "border-t" : ""}`}
                 >
                   <RadioGroupItem value={pm.id} />
@@ -810,7 +810,7 @@ export function PaymentSection({
 
               {/* Single method header (no radio, like current behavior) */}
               {!hasMultipleMethods && (
-                <div className="flex items-center justify-between px-4 py-3.5 bg-blue-50">
+                <div className="flex items-center justify-between px-4 py-3.5 bg-gray-50">
                   <div className="flex items-center gap-3">
                     <RadioGroupItem value={pm.id} />
                     <span className="text-sm font-medium text-gray-900">
@@ -822,7 +822,7 @@ export function PaymentSection({
 
               {/* Sub-form for the selected method */}
               {isSelected && (
-                <div className="border-t bg-gray-50">
+                <div className="border-t border-gray-200 bg-white">
                   {pm.session_required ? (
                     <>
                       {/* Stripe: saved cards selector */}
@@ -837,7 +837,7 @@ export function PaymentSection({
                                     val === "__new__" ? null : val,
                                   )
                                 }
-                                className="gap-0 rounded-sm border overflow-hidden"
+                                className="gap-0 rounded-xl border overflow-hidden"
                               >
                                 {savedCards.map((card, cardIndex) => (
                                   <label
@@ -919,7 +919,7 @@ export function PaymentSection({
                       {/* Shared: gateway error */}
                       {gatewayError && !loading && (
                         <div className="px-4 py-3">
-                          <div className="rounded-sm border border-red-300 bg-red-50 px-4 py-3">
+                          <div className="rounded-xl border border-red-300 bg-red-50 px-4 py-3">
                             <p className="text-sm text-red-700 flex items-center gap-2">
                               <CircleAlert className="h-4 w-4 flex-shrink-0" />
                               {gatewayError}
