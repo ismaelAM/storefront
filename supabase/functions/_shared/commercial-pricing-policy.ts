@@ -347,3 +347,22 @@ export function deterministicOfferScore(dayKey: string, variantId: string): numb
   }
   return hash >>> 0;
 }
+
+
+export function rotatingOfferDiscount(
+  profile: CommercialPricingProfile,
+  saturday: boolean,
+  physicalStock: boolean,
+): number {
+  const base = saturday
+    ? profile.saturdayOfferDiscount
+    : profile.dailyOfferDiscount;
+  return physicalStock ? Math.min(0.35, base * 2) : base;
+}
+
+export function rotatingOfferFloorMargin(
+  profile: CommercialPricingProfile,
+  physicalStock: boolean,
+): number {
+  return physicalStock ? 0 : profile.offerFloorMargin;
+}

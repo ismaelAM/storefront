@@ -24,6 +24,8 @@ import {
   commercialPricingProfile,
   deterministicOfferScore,
   madridCommercialDay,
+  rotatingOfferDiscount,
+  rotatingOfferFloorMargin,
 } from "../_shared/commercial-pricing-policy.ts";
 import {
   supplierMinimumOrderRiskSurcharge,
@@ -7351,6 +7353,18 @@ async function rotateDailyOffersUnlocked(
     productRows.map((row) => [String(row.id), row]),
   );
 
+  const physicalStockByVariant = new Map<string, number>();
+  const stockItems = await spreeListAll<SpreeStockItem>(config, "/stock_items");
+  for (const item of stockItems) {
+    const variantId = String(item.variant_id ?? "");
+    const countOnHand = Number(item.count_on_hand ?? 0);
+    if (!variantId || !Number.isFinite(countOnHand) || countOnHand <= 0) continue;
+    physicalStockByVariant.set(
+      variantId,
+      (physicalStockByVariant.get(variantId) ?? 0) + countOnHand,
+    );
+  }
+
   const ranked = supplyRows
     .flatMap((row) => {
       const variant = variantsById.get(String(row.variant_id ?? ""));
@@ -7382,12 +7396,16 @@ async function rotateDailyOffersUnlocked(
       if (!profile.offerEligible || isBookSku(String(row.canonical_sku ?? ""))) {
         return [];
       }
+      const spreeVariantId = String(row.spree_variant_id ?? "");
+      const stockOnHand = physicalStockByVariant.get(spreeVariantId) ?? 0;
       return [
         {
           row,
           key,
           profile,
           lastAutoPrice,
+          stockOnHand,
+          physicalStock: stockOnHand > 0,
           score: deterministicOfferScore(
             calendar.dayKey,
             String(row.variant_id ?? ""),
@@ -7395,7 +7413,11 @@ async function rotateDailyOffersUnlocked(
         },
       ];
     })
-    .sort((left, right) => left.score - right.score);
+    .sort(
+      (left, right) =>
+        Number(right.physicalStock) - Number(left.physicalStock) ||
+        left.score - right.score,
+    );
 
   const targetCount = calendar.saturday ? 16 : 8;
   const perProfileCap = calendar.saturday ? 4 : 2;
@@ -7408,6 +7430,8 @@ async function rotateDailyOffersUnlocked(
     compareAtAmount: number;
     profile: string;
     discount: number;
+    physicalStock: boolean;
+    stockOnHand: number;
     hadSale: boolean;
     hadFeatured: boolean;
   }> = [];
@@ -7489,13 +7513,18 @@ async function rotateDailyOffersUnlocked(
         isBook: false,
       });
       const offerFloor = paymentAwareFloor(
-        purchasePrice + surchargeNet,
+        purchasePrice + (candidate.physicalStock ? 0 : surchargeNet),
         vatRate,
-        candidate.profile.offerFloorMargin,
+        rotatingOfferFloorMargin(
+          candidate.profile,
+          candidate.physicalStock,
+        ),
       );
-      const discount = calendar.saturday
-        ? candidate.profile.saturdayOfferDiscount
-        : candidate.profile.dailyOfferDiscount;
+      const discount = rotatingOfferDiscount(
+        candidate.profile,
+        calendar.saturday,
+        candidate.physicalStock,
+      );
       const desired = currentPrice * (1 - discount);
       const amount = roundUpToProfessionalPrice(Math.max(offerFloor, desired));
       const realisedDiscount = (currentPrice - amount) / currentPrice;
@@ -7516,6 +7545,8 @@ async function rotateDailyOffersUnlocked(
         compareAtAmount: currentPrice,
         profile: candidate.profile.code,
         discount: realisedDiscount,
+        physicalStock: candidate.physicalStock,
+        stockOnHand: candidate.stockOnHand,
         hadSale: (spreeProduct.tags ?? []).includes("sale"),
         hadFeatured: (spreeProduct.tags ?? []).includes("featured"),
       });
@@ -7638,6 +7669,8 @@ async function rotateDailyOffersUnlocked(
       amount: offer.amount,
       compareAtAmount: offer.compareAtAmount,
       discount: Math.round(offer.discount * 1000) / 10,
+      physicalStock: offer.physicalStock,
+      stockOnHand: offer.stockOnHand,
     })),
   };
 }

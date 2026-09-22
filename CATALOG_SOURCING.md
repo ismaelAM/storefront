@@ -301,3 +301,11 @@ precio base. Rotan una vez por día según calendario Europe/Madrid, con 8 produ
 en un día normal y 16 los sábados. La selección es determinista por fecha,
 diversificada por perfil y respeta un suelo de contribución específico para
 ofertas. Manga/libros de precio fijo y productos en revisión quedan excluidos.
+
+El stock físico real de Spree (`count_on_hand > 0`) se prioriza frente al stock
+meramente disponible por proveedor. No depende de la antigüedad: duplica el
+descuento rotativo del perfil, con un máximo del 35 %, pero nunca baja del
+break-even calculado con coste neto, IVA y comisión estándar de tarjeta. Para
+stock físico no se añade el recargo estratégico de riesgo MOQ al suelo de
+liquidación; para stock de proveedor se mantienen el margen de oferta y el
+recargo MOQ normales. Los PVP manuales siguen excluidos de la rotación.

@@ -3,6 +3,8 @@ import {
   commercialPricingProfile,
   deterministicOfferScore,
   madridCommercialDay,
+  rotatingOfferDiscount,
+  rotatingOfferFloorMargin,
 } from "../../supabase/functions/_shared/commercial-pricing-policy";
 
 describe("commercial pricing policy", () => {
@@ -70,6 +72,26 @@ describe("commercial pricing policy", () => {
     });
     expect(manga.offerEligible).toBe(false);
     expect(manga.dailyOfferDiscount).toBe(0);
+  });
+
+  it("doubles rotating discounts for physical stock without allowing a negative margin floor", () => {
+    const sleeves = commercialPricingProfile({
+      name: "Fundas Matte",
+      categoryKey: "accesorios/fundas-standard",
+    });
+    const box = commercialPricingProfile({
+      name: "MTG Play Booster Display",
+      categoryKey: "tcg/mtg",
+      unitCostNet: 90,
+    });
+
+    expect(rotatingOfferDiscount(sleeves, false, true)).toBeCloseTo(0.2);
+    expect(rotatingOfferDiscount(sleeves, true, true)).toBeCloseTo(0.3);
+    expect(rotatingOfferDiscount(box, false, true)).toBeCloseTo(0.1);
+    expect(rotatingOfferFloorMargin(sleeves, true)).toBe(0);
+    expect(rotatingOfferFloorMargin(sleeves, false)).toBe(
+      sleeves.offerFloorMargin,
+    );
   });
 
   it("uses Madrid calendar days and a stable daily score", () => {
