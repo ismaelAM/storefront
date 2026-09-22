@@ -3064,10 +3064,16 @@ async function syncProductToSpree(
         ? humanizeReviewReasons(reasons)
         : "Sin revisión pendiente.",
     "devir.last_sync_at": catalogContext ? undefined : new Date().toISOString(),
-    "catalog.review_status": review ? "⚠ NECESITA TU AYUDA" : "LISTO",
+    "catalog.review_status": review
+      ? "⚠ NECESITA TU AYUDA"
+      : reasons.length > 0 && catalogContext?.reviewDecision === "approved"
+        ? "✓ APROBADO"
+        : "LISTO",
     "catalog.review_reason": review
       ? humanizeReviewReasons(reasons)
-      : "Sin revisión pendiente.",
+      : reasons.length > 0 && catalogContext?.reviewDecision === "approved"
+        ? "Aprobado por ti: " + humanizeReviewReasons(reasons)
+        : "Sin revisión pendiente.",
     "pricing.applied_margin": targetMargin,
     "pricing.effective_margin": effectiveMargin,
     "pricing.profile": commercialProfile.code,
