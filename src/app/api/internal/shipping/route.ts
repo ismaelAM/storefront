@@ -1,12 +1,12 @@
-import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import {
-  getConfiguredCorreosClient,
-  getCorreosConfigurationStatus,
   type CorreosLabelRequest,
   type CorreosPickupRequest,
   type CorreosPreregisterRequest,
+  getConfiguredCorreosClient,
+  getCorreosConfigurationStatus,
 } from "@/lib/shipping/correos";
+import { isShippingOperationsAuthorized } from "@/lib/shipping/operations-auth";
 import {
   fulfillFulfillment,
   getSpreeShippingConfigurationStatus,
@@ -15,35 +15,18 @@ import {
   updateFulfillmentTracking,
 } from "@/lib/shipping/spree-fulfillment";
 
-function secureEqual(left: string, right: string): boolean {
-  const a = Buffer.from(left);
-  const b = Buffer.from(right);
-  return a.length === b.length && timingSafeEqual(a, b);
-}
-
-function authorized(request: Request): boolean {
-  const expected = process.env.SHIPPING_OPERATIONS_TOKEN?.trim();
-  if (!expected) return false;
-  const header = request.headers.get("authorization") ?? "";
-  const provided = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
-  return Boolean(provided && secureEqual(provided, expected));
-}
-
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 }
 
-function requiredString(
-  body: Record<string, unknown>,
-  key: string,
-): string {
+function requiredString(body: Record<string, unknown>, key: string): string {
   const value = typeof body[key] === "string" ? body[key].trim() : "";
   if (!value) throw new Error(`Falta ${key}`);
   return value;
 }
 
 export async function GET(request: Request) {
-  if (!authorized(request)) return unauthorized();
+  if (!isShippingOperationsAuthorized(request)) return unauthorized();
   const correos = getCorreosConfigurationStatus(process.env);
   return NextResponse.json({
     ok: true,
@@ -58,7 +41,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (!authorized(request)) return unauthorized();
+  if (!isShippingOperationsAuthorized(request)) return unauthorized();
 
   let body: Record<string, unknown>;
   try {
@@ -129,9 +112,7 @@ export async function POST(request: Request) {
     if (action === "correos-track") {
       const result = await correos.trackShipment(
         requiredString(body, "tracking"),
-        typeof body.languageCode === "string"
-          ? body.languageCode
-          : "ES",
+        typeof body.languageCode === "string" ? body.languageCode : "ES",
       );
       return NextResponse.json(result);
     }
@@ -160,9 +141,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error:
-          error instanceof Error
-            ? error.message
-            : "Shipping operation failed",
+          error instanceof Error ? error.message : "Shipping operation failed",
       },
       { status: 400 },
     );

@@ -6,6 +6,7 @@ export const proxy = createSpreeMiddleware({
   defaultCountry: getDefaultCountry(),
   defaultLocale: getDefaultLocale(),
   supportedLocales: SUPPORTED_LOCALES,
+  staticRoutes: ["/_next", "/api", "/dev", "/ops", "/favicon.ico"],
 });
 
 export const config = {
