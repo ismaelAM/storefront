@@ -2085,12 +2085,16 @@ async function reconcileStaleCatalogBatch(
   let failed = 0;
   for (const variantId of staleVariantIds) {
     try {
-      await reconcileCatalogVariant(
+      const synced = await reconcileCatalogVariant(
         config,
         await loadCatalogVariant(variantId),
         categories,
         defs,
       );
+      if (synced.productId) {
+        await markCatalogProductDirty(synced.productId);
+        await preparePublishBatch(config, 0, 1, synced.productId);
+      }
       reconciled += 1;
     } catch (reconcileError) {
       failed += 1;
@@ -8538,13 +8542,19 @@ async function completeCatalogSupplierRun(
   if (affectedVariantIds.length > 0) {
     const categories = await spreeCategories(config);
     const defs = await definitions(config);
+    const affectedProducts = new Set<string>();
     for (const variantId of affectedVariantIds) {
-      await reconcileCatalogVariant(
+      const synced = await reconcileCatalogVariant(
         config,
         await loadCatalogVariant(variantId),
         categories,
         defs,
       );
+      if (synced.productId) affectedProducts.add(synced.productId);
+    }
+    for (const productId of affectedProducts) {
+      await markCatalogProductDirty(productId);
+      await preparePublishBatch(config, 0, 1, productId);
     }
   }
 
