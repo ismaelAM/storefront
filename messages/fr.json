@@ -369,6 +369,7 @@
     "shippingMethod": "Mode de livraison",
     "shippedFrom": "Expedie depuis {location}",
     "trackItems": "Suivre les articles",
+    "trackingNumber": "Numéro de suivi",
     "shipmentCanceled": "Cette expedition a ete annulee.",
     "noTrackingInfo": "Aucune information de suivi disponible.",
     "paymentInformation": "Informations de paiement",
