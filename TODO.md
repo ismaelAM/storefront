@@ -22,15 +22,15 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 ## Transporte externo
 
 - [x] UPS descartado tras respuesta negativa del proveedor.
-- [x] Investigadas y modeladas las APIs de Correos para tracking, etiquetas, recogidas y BoxEntry.
+- [x] Investigadas y modeladas las APIs vigentes de Correos: Preregister, Labels, Trackpub y Requests; BoxEntry queda fuera del flujo por estar deprecada.
 - [x] Añadido cliente Correos server-only con autenticación específica por API, validación HTTPS, protección contra escape de endpoints y errores sin payloads privados.
 - [x] Añadido puente server-only a los fulfillments nativos de Spree para listar envíos, guardar tracking, marcar enviado y marcar entregado.
 - [x] Añadida ruta interna protegida `/api/internal/shipping` para operaciones de back-office; no expone secretos al navegador.
-- [x] Preregister permanece desactivada por defecto al estar deprecada; no se usa BoxEntry como sustituto ficticio.
+- [x] Preregister está activo para crear/prerregistrar envíos mediante `POST /delivery`; BoxEntry se ha retirado del flujo operativo.
 - [ ] Confirmar que el contrato de transporte de Correos está firmado y vinculado al mismo Correos ID.
 - [ ] Configurar en Vercel `SHIPPING_OPERATIONS_TOKEN` y las variables `CORREOS_*` emitidas por Correos.
 - [ ] Obtener/validar el mecanismo oficial de emisión y renovación del Bearer de Correos ID; hasta entonces se admite `CORREOS_ID_ACCESS_TOKEN` y se falla de forma segura al caducar.
-- [ ] Confirmar con Correos la API soportada que sustituye a Preregister para crear/prerregistrar envíos.
+- [ ] Confirmar con Correos el procedimiento de prueba/sandbox o una operación controlada sin cargos.
 - [ ] Ejecutar una prueba controlada real de tracking, etiqueta y recogida.
 - [ ] Si el acceso API no está disponible, seguir usando Mi Oficina de Correos y guardar tracking/estado en Spree; no crear una base logística paralela.
 
@@ -104,7 +104,7 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [ ] Probar que Madrid ofrece el método local y que fuera de Madrid no aparece.
 - [ ] Confirmar que un pedido real genera correctamente su fulfillment en Spree.
 - [x] Implementada lógica de back-office para guardar tracking, marcar enviado y marcar entregado sobre el fulfillment nativo de Spree.
-- [x] Implementadas operaciones Correos para Trackpub, Labels, Requests y BoxEntry, condicionadas a credenciales válidas.
+- [x] Implementadas operaciones Correos para Preregister, Labels, Trackpub y Requests con la autenticación vigente; eliminada BoxEntry del flujo operativo.
 - [ ] Configurar secretos de producción y hacer una prueba real controlada.
 - [ ] Configurar una Secret API Key de Spree específica para logística con permisos de lectura/escritura de pedidos/fulfillments; la clave de catálogo devuelve 403 al intentar leer pedidos, como debe por separación de privilegios.
 - [ ] Verificar en producción un pedido real con fulfillment `pending` → `shipped` → `delivered` y tracking visible en la cuenta del cliente.
