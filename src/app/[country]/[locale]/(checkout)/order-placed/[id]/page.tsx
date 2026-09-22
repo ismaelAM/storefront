@@ -15,7 +15,17 @@ import { useCheckout } from "@/contexts/CheckoutContext";
 import { trackPurchase } from "@/lib/analytics/gtm";
 import { getCompletedOrder } from "@/lib/data/checkout";
 import { getCachedCompletedOrder } from "@/lib/utils/completed-order-cache";
+import { getFulfillmentStatusColor } from "@/lib/utils/format";
 import { extractBasePath } from "@/lib/utils/path";
+
+const FULFILLMENT_STATUS_KEYS = {
+  shipped: "shipped",
+  delivered: "delivered",
+  ready: "ready",
+  pending: "pending",
+  canceled: "canceled",
+  backorder: "backorder",
+} as const;
 
 interface OrderPlacedPageProps {
   params: Promise<{
@@ -32,6 +42,7 @@ export default function OrderPlacedPage({ params }: OrderPlacedPageProps) {
   const { setSummaryContent } = useCheckout();
   const t = useTranslations("orderPlaced");
   const tc = useTranslations("common");
+  const to = useTranslations("orders");
 
   const [order, setOrder] = useState<Cart | null>(null);
   const [loading, setLoading] = useState(true);
@@ -184,23 +195,63 @@ export default function OrderPlacedPage({ params }: OrderPlacedPageProps) {
               <h3 className="text-sm font-semibold text-gray-900 mb-3">
                 {t("shippingMethod")}
               </h3>
-              {order.fulfillments.map((fulfillment) => (
-                <div
-                  key={fulfillment.id}
-                  className="flex items-start gap-3 mb-2 last:mb-0"
-                >
-                  <Package className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">
-                      {fulfillment.delivery_method?.name ||
-                        t("standardShipping")}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      {fulfillment.display_cost}
-                    </p>
+              {order.fulfillments.map((fulfillment) => {
+                const statusKey =
+                  fulfillment.status &&
+                  FULFILLMENT_STATUS_KEYS[
+                    fulfillment.status as keyof typeof FULFILLMENT_STATUS_KEYS
+                  ];
+                const statusLabel = statusKey
+                  ? to(statusKey)
+                  : fulfillment.status || to("unknownShipmentStatus");
+
+                return (
+                  <div
+                    key={fulfillment.id}
+                    className="flex items-start gap-3 mb-4 last:mb-0"
+                  >
+                    <Package className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-gray-900">
+                        {fulfillment.delivery_method?.name ||
+                          t("standardShipping")}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {fulfillment.display_cost}
+                      </p>
+                      <span
+                        className={`mt-2 inline-flex items-center rounded-lg px-2.5 py-0.5 text-xs font-medium ${getFulfillmentStatusColor(fulfillment.status)}`}
+                      >
+                        {statusLabel}
+                      </span>
+                      {fulfillment.tracking && (
+                        <p className="mt-2 text-xs text-gray-600">
+                          {to("trackingNumber")}:{" "}
+                          <span className="font-mono font-medium text-gray-900">
+                            {fulfillment.tracking}
+                          </span>
+                        </p>
+                      )}
+                      {fulfillment.tracking_url && (
+                        <Button
+                          variant="link"
+                          size="sm"
+                          asChild
+                          className="mt-1 h-auto p-0"
+                        >
+                          <a
+                            href={fulfillment.tracking_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            {to("trackItems")}
+                          </a>
+                        </Button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 

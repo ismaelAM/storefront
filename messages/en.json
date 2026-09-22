@@ -372,6 +372,7 @@
     "shippingMethod": "Shipping Method",
     "shippedFrom": "Shipped from {location}",
     "trackItems": "Track Items",
+    "trackingNumber": "Tracking number",
     "shipmentCanceled": "This shipment has been canceled.",
     "noTrackingInfo": "No tracking information present.",
     "paymentInformation": "Payment Information",
