@@ -9707,6 +9707,177 @@ async function operatorAction(
     });
   }
 
+  if (
+    action === "catalog-review-status" ||
+    action === "catalog-review-approve" ||
+    action === "catalog-review-reject" ||
+    action === "catalog-review-reset"
+  ) {
+    const requestedCatalogProductId =
+      typeof body.catalogProductId === "string"
+        ? body.catalogProductId.trim()
+        : "";
+    const requestedSpreeProductId =
+      typeof body.spreeProductId === "string" ? body.spreeProductId.trim() : "";
+    if (!requestedCatalogProductId && !requestedSpreeProductId) {
+      return json(
+        { error: "catalogProductId_or_spreeProductId_required" },
+        400,
+      );
+    }
+
+    let productQuery = supabase
+      .from("catalog_products")
+      .select(
+        "id,name,spree_product_id,review_decision,approved_review_fingerprint,review_decided_at,review_note",
+      );
+    productQuery = requestedCatalogProductId
+      ? productQuery.eq("id", requestedCatalogProductId)
+      : productQuery.eq("spree_product_id", requestedSpreeProductId);
+    const { data: productPolicy, error: productPolicyError } =
+      await productQuery.maybeSingle();
+    if (productPolicyError) throw productPolicyError;
+    if (!productPolicy) return json({ error: "catalog_product_not_found" }, 404);
+
+    const spreeProductId = String(productPolicy.spree_product_id ?? "");
+    if (!spreeProductId) {
+      return json({ error: "catalog_product_not_mapped_to_spree" }, 409);
+    }
+
+    const reasons = await currentCatalogReviewReasonsForSpreeProduct(
+      spreeProductId,
+    );
+    const reasonList = Array.from(reasons).sort();
+    const fingerprint = catalogReviewFingerprint(reasonList);
+    const { data: variantPolicies, error: variantPoliciesError } = await supabase
+      .from("catalog_variants")
+      .select(
+        "id,canonical_sku,name,spree_variant_id,fulfillment_mode,selected_offer_id",
+      )
+      .eq("product_id", productPolicy.id)
+      .order("canonical_sku");
+    if (variantPoliciesError) throw variantPoliciesError;
+
+    if (action === "catalog-review-status") {
+      return json({
+        ok: true,
+        product: productPolicy,
+        reasons: reasonList,
+        review_fingerprint: fingerprint,
+        approval_matches:
+          productPolicy.review_decision === "approved" &&
+          fingerprint ===
+            String(productPolicy.approved_review_fingerprint ?? ""),
+        variants: variantPolicies ?? [],
+      });
+    }
+
+    const now = new Date().toISOString();
+    const note = typeof body.note === "string" ? body.note.trim() : null;
+    let nextDecision: CatalogReviewDecision;
+    let approvedReviewFingerprint: string | null = null;
+
+    if (action === "catalog-review-approve") {
+      if (!fingerprint) {
+        return json({ error: "no_current_review_reasons" }, 409);
+      }
+      nextDecision = "approved";
+      approvedReviewFingerprint = fingerprint;
+    } else if (action === "catalog-review-reject") {
+      nextDecision = "rejected";
+    } else {
+      nextDecision = "pending";
+    }
+
+    const requestedFulfillmentMode =
+      typeof body.fulfillmentMode === "string"
+        ? body.fulfillmentMode.trim()
+        : "";
+    const allowedFulfillmentModes = new Set<CatalogFulfillmentMode>([
+      "supplier_or_physical",
+      "physical_only",
+      "disabled",
+    ]);
+    if (
+      requestedFulfillmentMode &&
+      !allowedFulfillmentModes.has(
+        requestedFulfillmentMode as CatalogFulfillmentMode,
+      )
+    ) {
+      return json({ error: "invalid_fulfillment_mode" }, 400);
+    }
+
+    const defaultFulfillmentMode: CatalogFulfillmentMode | null =
+      action === "catalog-review-approve" &&
+      reasons.has("pack_requires_operator_split")
+        ? "physical_only"
+        : null;
+    const nextFulfillmentMode =
+      (requestedFulfillmentMode as CatalogFulfillmentMode) ||
+      defaultFulfillmentMode;
+
+    const { error: decisionError } = await supabase
+      .from("catalog_products")
+      .update({
+        review_decision: nextDecision,
+        approved_review_fingerprint: approvedReviewFingerprint,
+        review_decided_at: action === "catalog-review-reset" ? null : now,
+        review_note: action === "catalog-review-reset" ? null : note,
+        updated_at: now,
+      })
+      .eq("id", productPolicy.id);
+    if (decisionError) throw decisionError;
+
+    if (nextFulfillmentMode) {
+      const { error: modeError } = await supabase
+        .from("catalog_variants")
+        .update({
+          fulfillment_mode: nextFulfillmentMode,
+          updated_at: now,
+        })
+        .eq("product_id", productPolicy.id);
+      if (modeError) throw modeError;
+    }
+
+    await markCatalogProductDirty(spreeProductId);
+    const prepared = await preparePublishBatch(
+      config,
+      0,
+      1,
+      spreeProductId,
+    );
+
+    const { data: refreshedProduct, error: refreshedProductError } =
+      await supabase
+        .from("catalog_products")
+        .select(
+          "id,name,spree_product_id,review_decision,approved_review_fingerprint,review_decided_at,review_note",
+        )
+        .eq("id", productPolicy.id)
+        .single();
+    if (refreshedProductError) throw refreshedProductError;
+    const { data: refreshedVariants, error: refreshedVariantsError } =
+      await supabase
+        .from("catalog_variants")
+        .select(
+          "id,canonical_sku,name,spree_variant_id,fulfillment_mode,selected_offer_id",
+        )
+        .eq("product_id", productPolicy.id)
+        .order("canonical_sku");
+    if (refreshedVariantsError) throw refreshedVariantsError;
+
+    return json({
+      ok: true,
+      decision: nextDecision,
+      reasons: reasonList,
+      review_fingerprint: fingerprint,
+      fulfillment_mode_applied: nextFulfillmentMode,
+      product: refreshedProduct,
+      variants: refreshedVariants ?? [],
+      reconciliation: prepared,
+    });
+  }
+
   if (action === "tcgfactory-credentials") {
     const email = typeof body.email === "string" ? body.email.trim() : "";
     const password = typeof body.password === "string" ? body.password : "";
