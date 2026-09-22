@@ -267,6 +267,7 @@ interface SelectedSupplyRow {
   supplier_config?: Record<string, unknown> | null;
   selected_offer_payload?: Record<string, unknown> | null;
   minimum_order_quantity?: number | null;
+  fulfillment_mode?: CatalogFulfillmentMode | null;
 }
 
 interface CatalogSpreeContext {
@@ -1984,7 +1985,7 @@ async function selectedSupplyForSpreeVariant(
   const { data, error } = await supabase
     .from("catalog_selected_supply")
     .select(
-      "variant_id,canonical_sku,spree_variant_id,product_id,product_name,spree_product_id,supplier_code,supplier_name,supplier_enabled,supplier_stale_after_hours,supplier_sku,normalized_cost,currency,reference_price_net,availability,source_url,last_seen_at",
+      "variant_id,canonical_sku,spree_variant_id,product_id,product_name,spree_product_id,supplier_code,supplier_name,supplier_enabled,supplier_stale_after_hours,supplier_sku,normalized_cost,currency,reference_price_net,availability,source_url,last_seen_at,fulfillment_mode",
     )
     .eq("spree_variant_id", spreeVariantId)
     .maybeSingle();
@@ -2584,6 +2585,7 @@ async function reconcileCatalogVariantUnlocked(
         config,
         resolution.variant.spree_variant_id,
         "unavailable",
+        resolution.variant.fulfillment_mode ?? "supplier_or_physical",
       );
     }
     if (mapping.product && resolution.variant.spree_variant_id) {
@@ -6164,7 +6166,7 @@ async function repairSellabilityBatch(
   failed: number;
   remaining: number;
 }> {
-  const version = "catalog-stock-v2";
+  const version = "catalog-stock-v3";
   const categories = await spreeCategories(config);
   const defs = await definitions(config);
   const { data, error } = await supabase
@@ -6207,19 +6209,23 @@ async function repairSellabilityBatch(
           encodeURIComponent(variantId),
       );
       const preorder = selectedSupply?.availability === "preorder";
-      const sellable = selectedSupply?.availability === "available" || preorder;
+      const supplierSellable = shouldAllowSupplierBackorder({
+        availability: selectedSupply?.availability ?? "unavailable",
+        fulfillmentMode:
+          selectedSupply?.fulfillment_mode ?? "supplier_or_physical",
+      });
 
       const updated = await patchVariantInventory(
         config,
         productId,
         variantId,
         Number(current.total_on_hand ?? 0),
-        sellable,
-        preorder,
+        supplierSellable,
+        preorder && supplierSellable,
         null,
       );
 
-      if (sellable && !updated.backorderable && !updated.purchasable) {
+      if (supplierSellable && !updated.backorderable && !updated.purchasable) {
         throw new Error("Spree no dejó la variante backorderable/comprable");
       }
 
@@ -6279,7 +6285,7 @@ async function repairTcgFactorySellabilityBatch(
   const { data, error, count } = await supabase
     .from("catalog_selected_supply")
     .select(
-      "variant_id,spree_product_id,spree_variant_id,availability,supplier_code",
+      "variant_id,spree_product_id,spree_variant_id,availability,supplier_code,fulfillment_mode",
       { count: "exact" },
     )
     .eq("supplier_code", TCGFACTORY_SUPPLIER_CODE)
@@ -6308,16 +6314,23 @@ async function repairTcgFactorySellabilityBatch(
           encodeURIComponent(spreeVariantId),
       );
       const preorder = row.availability === "preorder";
+      const supplierSellable = shouldAllowSupplierBackorder({
+        availability:
+          row.availability === "preorder" ? "preorder" : "available",
+        fulfillmentMode:
+          (row.fulfillment_mode as CatalogFulfillmentMode | null) ??
+          "supplier_or_physical",
+      });
       const updated = await patchVariantInventory(
         config,
         productId,
         spreeVariantId,
         Number(current.total_on_hand ?? 0),
-        true,
-        preorder,
+        supplierSellable,
+        preorder && supplierSellable,
         null,
       );
-      if (!updated.backorderable && !updated.purchasable) {
+      if (supplierSellable && !updated.backorderable && !updated.purchasable) {
         throw new Error("Spree no dejó la variante comprable");
       }
       repaired += 1;
