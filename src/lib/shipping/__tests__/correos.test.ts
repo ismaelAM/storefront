@@ -2,11 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   CorreosApiError,
-  type CorreosBoxEntryRequest,
   CorreosClient,
   type CorreosConfig,
   type CorreosLabelRequest,
   type CorreosPickupRequest,
+  type CorreosPreregisterRequest,
   getCorreosConfigurationStatus,
   loadCorreosConfig,
 } from "@/lib/shipping/correos";
@@ -18,22 +18,16 @@ const validEnv = {
   CORREOS_LABELS_BASE_URL: "https://api.correos.test/labels",
   CORREOS_TRACKPUB_BASE_URL: "https://api.correos.test/trackpub",
   CORREOS_REQUESTS_BASE_URL: "https://api.correos.test/requests-api",
-  CORREOS_REQUESTS_SUBSCRIPTION_KEY: "subscription-key",
-  CORREOS_BOXENTRY_BASE_URL: "https://api.correos.test/boxentry",
-  CORREOS_ALLOW_DEPRECATED_PREREGISTER: "false",
 };
 
 const validConfig: CorreosConfig = {
   clientId: "client-id",
   clientSecret: "client-secret",
-  requestsSubscriptionKey: "subscription-key",
-  allowDeprecatedPreregister: false,
   baseUrls: {
     preregister: "https://api.correos.test/preregister",
     labels: "https://api.correos.test/labels",
     trackpub: "https://api.correos.test/trackpub",
     requests: "https://api.correos.test/requests-api",
-    boxentry: "https://api.correos.test/boxentry",
   },
 };
 
@@ -57,21 +51,20 @@ describe("Correos configuration", () => {
     expect(getCorreosConfigurationStatus(validEnv)).toMatchObject({
       ready: true,
       requestsEnabled: true,
-      boxEntryEnabled: true,
-      preregisterEnabled: false,
+      preregisterEnabled: true,
     });
   });
 
-  it("rejects insecure endpoints and incomplete Requests credentials", () => {
+  it("rejects insecure endpoints and missing required API URLs", () => {
     const status = getCorreosConfigurationStatus({
       ...validEnv,
       CORREOS_LABELS_BASE_URL: "http://api.correos.test/labels",
-      CORREOS_REQUESTS_SUBSCRIPTION_KEY: "",
+      CORREOS_PREREGISTER_BASE_URL: "",
     });
 
     expect(status.ready).toBe(false);
     expect(status.invalid).toEqual(["CORREOS_LABELS_BASE_URL"]);
-    expect(status.missing).toContain("CORREOS_REQUESTS_SUBSCRIPTION_KEY");
+    expect(status.missing).toContain("CORREOS_PREREGISTER_BASE_URL");
   });
 });
 
@@ -125,7 +118,7 @@ describe("CorreosClient", () => {
     });
   });
 
-  it("uses the subscription key and Bearer token for Requests", async () => {
+  it("uses Bearer plus client credentials for Requests", async () => {
     const request: CorreosPickupRequest = {
       address: "Mayor",
       codAnnex: "091",
@@ -146,7 +139,9 @@ describe("CorreosClient", () => {
       );
       const headers = new Headers(init?.headers);
       expect(headers.get("authorization")).toBe("Bearer correos-id-token");
-      expect(headers.get("Ocp-Apim-Subscription-Key")).toBe("subscription-key");
+      expect(headers.get("client_id")).toBe("client-id");
+      expect(headers.get("client_secret")).toBe("client-secret");
+      expect(headers.get("Ocp-Apim-Subscription-Key")).toBeNull();
       expect(init?.body).toBe(JSON.stringify(request));
       return Response.json({ codRequests: "SR123" }, { status: 201 });
     });
@@ -157,30 +152,29 @@ describe("CorreosClient", () => {
     });
   });
 
-  it("uses Client ID Enforcement without a Bearer token for BoxEntry", async () => {
-    const request: CorreosBoxEntryRequest = {
-      box: {
-        boxId: "PQ123",
-        boxEvents: {
-          totalElements: 1,
-          elements: [{ elementCode: "PQ123" }],
-        },
+  it("creates shipments with active Preregister via POST /delivery", async () => {
+    const request: CorreosPreregisterRequest = {
+      shipment: {
+        reference: "ORDER-123",
       },
     };
     const fetcher = vi.fn<typeof fetch>(async (input, init) => {
-      expect(String(input)).toBe("https://api.correos.test/boxentry/box");
+      expect(String(input)).toBe(
+        "https://api.correos.test/preregister/delivery",
+      );
+      expect(init?.method).toBe("POST");
       const headers = new Headers(init?.headers);
-      expect(headers.get("client_id")).toBe("client-id");
-      expect(headers.get("client_secret")).toBe("client-secret");
-      expect(headers.get("authorization")).toBeNull();
-      return Response.json({ success: "true" });
+      expect(headers.get("authorization")).toBe("Bearer correos-id-token");
+      expect(headers.get("client_id")).toBeNull();
+      expect(headers.get("client_secret")).toBeNull();
+      expect(init?.body).toBe(JSON.stringify(request));
+      return Response.json({ shippingCode: "PQ123" }, { status: 201 });
     });
     const client = new CorreosClient(validConfig, fetcher, tokenProvider);
 
-    await expect(client.registerBox(request)).resolves.toEqual({
-      success: "true",
+    await expect(client.createShipment(request)).resolves.toEqual({
+      shippingCode: "PQ123",
     });
-    expect(tokenProvider.getAccessToken).not.toHaveBeenCalled();
   });
 
   it("asks the token provider to refresh once after a 401", async () => {
@@ -215,16 +209,6 @@ describe("CorreosClient", () => {
     expect(refreshingTokenProvider.getAccessToken).toHaveBeenNthCalledWith(2, {
       forceRefresh: true,
     });
-  });
-
-  it("keeps deprecated Preregister disabled by default", async () => {
-    const fetcher = vi.fn<typeof fetch>();
-    const client = new CorreosClient(validConfig, fetcher, tokenProvider);
-
-    await expect(
-      client.request("preregister", { method: "POST", path: "delivery" }),
-    ).rejects.toThrow("está deprecada");
-    expect(fetcher).not.toHaveBeenCalled();
   });
 
   it("requires a Correos ID provider instead of inventing an OAuth flow", async () => {
