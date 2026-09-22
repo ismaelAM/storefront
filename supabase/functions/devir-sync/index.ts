@@ -912,85 +912,6 @@ function categoryKey(product: DevirProduct): string {
   return inferDevirCategoryKey(product);
 }
 
-function isFixedPriceCandidate(product: DevirProduct, key: string): boolean {
-  const digits = product.sku.replace(/\D/g, "");
-  if (/^(978|979)\d{10}$/.test(digits)) return true;
-  if (key === "manga-comic") return true;
-  if (key.startsWith("rol/")) {
-    return /manual|gu[ií]a|libro|compendio|aventura|campaña|bestiario|reglamento|suplemento/i.test(
-      product.name,
-    );
-  }
-  return false;
-}
-
-function shippingEstimate(
-  product: DevirProduct,
-  key: string,
-): {
-  weight: number;
-  width: number;
-  height: number;
-  depth: number;
-} {
-  const value = product.name.toLowerCase();
-  if (key === "manga-comic")
-    return { weight: 0.45, width: 17, height: 24, depth: 3 };
-  if (key.startsWith("rol/"))
-    return { weight: 1.2, width: 24, height: 31, depth: 5 };
-  if (key === "tcg/mtg" || key === "tcg/yugioh") {
-    if (/blister|sobre\b|booster\b(?!.*display)/i.test(value)) {
-      return { weight: 0.25, width: 12, height: 18, depth: 4 };
-    }
-    if (/display|caja|box|\(\s*\d+\s*\)|pack/i.test(value)) {
-      return { weight: 1.8, width: 30, height: 22, depth: 18 };
-    }
-    return { weight: 0.4, width: 18, height: 14, depth: 7 };
-  }
-  if (key === "accesorios")
-    return { weight: 1.0, width: 35, height: 25, depth: 10 };
-  if (key === "rol/warhammer")
-    return { weight: 1.5, width: 35, height: 25, depth: 10 };
-  if (/3d|edici[oó]n\s+3d|big box|deluxe/i.test(value)) {
-    return { weight: 4.5, width: 45, height: 45, depth: 20 };
-  }
-  if (/expansi[oó]n|exp\.|ampliaci[oó]n/i.test(value)) {
-    return { weight: 1.2, width: 30, height: 30, depth: 9 };
-  }
-  return { weight: 2.0, width: 35, height: 35, depth: 12 };
-}
-
-function competitivePrice(
-  cost: number,
-  margin: number,
-): {
-  grossCost: number;
-  retail: number;
-  effective: number;
-} {
-  const grossCost = cost * 1.21;
-  const threshold = grossCost / (1 - margin);
-  // End in .90 where possible: visually competitive, never below the floor.
-  let retail = Math.floor(threshold) + 0.9;
-  if (retail + 1e-9 < threshold) retail += 1;
-  retail = Math.round(retail * 100) / 100;
-  return { grossCost, retail, effective: (retail - grossCost) / retail };
-}
-
-function priceFor(
-  cost: number,
-  margin: number,
-  ending = 0.99,
-  vatRate = 0.21,
-): { grossCost: number; retail: number; effective: number } {
-  const grossCost = cost * (1 + vatRate);
-  const threshold = grossCost / (1 - margin);
-  let retail = Math.floor(threshold) + ending;
-  if (retail + 1e-9 < threshold) retail += 1;
-  retail = Math.round(retail * 100) / 100;
-  return { grossCost, retail, effective: (retail - grossCost) / retail };
-}
-
 async function spreeRequest<T>(
   config: ConfigRow,
   method: string,
@@ -1091,32 +1012,6 @@ async function spreeList<T>(config: ConfigRow, path: string): Promise<T[]> {
   return payload.data ?? [];
 }
 
-async function spreeListAll<T>(
-  config: ConfigRow,
-  path: string,
-  maxPages = 25,
-): Promise<T[]> {
-  const rows: T[] = [];
-  for (let page = 1; page <= maxPages; page += 1) {
-    const sep = path.includes("?") ? "&" : "?";
-    const payload = await spreeRequest<{
-      data?: T[];
-      meta?: { next?: number | null; page?: number; pages?: number };
-    }>(config, "GET", path + sep + "limit=100&page=" + page);
-    const batch = payload.data ?? [];
-    rows.push(...batch);
-    const pages = Number(payload.meta?.pages);
-    if (
-      batch.length < 100 ||
-      payload.meta?.next == null ||
-      (Number.isFinite(pages) && page >= pages)
-    ) {
-      break;
-    }
-  }
-  return rows;
-}
-
 function variantPrice(variant: SpreeVariant): number | null {
   if (typeof variant.price === "number") return variant.price;
   if (typeof variant.price === "string") {
@@ -1189,22 +1084,6 @@ async function upsertBasePrice(
       ? { compare_at_amount: compareAtAmount }
       : {}),
   });
-}
-
-async function upsertBasePrices(
-  config: ConfigRow,
-  prices: Array<{ variant_id: string; amount: number }>,
-): Promise<void> {
-  for (let index = 0; index < prices.length; index += 8) {
-    await Promise.all(
-      prices
-        .slice(index, index + 8)
-        .map((price) =>
-          upsertBasePrice(config, price.variant_id, price.amount),
-        ),
-    );
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
 }
 
 async function updateVariantRetailPrice(
@@ -4362,34 +4241,6 @@ async function ensureCategory(
   );
   categories.push(created);
   return created;
-}
-
-async function ensureCategoryAlias(
-  config: ConfigRow,
-  categories: SpreeCategory[],
-  name: string,
-  permalink: string,
-  aliases: string[] = [],
-): Promise<SpreeCategory> {
-  let existing = categories.find(
-    (category) =>
-      category.permalink === permalink ||
-      aliases.includes(category.permalink ?? ""),
-  );
-  if (!existing) {
-    return await ensureCategory(config, categories, name, permalink);
-  }
-  if (existing.permalink !== permalink || existing.name !== name) {
-    existing = await spreeRequest<SpreeCategory>(
-      config,
-      "PATCH",
-      "/categories/" + encodeURIComponent(existing.id),
-      { name, permalink },
-    );
-    const index = categories.findIndex((item) => item.id === existing!.id);
-    if (index >= 0) categories[index] = existing;
-  }
-  return existing;
 }
 
 async function setCategoryMargin(
