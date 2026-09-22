@@ -211,7 +211,7 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [x] Los 8 Scene Box / Theme Deck actuales están incluidos en ese backfill y siguen ocultos.
 - [x] Añadido transporte Gmail API para los correos transaccionales existentes de Spree (confirmación, cancelación, envío y reset de contraseña), usando OAuth2 y refresh token; no depende de ChatGPT.
 - [x] Configuradas en Vercel las variables `EMAIL_PROVIDER`, `EMAIL_FROM`, `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET` y `GMAIL_REFRESH_TOKEN`.
-- [ ] Desplegar el `main` actual en Vercel cuando deje de bloquear `build-rate-limit`; producción sigue en un deployment anterior.
+- [ ] Reintento de deploy de `main` disparado el 22 Sep 2026 tras la ventana de `build-rate-limit`; verificar que el nuevo deployment llegue a `READY`.
 - [ ] Verificar Gmail en producción con una solicitud real de restablecimiento de contraseña y confirmar que el mensaje llega desde la cuenta configurada.
 - [ ] Revalidar una muestra de PDP problemáticas en producción tras desplegar el fix de `categories` y revisar latencia/logs.
 
