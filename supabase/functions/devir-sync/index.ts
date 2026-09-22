@@ -5896,10 +5896,15 @@ async function preparePublishBatch(
     );
     const productReasons = new Set<string>();
     const categoryKeys = new Set<string>();
-    let anySellable = false;
+    const hasAnyPhysicalRetailStock = variants.some((variant) => {
+      const mode =
+        fulfillmentModeByVariant.get(variant.id) ?? "supplier_or_physical";
+      return mode !== "disabled" && Number(variant.total_on_hand ?? 0) > 0;
+    });
+    let anySellable = hasAnyPhysicalRetailStock;
     let anyWaiting = false;
     let hasPreorder = false;
-    let hasAvailable = false;
+    let hasAvailable = hasAnyPhysicalRetailStock;
     let updatedForProduct = 0;
 
     for (const row of rows) {
