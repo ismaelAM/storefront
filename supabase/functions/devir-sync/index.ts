@@ -7238,7 +7238,7 @@ async function repriceCatalogSupplierBatch(
   results: Array<Record<string, unknown>>;
 }> {
   const supplierCode = normalizeSupplierCode(String(body.supplierCode ?? ""));
-  await configuredCatalogSupplier(supplierCode);
+  const supplier = await configuredCatalogSupplier(supplierCode);
   const limit = Math.min(100, Math.max(1, Number(body.limit ?? 50) || 50));
   const offset = Math.max(0, Number(body.offset ?? 0) || 0);
 
@@ -7267,7 +7267,7 @@ async function repriceCatalogSupplierBatch(
   ] = await Promise.all([
     supabase
       .from("catalog_variants")
-      .select("id,last_auto_price,spree_variant_id,product_id")
+      .select("id,last_auto_price,spree_variant_id,product_id,selected_offer_id")
       .in("id", variantIds),
     supabase
       .from("catalog_products")
@@ -7276,6 +7276,25 @@ async function repriceCatalogSupplierBatch(
   ]);
   if (variantsError) throw variantsError;
   if (productsError) throw productsError;
+
+  const selectedOfferIds = Array.from(
+    new Set(
+      (variants ?? [])
+        .map((row) => String(row.selected_offer_id ?? ""))
+        .filter(Boolean),
+    ),
+  );
+  const { data: selectedOffers, error: selectedOffersError } =
+    selectedOfferIds.length > 0
+      ? await supabase
+          .from("catalog_supplier_offers")
+          .select("id,raw_payload")
+          .in("id", selectedOfferIds)
+      : { data: [], error: null };
+  if (selectedOffersError) throw selectedOffersError;
+  const selectedOffersById = new Map(
+    (selectedOffers ?? []).map((row) => [String(row.id), row]),
+  );
 
   const variantsById = new Map(
     (variants ?? []).map((row) => [String(row.id), row]),
@@ -7346,12 +7365,17 @@ async function repriceCatalogSupplierBatch(
         releaseDate: null,
         imageUrls: [],
         categoryKeyOverride: key || null,
+        supplierMinimumQuantity: minimumOrderQuantityFromOfferPayload(
+          selectedOffersById.get(String(variant.selected_offer_id ?? ""))
+            ?.raw_payload as Record<string, unknown> | null | undefined,
+        ),
       };
       const pricing = competitivePricing(
         product,
         key,
         marginByKey.get(key) ?? DEFAULT_CATEGORY_MARGINS[key] ?? 0.05,
         supplierCode,
+        supplier.config,
       );
 
       const spreeVariant = await spreeRequest<SpreeVariant>(
