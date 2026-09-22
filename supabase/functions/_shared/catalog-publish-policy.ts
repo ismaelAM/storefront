@@ -34,8 +34,8 @@ export function shouldRequireCatalogReview(input: {
   approvedFingerprint?: string | null;
 }): boolean {
   const reasons = Array.from(input.reasons);
-  if (reasons.length === 0) return false;
   if (input.decision === "rejected") return true;
+  if (reasons.length === 0) return false;
   return !isCatalogReviewApproved({
     reasons,
     decision: input.decision,
