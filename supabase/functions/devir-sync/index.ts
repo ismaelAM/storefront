@@ -1733,46 +1733,6 @@ async function appendToExistingGroupedProduct(
 
     if (!(parent.tags ?? []).includes("devir-group")) continue;
 
-    const { data: catalogProductPolicy, error: catalogProductPolicyError } =
-      await supabase
-        .from("catalog_products")
-        .select(
-          "id,review_decision,approved_review_fingerprint,review_decided_at,review_note",
-        )
-        .eq("spree_product_id", productId)
-        .maybeSingle();
-    if (catalogProductPolicyError) throw catalogProductPolicyError;
-
-    const reviewDecision =
-      (catalogProductPolicy?.review_decision as CatalogReviewDecision | null) ??
-      "pending";
-    const approvedReviewFingerprint =
-      typeof catalogProductPolicy?.approved_review_fingerprint === "string"
-        ? catalogProductPolicy.approved_review_fingerprint
-        : null;
-
-    const { data: catalogVariantPolicies, error: catalogVariantPoliciesError } =
-      catalogProductPolicy?.id
-        ? await supabase
-            .from("catalog_variants")
-            .select("spree_variant_id,fulfillment_mode")
-            .eq("product_id", catalogProductPolicy.id)
-        : { data: [], error: null };
-    if (catalogVariantPoliciesError) throw catalogVariantPoliciesError;
-    const fulfillmentModeByVariant = new Map<string, CatalogFulfillmentMode>(
-      (catalogVariantPolicies ?? []).flatMap((row) => {
-        const variantId = String(row.spree_variant_id ?? "");
-        if (!variantId) return [];
-        return [
-          [
-            variantId,
-            (row.fulfillment_mode as CatalogFulfillmentMode | null) ??
-              "supplier_or_physical",
-          ] as const,
-        ];
-      }),
-    );
-
     const variants = await spreeList<SpreeVariant>(
       config,
       "/products/" + encodeURIComponent(productId) + "/variants",
@@ -5888,6 +5848,46 @@ async function preparePublishBatch(
         .eq("spree_product_id", productId);
       return;
     }
+
+    const { data: catalogProductPolicy, error: catalogProductPolicyError } =
+      await supabase
+        .from("catalog_products")
+        .select(
+          "id,review_decision,approved_review_fingerprint,review_decided_at,review_note",
+        )
+        .eq("spree_product_id", productId)
+        .maybeSingle();
+    if (catalogProductPolicyError) throw catalogProductPolicyError;
+
+    const reviewDecision =
+      (catalogProductPolicy?.review_decision as CatalogReviewDecision | null) ??
+      "pending";
+    const approvedReviewFingerprint =
+      typeof catalogProductPolicy?.approved_review_fingerprint === "string"
+        ? catalogProductPolicy.approved_review_fingerprint
+        : null;
+
+    const { data: catalogVariantPolicies, error: catalogVariantPoliciesError } =
+      catalogProductPolicy?.id
+        ? await supabase
+            .from("catalog_variants")
+            .select("spree_variant_id,fulfillment_mode")
+            .eq("product_id", catalogProductPolicy.id)
+        : { data: [], error: null };
+    if (catalogVariantPoliciesError) throw catalogVariantPoliciesError;
+    const fulfillmentModeByVariant = new Map<string, CatalogFulfillmentMode>(
+      (catalogVariantPolicies ?? []).flatMap((row) => {
+        const variantId = String(row.spree_variant_id ?? "");
+        if (!variantId) return [];
+        return [
+          [
+            variantId,
+            (row.fulfillment_mode as CatalogFulfillmentMode | null) ??
+              "supplier_or_physical",
+          ] as const,
+        ];
+      }),
+    );
 
     const variants = await spreeList<SpreeVariant>(
       config,
