@@ -100,7 +100,7 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [ ] Crear o validar el método `Entrega local BisonTCG — Madrid` con código `BISON_LOCAL_MADRID`.
 - [ ] Asociar el método a la Shipping Category física correspondiente.
 - [ ] Definir tarifa fija y tiempo estimado de entrega.
-- [ ] **Bug confirmado:** el método/opción de Madrid aparece también para una dirección de Lugo. La corrección pertenece a la Zone/método de Spree, no a una condición hardcodeada en Next.js.
+- [ ] **Bug confirmado:** el método/opción de Madrid aparece también para direcciones fuera de Madrid. La corrección pertenece a la Zone/método de Spree, no a una condición hardcodeada en Next.js.
 - [ ] Probar que Madrid ofrece el método local y que fuera de Madrid no aparece.
 - [ ] Confirmar que un pedido real genera correctamente su fulfillment en Spree.
 - [x] Implementada lógica de back-office para guardar tracking, marcar enviado y marcar entregado sobre el fulfillment nativo de Spree.
@@ -194,7 +194,7 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [x] Documentado que el tracking local puede gestionarse manualmente desde Spree sin API externa.
 - [x] Confirmado manualmente en Preview que el checkout muestra métodos de envío procedentes de Spree.
 - [x] Homogeneizada la selección visual del método de envío con el color global `--primary` del storefront.
-- [ ] Corregir en Spree la Zone/método para que Madrid no aparezca en Lugo.
+- [ ] Corregir en Spree la Zone/método para que la entrega local de Madrid no aparezca fuera de Madrid.
 - [ ] Probar checkout, Shipment y estado de entrega con una dirección de Madrid.
 - [ ] Probar que una dirección fuera de Madrid no recibe la opción local.
 - [ ] Integrar Correos API después de estabilizar el método local y obtener contrato/credenciales.
