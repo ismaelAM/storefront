@@ -892,6 +892,8 @@ function humanizeReviewReason(reason: string): string {
       return detail
         ? `Las variantes apuntan a categorías distintas: ${detail}.`
         : "Las variantes apuntan a categorías distintas.";
+    case "manual_review_required":
+      return "Este producto está marcado para revisión manual.";
     default:
       return detail
         ? `Revisión manual: ${code.trim()} (${detail}).`
@@ -6146,6 +6148,97 @@ async function repairRetailUnitProducts(
   return { processed: data?.length ?? 0, repaired, skipped, results };
 }
 
+const HUMAN_REVIEW_MARKER_VERSION = "catalog-review-v1";
+
+function reviewReasonsFromLastError(value: unknown): string[] {
+  const text = String(value ?? "").replace(/^REVIEW:\s*/i, "").trim();
+  if (!text) return ["manual_review_required"];
+  return text.split(", ").map((item) => item.trim()).filter(Boolean);
+}
+
+async function refreshHumanReviewMarkersBatch(
+  config: ConfigRow,
+  limit = 40,
+): Promise<{ processed: number; remaining: number }> {
+  const { data, error, count } = await supabase
+    .from("devir_sync_catalog")
+    .select(
+      "spree_product_id,last_error,review_marker_version,updated_at",
+      { count: "exact" },
+    )
+    .eq("catalog_state", "review")
+    .not("spree_product_id", "is", null)
+    .or(
+      "review_marker_version.is.null,review_marker_version.neq." +
+        HUMAN_REVIEW_MARKER_VERSION,
+    )
+    .order("updated_at")
+    .limit(limit);
+  if (error) throw error;
+
+  const groups = new Map<string, Set<string>>();
+  for (const row of data ?? []) {
+    const productId = String(row.spree_product_id ?? "");
+    if (!productId) continue;
+    const reasons = groups.get(productId) ?? new Set<string>();
+    for (const reason of reviewReasonsFromLastError(row.last_error)) {
+      reasons.add(reason);
+    }
+    groups.set(productId, reasons);
+  }
+
+  if (groups.size === 0) return { processed: 0, remaining: 0 };
+
+  const defs = await definitions(config);
+  let processed = 0;
+  for (const [productId, reasons] of groups) {
+    const product = await spreeRequest<SpreeProduct>(
+      config,
+      "GET",
+      "/products/" + encodeURIComponent(productId),
+    );
+    const tags = Array.from(
+      new Set([
+        ...(product.tags ?? []).filter(
+          (tag) =>
+            !["catalog-ready", "devir-ready", "devir-published"].includes(tag),
+        ),
+        "catalog-review",
+        "REVISION-HUMANA",
+        "NECESITA-TU-AYUDA",
+      ]),
+    );
+    await spreeRequest(
+      config,
+      "PATCH",
+      "/products/" + encodeURIComponent(productId),
+      { status: "draft", tags },
+    );
+    await upsertProductFields(config, productId, defs, {
+      "catalog.review_status": "⚠ NECESITA TU AYUDA",
+      "catalog.review_reason": humanizeReviewReasons(reasons),
+      "devir.review_status": "⚠ REVISIÓN HUMANA",
+      "devir.review_reasons": humanizeReviewReasons(reasons),
+      "devir.last_sync_at": new Date().toISOString(),
+    });
+    const { error: markerError } = await supabase
+      .from("devir_sync_catalog")
+      .update({
+        review_marker_version: HUMAN_REVIEW_MARKER_VERSION,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("spree_product_id", productId)
+      .eq("catalog_state", "review");
+    if (markerError) throw markerError;
+    processed += 1;
+  }
+
+  return {
+    processed,
+    remaining: Math.max(0, (count ?? 0) - (data?.length ?? 0)),
+  };
+}
+
 async function hideCatalogPolicyViolations(
   config: ConfigRow,
 ): Promise<Record<string, unknown>> {
@@ -9118,6 +9211,7 @@ Deno.serve(async (req) => {
     if (!config.spree_admin_api_key) {
       return json({ ok: false, skipped: "bootstrap_required" }, 409);
     }
+    const reviewMarkers = await refreshHumanReviewMarkersBatch(config);
     const staleReconciliation = await reconcileStaleCatalogBatch(config);
     let tcgFactoryResult: Record<string, unknown>;
     try {
@@ -9141,6 +9235,8 @@ Deno.serve(async (req) => {
         ok: true,
         skipped: "disabled",
         catalog_reconciliation: staleReconciliation,
+        review_markers: reviewMarkers,
+        review_markers: reviewMarkers,
         tcgfactory: tcgFactoryResult,
       });
     }
@@ -9176,6 +9272,7 @@ Deno.serve(async (req) => {
           products_processed: productResult.processed,
           images: productResult.images,
           reviews: productResult.reviews,
+          review_markers: reviewMarkers,
           tcgfactory: tcgFactoryResult,
         });
       }
