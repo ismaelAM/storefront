@@ -15,6 +15,11 @@ interface FulfillmentList {
   data?: Fulfillment[];
 }
 
+type MutationAction =
+  | "spree-save-tracking"
+  | "spree-fulfill"
+  | "spree-mark-delivered";
+
 async function shippingAction(body: Record<string, unknown>) {
   const response = await fetch("/api/internal/shipping", {
     method: "POST",
@@ -45,6 +50,7 @@ export function ShippingOperationsPanel() {
   const [trackingCarrier, setTrackingCarrier] = useState("Correos");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [confirmation, setConfirmation] = useState<MutationAction | null>(null);
 
   const selected = useMemo(
     () => fulfillments.find((item) => item.id === fulfillmentId),
@@ -96,9 +102,7 @@ export function ShippingOperationsPanel() {
     }
   }
 
-  async function runMutation(
-    action: "spree-save-tracking" | "spree-fulfill" | "spree-mark-delivered",
-  ) {
+  async function runMutation(action: MutationAction, confirmed = false) {
     if (!orderId.trim() || !fulfillmentId) {
       setMessage("Carga un pedido y selecciona un fulfillment.");
       return;
@@ -110,21 +114,14 @@ export function ShippingOperationsPanel() {
     }
 
     if (
-      action === "spree-fulfill" &&
-      !window.confirm(
-        "¿Marcar este fulfillment como enviado en Spree? Esto no crea ningún envío en Correos.",
-      )
+      !confirmed &&
+      (action === "spree-fulfill" || action === "spree-mark-delivered")
     ) {
+      setConfirmation(action);
       return;
     }
 
-    if (
-      action === "spree-mark-delivered" &&
-      !window.confirm("¿Marcar este fulfillment como entregado en Spree?")
-    ) {
-      return;
-    }
-
+    setConfirmation(null);
     setBusy(true);
     setMessage("");
     try {
@@ -138,6 +135,7 @@ export function ShippingOperationsPanel() {
           : {}),
       });
 
+      await loadFulfillments();
       setMessage(
         action === "spree-save-tracking"
           ? "Tracking guardado."
@@ -145,7 +143,6 @@ export function ShippingOperationsPanel() {
             ? "Fulfillment marcado como enviado."
             : "Fulfillment marcado como entregado.",
       );
-      await loadFulfillments();
     } catch (error) {
       setMessage(
         error instanceof Error ? error.message : "No se pudo guardar el cambio.",
@@ -277,6 +274,40 @@ export function ShippingOperationsPanel() {
                 Marcar entregado
               </button>
             </div>
+
+            {confirmation ? (
+              <div
+                className="rounded-xl border border-amber-200 bg-amber-50 p-4"
+                role="alert"
+              >
+                <p className="text-sm font-medium text-amber-950">
+                  {confirmation === "spree-fulfill"
+                    ? "¿Marcar este fulfillment como enviado en Spree?"
+                    : "¿Marcar este fulfillment como entregado en Spree?"}
+                </p>
+                <p className="mt-1 text-xs leading-5 text-amber-800">
+                  {confirmation === "spree-fulfill"
+                    ? "Solo cambia el estado en Spree y guarda el tracking. No crea ningún envío en Correos."
+                    : "Esto cambia el estado del fulfillment a entregado."}
+                </p>
+                <div className="mt-3 flex gap-2">
+                  <button
+                    type="button"
+                    className="rounded-lg bg-neutral-950 px-3 py-2 text-sm font-medium text-white"
+                    onClick={() => runMutation(confirmation, true)}
+                  >
+                    Confirmar
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium"
+                    onClick={() => setConfirmation(null)}
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </div>
         </section>
       ) : null}
