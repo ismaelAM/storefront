@@ -44,85 +44,77 @@ function summarizeCart(
 
 async function probeCheckout() {
   const client = getClient();
-  const products = await client.products.list({ limit: 50 }, {
-    locale: "es",
-    country: "ES",
-  });
-  const product = products.data.find(
-    (item) =>
-      item.purchasable &&
-      item.available &&
-      typeof item.default_variant_id === "string",
+  const products = await client.products.list(
+    { limit: 20 },
+    { locale: "es", country: "ES" },
   );
-  if (!product?.default_variant_id) {
-    throw new Error("No hay un producto físico disponible para la prueba");
+  const candidates = products.data
+    .filter(
+      (item) =>
+        item.purchasable &&
+        item.available &&
+        typeof item.default_variant_id === "string",
+    )
+    .slice(0, 10);
+
+  if (candidates.length === 0) {
+    throw new Error("No hay productos físicos disponibles para la prueba");
   }
 
-  const cart = await client.carts.create(
-    {
-      items: [{ variant_id: product.default_variant_id, quantity: 1 }],
-    },
-    { locale: "es", country: "es" },
-  );
+  const results = [];
+  for (const product of candidates) {
+    if (!product.default_variant_id) continue;
 
-  try {
-    const options = { spreeToken: cart.token };
-
-    const madrid = await client.carts.update(
-      cart.id,
+    const cart = await client.carts.create(
       {
-        email: "shipping-probe@example.invalid",
-        shipping_address: {
-          first_name: "Prueba",
-          last_name: "Checkout",
-          address1: "Calle Mayor 1",
-          city: "Madrid",
-          postal_code: "28013",
-          country_iso: "ES",
-          state_name: "Madrid",
-          phone: "600000000",
-        },
+        items: [{ variant_id: product.default_variant_id, quantity: 1 }],
       },
-      options,
+      { locale: "es", country: "es" },
     );
-    const madridFresh = await client.carts.get(cart.id, options);
 
-    const outsideMadrid = await client.carts.update(
-      cart.id,
-      {
-        shipping_address: {
-          first_name: "Prueba",
-          last_name: "Checkout",
-          address1: "Carrer de la Pau 1",
-          city: "Valencia",
-          postal_code: "46001",
-          country_iso: "ES",
-          state_name: "Valencia",
-          phone: "600000000",
+    try {
+      const options = { spreeToken: cart.token };
+      const updated = await client.carts.update(
+        cart.id,
+        {
+          email: "shipping-probe@example.invalid",
+          shipping_address: {
+            first_name: "Prueba",
+            last_name: "Checkout",
+            address1: "Calle Mayor 1",
+            city: "Madrid",
+            postal_code: "28013",
+            country_iso: "ES",
+            state_name: "Madrid",
+            phone: "600000000",
+          },
         },
-      },
-      options,
-    );
-    const outsideMadridFresh = await client.carts.get(cart.id, options);
+        options,
+      );
+      const fresh = await client.carts.get(cart.id, options);
 
-    return {
-      product: {
-        id: product.id,
-        name: product.name,
-        variantId: product.default_variant_id,
-      },
-      madrid: {
-        update: summarizeCart(madrid),
-        fresh: summarizeCart(madridFresh),
-      },
-      outsideMadrid: {
-        update: summarizeCart(outsideMadrid),
-        fresh: summarizeCart(outsideMadridFresh),
-      },
-    };
-  } finally {
-    await client.carts.delete(cart.id, { spreeToken: cart.token }).catch(() => {});
+      results.push({
+        product: {
+          id: product.id,
+          name: product.name,
+          variantId: product.default_variant_id,
+        },
+        update: summarizeCart(updated),
+        fresh: summarizeCart(fresh),
+      });
+    } finally {
+      await client.carts
+        .delete(cart.id, { spreeToken: cart.token })
+        .catch(() => {});
+    }
   }
+
+  return {
+    tested: results.length,
+    withRates: results.filter((result) => result.fresh.fulfillmentCount > 0)
+      .length,
+    results,
+  };
 }
 
 async function inspect(path: string): Promise<DiagnosticResult> {
