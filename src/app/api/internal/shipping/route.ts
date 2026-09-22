@@ -3,9 +3,9 @@ import { NextResponse } from "next/server";
 import {
   getConfiguredCorreosClient,
   getCorreosConfigurationStatus,
-  type CorreosBoxEntryRequest,
   type CorreosLabelRequest,
   type CorreosPickupRequest,
+  type CorreosPreregisterRequest,
 } from "@/lib/shipping/correos";
 import {
   fulfillFulfillment,
@@ -148,10 +148,12 @@ export async function POST(request: Request) {
       return NextResponse.json(await correos.createPickup(requestBody));
     }
 
-    if (action === "correos-box-entry") {
-      const requestBody = body.request as CorreosBoxEntryRequest | undefined;
+    if (action === "correos-preregister") {
+      const requestBody = body.request as
+        | CorreosPreregisterRequest
+        | undefined;
       if (!requestBody) throw new Error("Falta request");
-      return NextResponse.json(await correos.registerBox(requestBody));
+      return NextResponse.json(await correos.createShipment(requestBody));
     }
 
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
