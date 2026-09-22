@@ -18,12 +18,7 @@ import {
   type RealProductShowcaseProps,
 } from "@/puck/RealProductBlocks";
 
-const {
-  Carousel: _Carousel,
-  FeaturedProductsHome: _FeaturedProductsHome,
-  ProductShowcase: _ProductShowcase,
-  ...baseComponents
-} = baseConfig.components;
+const baseComponents = baseConfig.components;
 
 export const enhancedConfig: Config = {
   ...baseConfig,
