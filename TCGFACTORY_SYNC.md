@@ -146,6 +146,18 @@ y limita el recargo al 30% del coste unitario. Los precios editados manualmente
 siguen protegidos y no se sobrescriben por este proceso.
 
 
+Antes de aplicar reparaciones sobre catálogo existente, ejecutar siempre los
+modos de inspección:
+
+- `repair-tcgfactory-images` con `dryRun: true`.
+- `tcgfactory-backfill-minimum-orders` con `dryRun: true`.
+
+Revisar la lista de SKUs/medios detectados y sólo después repetir la operación
+con `dryRun: false`. El backfill de MOQ únicamente persiste mínimos explícitos
+u overrides configurados; no altera precios por sí solo. El repricing se ejecuta
+por separado y sigue respetando overrides manuales.
+
+
 ## Disponibilidad
 
 El adaptador aplica este mapa conservador:
