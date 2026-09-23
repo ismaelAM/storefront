@@ -7455,28 +7455,81 @@ async function syncSpecialPriceRows(
 
   const { data, error } = await supabase
     .from("catalog_selected_supply")
-    .select("canonical_sku,spree_variant_id,normalized_cost,supplier_code")
+    .select("variant_id,canonical_sku,spree_variant_id,normalized_cost,supplier_code")
     .not("spree_variant_id", "is", null)
     .not("supplier_code", "is", null)
     .order("canonical_sku");
   if (error) throw error;
 
+  // BISON3 is a discount overlay, never an alternative tariff that can make
+  // a product more expensive than its normal automatic storefront price.
+  // If the base price is unknown we leave the variant untouched so Spree
+  // falls back to its regular price instead of risking an upward override.
+  const catalogVariantIds = Array.from(
+    new Set(
+      (data ?? [])
+        .map((row) => String(row.variant_id ?? ""))
+        .filter(Boolean),
+    ),
+  );
+  const publicPriceByCatalogVariant = new Map<string, number>();
+  for (let index = 0; index < catalogVariantIds.length; index += 200) {
+    const { data: variants, error: variantsError } = await supabase
+      .from("catalog_variants")
+      .select("id,last_auto_price")
+      .in("id", catalogVariantIds.slice(index, index + 200));
+    if (variantsError) throw variantsError;
+
+    for (const variant of variants ?? []) {
+      const publicPrice = Number(variant.last_auto_price);
+      if (Number.isFinite(publicPrice) && publicPrice > 0) {
+        publicPriceByCatalogVariant.set(String(variant.id), publicPrice);
+      }
+    }
+  }
+
   const rows = [];
   const seenVariants = new Set<string>();
   for (const row of data ?? []) {
+    const catalogVariantId = String(row.variant_id ?? "");
     const sku = String(row.canonical_sku ?? "");
     const variantId = String(row.spree_variant_id ?? "");
-    if (!sku || !variantId || seenVariants.has(variantId)) continue;
+    if (
+      !catalogVariantId ||
+      !sku ||
+      !variantId ||
+      seenVariants.has(variantId)
+    ) {
+      continue;
+    }
     if (program.exclude_fixed_price_books && isFixedPriceBookSku(sku)) continue;
     const cost = Number(row.normalized_cost);
-    if (!Number.isFinite(cost) || cost <= 0) continue;
+    const publicPrice = publicPriceByCatalogVariant.get(catalogVariantId);
+    if (
+      !Number.isFinite(cost) ||
+      cost <= 0 ||
+      !Number.isFinite(publicPrice) ||
+      Number(publicPrice) <= 0
+    ) {
+      continue;
+    }
+
+    const calculatedSpecialPrice = specialProgramPrice(
+      cost,
+      targetMargin,
+      sku,
+    );
+    const amount =
+      Math.round(
+        Math.min(calculatedSpecialPrice, Number(publicPrice)) * 100,
+      ) / 100;
 
     seenVariants.add(variantId);
     rows.push({
       variant_id: variantId,
       currency: "EUR",
       price_list_id: priceList.id,
-      amount: specialProgramPrice(cost, targetMargin, sku),
+      amount,
     });
   }
 
