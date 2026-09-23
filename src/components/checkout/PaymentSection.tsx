@@ -791,6 +791,10 @@ export function PaymentSection({
           const pmGatewayId = pm.session_required
             ? resolveGatewayId(pm.type)
             : null;
+          const normalizedMethodName = pm.name.trim().toLowerCase();
+          const isWalletMethod =
+            normalizedMethodName.includes("google pay") ||
+            normalizedMethodName.includes("amazon pay");
 
           return (
             <div key={pm.id}>
@@ -821,7 +825,7 @@ export function PaymentSection({
               )}
 
               {/* Sub-form for the selected method */}
-              {isSelected && (
+              {isSelected && !isWalletMethod && (
                 <div className="border-t border-gray-200 bg-white">
                   {pm.session_required ? (
                     <>
