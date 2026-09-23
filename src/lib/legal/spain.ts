@@ -9,7 +9,7 @@ export interface LocalLegalPolicy {
   local: true;
 }
 
-const LAST_UPDATED = "21 de septiembre de 2026";
+const LAST_UPDATED = "23 de septiembre de 2026";
 
 function escapeHtml(value: string): string {
   return value
@@ -95,8 +95,9 @@ const policies: Record<string, () => LocalLegalPolicy> = {
       <p>Si el paquete llega golpeado, falta algo o has recibido un artículo distinto, escríbenos cuanto antes a <strong>${contactEmail()}</strong>. Si puedes, adjunta fotos del embalaje y del producto: suelen acelerar bastante la gestión.</p>
       <p>No condicionamos tus derechos a avisar en 24 o 48 horas. Cuando el problema sea responsabilidad nuestra o exista una falta de conformidad, asumiremos los costes que legalmente correspondan.</p>
 
-      <h2>Dirección incorrecta o entrega fallida</h2>
-      <p>Revisa bien la dirección antes de confirmar el pedido. Si el transportista no puede entregar por una dirección incorrecta facilitada por el cliente o por no atender los intentos de entrega, podremos cobrar el coste razonable de un nuevo envío, informándolo antes.</p>
+      <h2>Dirección incorrecta, rechazo o entrega fallida</h2>
+      <p>Revisa bien la dirección antes de confirmar el pedido. Si el transportista no puede entregar por una dirección incorrecta facilitada por el cliente, por ausencia reiterada o por no atender los avisos razonables de entrega, podremos exigir el coste directo y acreditado de un nuevo envío si quieres que volvamos a expedir el pedido.</p>
+      <p>El rechazo del paquete o la falta de recogida no equivalen, por sí solos, a una declaración inequívoca de desistimiento. Si el paquete vuelve a nosotros y quieres desistir, comunícanoslo expresamente. En ese caso aplicaremos las reglas de desistimiento y, cuando proceda, los costes directos de devolución que legalmente correspondan.</p>
     `,
   }),
 
@@ -108,33 +109,57 @@ const policies: Record<string, () => LocalLegalPolicy> = {
     local: true,
     body_html: `
       <p><strong>Actualizado el ${LAST_UPDATED}</strong></p>
-      <p>Si quieres devolver un pedido o ha llegado con algún problema, escríbenos a <strong>${contactEmail()}</strong> con el número de pedido. Intentaremos resolverlo de la forma más sencilla posible.</p>
+      <p>Si quieres devolver un pedido o ha llegado con algún problema, escríbenos a <strong>${contactEmail()}</strong> con el número de pedido.</p>
 
-      <h2>Devoluciones por cambio de opinión</h2>
-      <p>En compras online, el consumidor dispone con carácter general de <strong>14 días naturales</strong> desde la recepción para comunicar que desiste de la compra, sin necesidad de dar un motivo.</p>
-      <p>Después de avisarnos, los artículos deben enviarse de vuelta sin demora indebida y dentro del plazo legal. En un desistimiento voluntario, el coste directo de la devolución corre a cargo del cliente salvo que indiquemos expresamente lo contrario.</p>
-      <p>Reembolsaremos las cantidades que correspondan por ley utilizando, salvo acuerdo distinto, el mismo medio de pago empleado en la compra. Podemos esperar a recibir los bienes o a que nos facilites una prueba de envío antes de efectuar el reembolso.</p>
+      <h2>Derecho legal de desistimiento: 14 días</h2>
+      <p>En las compras online realizadas por consumidores existe, con carácter general, un plazo de <strong>14 días naturales</strong> para comunicar el desistimiento sin necesidad de indicar un motivo. En la venta de bienes, el plazo empieza normalmente cuando tú o un tercero indicado por ti adquiere la posesión material del pedido, con las reglas especiales que legalmente correspondan cuando haya varios bienes o entregas.</p>
+      <p>Para ejercerlo basta con enviarnos, antes de que venza el plazo, una declaración inequívoca de que deseas desistir. Puedes escribir a <strong>${contactEmail()}</strong> o utilizar cualquier función de desistimiento online que tengamos habilitada en la tienda.</p>
+      <p>Después de comunicarnos el desistimiento, debes devolver los bienes sin demora indebida y, en todo caso, dentro de los <strong>14 días naturales</strong> siguientes.</p>
 
-      <h2>TCG, sobres, cajas y otros productos precintados</h2>
-      <p>En los productos coleccionables el precinto forma parte importante de su estado y de su valor. Si vas a ejercer el desistimiento, lo recomendable es devolverlos cerrados, completos y sin manipular.</p>
-      <p>Abrir una caja, un sobre, un display u otro producto sellado puede reducir de forma muy importante su valor comercial. Si la manipulación realizada va más allá de lo necesario para comprobar el producto, podremos tener en cuenta esa pérdida de valor al tramitar el desistimiento, en los términos permitidos por la normativa de consumo.</p>
-      <p>La apertura de un TCG no convierte por sí sola en defecto el contenido aleatorio del producto. No podemos garantizar cartas concretas, ratios de aparición, valor de mercado, posibilidades de reventa, una determinada nota de grading ni resultados que el fabricante no haya prometido expresamente.</p>
+      <h2>Coste de la devolución</h2>
+      <p>En un desistimiento por cambio de opinión, el <strong>coste directo de devolver los bienes corre a cargo del cliente</strong>. Si te ofrecemos de forma opcional una etiqueta o servicio de devolución prepagado y decides utilizarlo, podremos descontar de la cantidad a reembolsar su coste directo previamente informado. Esta regla no se aplica cuando la devolución se deba a un producto incorrecto, una falta de conformidad o una incidencia de la que legalmente debamos hacernos cargo.</p>
+      <p>No cobramos gastos de gestión, reposición ni penalizaciones por ejercer el derecho legal de desistimiento.</p>
 
-      <h2>Producto equivocado, dañado o con un defecto real</h2>
-      <p>Si te enviamos otro producto, llega dañado por una incidencia atribuible a la preparación o al transporte que gestionamos, o existe una falta de conformidad, los gastos necesarios para resolverlo no corren por tu cuenta.</p>
-      <p>En un producto coleccionable valoraremos el problema según lo que se vendió y anunció: edición, idioma, contenido declarado, estado del precinto y demás características objetivas. Las variaciones normales de fabricación o el resultado aleatorio propio de un sobre no se consideran, por sí solos, una falta de conformidad.</p>
+      <h2>Importe y forma del reembolso</h2>
+      <p>Reembolsaremos las cantidades que legalmente correspondan utilizando el mismo medio de pago empleado en la compra, salvo que acuerdes expresamente otro medio que no te genere gastos.</p>
+      <p>El reembolso incluye, cuando proceda, el coste de la modalidad de entrega ordinaria menos costosa que ofreciéramos al realizar la compra. Si elegiste expresamente un método de entrega más caro —por ejemplo, urgente o premium—, no estamos obligados a devolver la diferencia respecto del envío ordinario más económico.</p>
+      <p>Podremos retener el reembolso hasta haber recibido los bienes o hasta que nos facilites una prueba suficiente de su devolución, según qué ocurra primero.</p>
+
+      <h2>Estado del producto y disminución de valor</h2>
+      <p>Puedes examinar el producto del modo razonablemente necesario para comprobar su naturaleza, características y funcionamiento. Si lo manipulas más allá de lo necesario y esa manipulación causa una disminución real de valor, podrás ser responsable de dicha pérdida de valor.</p>
+      <p>La disminución se valorará de forma individual y atendiendo al estado real del artículo; no aplicamos automáticamente un porcentaje fijo. La falta de accesorios, componentes, manuales, regalos incluidos o embalajes que formen parte del valor comercial del producto podrá tenerse en cuenta únicamente en la medida en que produzca una depreciación real.</p>
+
+      <h2>TCG, sobres, cajas, displays y otros coleccionables precintados</h2>
+      <p>En los productos coleccionables, el precinto, el embalaje original y la condición de producto nuevo y sellado pueden constituir una parte esencial de su valor comercial. Abrir una caja, un sobre, un display u otro producto sellado no elimina automáticamente el derecho de desistimiento, pero puede provocar una <strong>depreciación sustancial</strong> si ya no puede comercializarse en condiciones equivalentes a las originales. Cuando proceda, esa disminución se calculará según la pérdida de valor efectivamente producida.</p>
+      <p>La apertura de un TCG no convierte por sí sola en defecto su contenido aleatorio. Salvo que la ficha del producto prometa expresamente otra cosa, no garantizamos cartas concretas, ratios de aparición, valor de mercado, posibilidades de reventa, una determinada calificación de grading ni resultados aleatorios del contenido.</p>
+
+      <h2>Devoluciones voluntarias después del plazo legal</h2>
+      <p>Salvo que una promoción o ficha de producto indique expresamente lo contrario, <strong>no ofrecemos un derecho contractual general de devolución por cambio de opinión una vez finalizado el plazo legal de desistimiento</strong>.</p>
+      <p>Si excepcionalmente aceptamos una devolución fuera de ese plazo, podremos fijar para esa devolución voluntaria condiciones específicas —por ejemplo, crédito en tienda—. Esas concesiones comerciales no reducen ni sustituyen los derechos legales que correspondan al consumidor.</p>
+
+      <h2>Producto equivocado, dañado o con falta de conformidad</h2>
+      <p>Si te enviamos un producto distinto, llega dañado por una incidencia atribuible a la preparación o al transporte que gestionamos, o existe una falta de conformidad, los gastos necesarios para aplicar la solución legal que corresponda no corren por tu cuenta.</p>
+      <p>En un producto coleccionable valoraremos la conformidad según lo que efectivamente se anunció y contrató: edición, idioma, contenido declarado, estado, precinto y demás características objetivas. Las variaciones normales de fabricación o el resultado aleatorio propio del producto no constituyen por sí solos una falta de conformidad.</p>
 
       <h2>Garantía legal</h2>
-      <p>Los bienes nuevos vendidos a consumidores están sujetos al régimen legal de conformidad vigente en España. Con carácter general, el vendedor responde de las faltas de conformidad que ya existieran al entregar el bien y se manifiesten dentro del plazo legal de <strong>tres años desde la entrega</strong>.</p>
-      <p>Esto también se aplica a un TCG vendido como producto nuevo y sellado, pero la garantía cubre defectos o incumplimientos respecto de lo contratado; no funciona como un seguro sobre el contenido aleatorio, el valor futuro del producto o el estado que pueda adquirir después de abrirlo, usarlo, almacenarlo o manipularlo.</p>
+      <p>Los bienes nuevos vendidos a consumidores están sujetos al régimen legal de conformidad vigente en España. Con carácter general, el vendedor responde de las faltas de conformidad que se manifiesten dentro del plazo legal de <strong>tres años desde la entrega</strong>.</p>
+      <p>La garantía cubre defectos o incumplimientos respecto de lo contratado; no funciona como un seguro sobre el contenido aleatorio de un producto, su valor futuro, una futura nota de grading ni daños o desgaste producidos después por apertura, uso, conservación o manipulación.</p>
       <p>Salvo que se indique expresamente en la ficha de un producto, no ofrecemos una garantía comercial adicional distinta de los derechos que reconoce la ley.</p>
 
       <h2>Excepciones al desistimiento</h2>
-      <p>Aplicaremos únicamente las excepciones previstas por la ley. Entre ellas están, por ejemplo, determinados productos personalizados, bienes que se deterioran rápidamente, productos precintados que no puedan devolverse por razones de salud o higiene después de abrirse y determinados contenidos o soportes precintados cuando la norma así lo establece.</p>
-      <p>No tratamos automáticamente un juego de mesa, un manga o un TCG como excluido del desistimiento por el simple hecho de venir precintado. Sí podremos valorar la depreciación producida por una apertura o manipulación que exceda de lo necesario para examinar el artículo.</p>
+      <p>Solo aplicaremos las excepciones legalmente previstas. Entre ellas pueden encontrarse determinados bienes confeccionados conforme a las especificaciones del consumidor o claramente personalizados, bienes que puedan deteriorarse o caducar con rapidez y determinados bienes precintados que, por razones de salud o higiene, no sean aptos para ser devueltos después de haber sido desprecintados.</p>
+      <p>No consideramos automáticamente excluido del desistimiento un juego de mesa, manga, TCG u otro artículo por el simple hecho de venir precintado. Cuando no exista una excepción legal, lo que podrá valorarse es la disminución real de valor causada por una manipulación superior a la necesaria para examinar el artículo.</p>
 
-      <h2>Cómo avisarnos</h2>
-      <p>No necesitas un formulario especial. Basta con escribir a <strong>${contactEmail()}</strong> indicando que quieres devolver el pedido o explicando la incidencia, junto con el número de pedido.</p>
+      <h2>Modelo de comunicación de desistimiento</h2>
+      <p>No es obligatorio utilizar este modelo, pero puedes copiarlo y enviarlo a <strong>${contactEmail()}</strong>:</p>
+      <blockquote>
+        <p>A la atención de <strong>${legalIdentity().businessName}</strong>${legalIdentity().address ? `, ${legalIdentity().address}` : ""}.</p>
+        <p>Por la presente comunico que desisto del contrato de venta relativo al siguiente bien o pedido: [producto / número de pedido].</p>
+        <p>Pedido el / recibido el: [fecha].</p>
+        <p>Nombre del consumidor: [nombre].</p>
+        <p>Domicilio del consumidor: [domicilio].</p>
+        <p>Fecha: [fecha].</p>
+      </blockquote>
     `,
   }),
 
@@ -183,38 +208,58 @@ const policies: Record<string, () => LocalLegalPolicy> = {
       <p><strong>Actualizado el ${LAST_UPDATED}</strong></p>
       ${identityHtml()}
 
-      <h2>Sobre estas condiciones</h2>
-      <p>Estas condiciones se aplican a las compras realizadas en ${legalIdentity().tradeName}. Queremos que se entiendan sin necesidad de traducir lenguaje jurídico: el producto, el precio, la disponibilidad, el envío y el pago que ves antes de confirmar el pedido forman parte de la compra.</p>
+      <h2>Ámbito de estas condiciones</h2>
+      <p>Estas condiciones se aplican a las compras realizadas por consumidores en ${legalIdentity().tradeName}. El producto, el precio, la disponibilidad, el envío y las demás condiciones concretas que se muestran antes de confirmar el pedido forman parte del contrato.</p>
+      <p>Los derechos reconocidos por la normativa de consumo son irrenunciables cuando resulten aplicables. Cualquier ventaja comercial adicional que podamos ofrecer se interpreta como una mejora voluntaria y no como una reducción de esos derechos.</p>
 
-      <h2>Cómo se hace un pedido</h2>
-      <p>Añades los productos al carrito, revisas cantidades, dirección, método de envío y forma de pago y, antes de confirmar, puedes corregir cualquier dato. El pedido se envía cuando pulsas el botón final que indica claramente que existe una obligación de pago.</p>
+      <h2>Cómo se realiza un pedido</h2>
+      <p>Añades los productos al carrito, revisas cantidades, dirección, método de envío y forma de pago y, antes de confirmar, puedes corregir los datos. El pedido se envía cuando pulsas el botón final que indica claramente que existe una obligación de pago.</p>
       <p>Después recibirás una confirmación por correo electrónico u otro soporte duradero. Conservaremos la información del pedido durante el tiempo necesario para gestionarlo y cumplir nuestras obligaciones legales.</p>
 
-      <h2>Precios</h2>
+      <h2>Precios, promociones y gastos</h2>
       <p>Los precios mostrados al consumidor incluyen los impuestos que correspondan. Los gastos de envío y cualquier otro coste aplicable se muestran antes de pagar. No añadimos servicios opcionales mediante casillas premarcadas.</p>
+      <p>Las promociones, cupones y descuentos estarán sujetos a las condiciones que se indiquen en cada caso. No serán acumulables cuando se informe expresamente de ello antes de la compra.</p>
 
-      <h2>Disponibilidad</h2>
+      <h2>Disponibilidad y límites de compra</h2>
       <p>La disponibilidad que aparece en la tienda es la referencia para saber si un producto puede comprarse en ese momento. Algunos artículos pueden tener un plazo de preparación distinto, que se indicará cuando sea relevante.</p>
-      <p>Si después de comprar se produce una incidencia de disponibilidad y no podemos servir un artículo, te avisaremos y devolveremos las cantidades correspondientes cuando proceda. No sustituiremos un producto por otro sin tu consentimiento.</p>
+      <p>Cuando una ficha, promoción o lanzamiento establezca un límite de unidades por cliente, cuenta, domicilio o pedido, podremos cancelar y reembolsar las unidades que excedan del límite o los pedidos que, de forma razonablemente acreditada, se hayan realizado para eludirlo.</p>
+      <p>Si después de comprar se produce una incidencia real de disponibilidad y no podemos servir un artículo, te informaremos y devolveremos las cantidades correspondientes sin demora indebida cuando proceda. No sustituiremos un producto por otro sin tu consentimiento.</p>
 
-      <h2>Errores evidentes</h2>
-      <p>Si hay un error técnico manifiesto en un precio, una descripción o una disponibilidad, lo revisaremos antes de enviar una prestación distinta de la razonablemente contratada. Si el error afecta al pedido, contactaremos contigo y respetaremos los derechos que te correspondan como consumidor.</p>
+      <h2>Preventas y fechas de lanzamiento</h2>
+      <p>Las fechas comunicadas por fabricantes, editoriales o distribuidores en preventas son estimaciones salvo que indiquemos expresamente que una fecha concreta constituye un compromiso de entrega. Esas fechas pueden cambiar por decisiones o incidencias de terceros.</p>
+      <p>Si un cambio afecta de forma relevante al plazo de entrega, te informaremos y respetaremos los derechos de cancelación o resolución que legalmente correspondan. Una modificación razonable de la fecha estimada de lanzamiento no altera por sí sola las características del producto reservado.</p>
 
-      <h2>Pago y seguridad</h2>
-      <p>Los métodos de pago disponibles aparecen durante el checkout. Algunas operaciones pueden pasar controles antifraude o de seguridad. Estos controles se utilizarán solo en la medida necesaria para proteger la operación.</p>
+      <h2>Errores manifiestos</h2>
+      <p>Tomamos medidas razonables para evitar errores de precio, descripción o disponibilidad. Si detectamos un error material y manifiesto que razonablemente resulte reconocible como tal, te contactaremos para aclararlo y, cuando la normativa lo permita, ofrecer la corrección o cancelar la parte afectada con reembolso íntegro de las cantidades cobradas. Esta cláusula no nos permite modificar unilateralmente una compra válida ni excluir derechos legales.</p>
 
-      <h2>Envíos, devoluciones y garantía</h2>
-      <p>Las condiciones prácticas están explicadas en nuestras páginas de Envíos y Devoluciones y garantía. En cualquier caso, prevalecen los derechos de consumo que sean legalmente irrenunciables.</p>
-      <p>En especial, vender un artículo coleccionable o TCG precintado no elimina la garantía legal por una falta de conformidad real. Al mismo tiempo, esa garantía no cubre resultados aleatorios, expectativas de valor, grading, desgaste o daños posteriores derivados de la apertura, uso o conservación del producto.</p>
+      <h2>Pago, autorización y prevención del fraude</h2>
+      <p>Los métodos de pago disponibles aparecen durante el checkout. Podemos realizar comprobaciones razonables de seguridad y prevención del fraude y, cuando exista un indicio objetivo de uso no autorizado o fraude, suspender la tramitación mientras verificamos la operación o cancelar el pedido con devolución de las cantidades cobradas cuando corresponda.</p>
+
+      <h2>Envíos y riesgo</h2>
+      <p>Los plazos, métodos y costes de entrega se detallan en la política de Envíos y en el checkout. Cuando decidamos dividir un pedido en varios envíos por razones operativas, no te cobraremos gastos adicionales que no hayas aceptado.</p>
+      <p>El rechazo del paquete o la falta de recogida no constituyen por sí solos una declaración de desistimiento. Si deseas desistir, debes comunicárnoslo de forma inequívoca.</p>
+
+      <h2>Desistimiento, devoluciones y coste de retorno</h2>
+      <p>El derecho legal de desistimiento y sus excepciones se explican en nuestra política de Devoluciones y garantía. En un desistimiento por cambio de opinión, y siempre que te hayamos informado previamente, <strong>el coste directo de devolver los bienes corre a cargo del consumidor</strong>.</p>
+      <p>Cuando proceda el reembolso de los gastos de entrega iniciales, la ley no obliga a devolver el sobrecoste de una modalidad de entrega más cara que la modalidad ordinaria menos costosa ofrecida. También podremos retener el reembolso hasta recibir los bienes o una prueba suficiente de su devolución, según proceda legalmente.</p>
+      <p>Salvo oferta expresa en contrario, no existe un derecho comercial adicional de devolución por cambio de opinión una vez vencido el plazo legal. Las devoluciones voluntarias que aceptemos excepcionalmente podrán quedar sujetas a condiciones específicas, incluido crédito en tienda, sin afectar a derechos legales.</p>
+
+      <h2>Productos coleccionables y contenido aleatorio</h2>
+      <p>En TCG y otros coleccionables, edición, idioma, condición, contenido declarado y estado del precinto forman parte de las características objetivas de la compra cuando así se anuncien. El contenido aleatorio de sobres, cajas o productos similares no garantiza cartas, ratios, valor de mercado, reventa o grading concretos salvo promesa expresa.</p>
+      <p>La apertura o manipulación de un producto sellado puede reducir sustancialmente su valor comercial. Cuando exista derecho de desistimiento, esa circunstancia no lo elimina por sí sola, pero podremos exigir la compensación de la disminución real de valor causada por una manipulación superior a la necesaria para examinar el bien.</p>
+
+      <h2>Garantía legal</h2>
+      <p>Los bienes vendidos a consumidores quedan sujetos al régimen legal de conformidad vigente. En productos nuevos, el plazo general de responsabilidad por faltas de conformidad es de <strong>tres años desde la entrega</strong>. Las soluciones y su orden de aplicación serán las previstas por la normativa vigente.</p>
+      <p>La garantía no cubre, por sí sola, expectativas subjetivas, fluctuaciones del valor de mercado, resultados aleatorios, grading futuro ni daños posteriores derivados de una conservación, apertura o uso inadecuados.</p>
 
       <h2>Cuenta de cliente</h2>
-      <p>Si creas una cuenta, procura que los datos sean correctos y protege tus credenciales. Podemos bloquear temporalmente una cuenta cuando existan indicios razonables de fraude o un problema de seguridad, procurando no afectar más de lo necesario a pedidos ya realizados.</p>
+      <p>Si creas una cuenta, procura que los datos sean correctos y protege tus credenciales. Podemos bloquear temporalmente una cuenta cuando existan indicios razonables de fraude o un problema de seguridad, procurando no afectar más de lo necesario a pedidos ya realizados ni a derechos legales.</p>
 
       <h2>Marcas, imágenes y contenidos</h2>
       <p>Las marcas, ilustraciones, fotografías y materiales de fabricantes y editoriales pertenecen a sus respectivos titulares. Los contenidos propios de la web también están protegidos por la normativa de propiedad intelectual.</p>
 
       <h2>Contacto y reclamaciones</h2>
-      <p>Para cualquier consulta o reclamación puedes escribir a <strong>${contactEmail()}</strong>. Indicar el número de pedido nos ayuda a localizar el caso más rápido.</p>
+      <p>Para cualquier consulta, desistimiento o reclamación puedes escribir a <strong>${contactEmail()}</strong>. Indicar el número de pedido nos ayuda a localizar el caso más rápido.</p>
 
       <h2>Ley aplicable</h2>
       <p>Estas condiciones se interpretan conforme a la legislación española, sin privar a un consumidor de la protección imperativa que le corresponda por su lugar de residencia. Los conflictos se resolverán ante los órganos que sean competentes conforme a la normativa aplicable.</p>
