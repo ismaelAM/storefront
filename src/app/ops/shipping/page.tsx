@@ -6,9 +6,10 @@ import {
   SHIPPING_OPERATIONS_SESSION_COOKIE,
 } from "@/lib/shipping/operations-auth";
 import { ShippingOperationsPanel } from "./ShippingOperationsPanel";
+import { SpecialPricingOperationsPanel } from "./SpecialPricingOperationsPanel";
 
 export const metadata: Metadata = {
-  title: "Envíos manuales | BisonTCG",
+  title: "Operaciones | BisonTCG",
   robots: {
     index: false,
     follow: false,
@@ -33,7 +34,7 @@ export default async function ShippingOperationsPage({
       <main className="min-h-screen bg-neutral-50 px-4 py-12">
         <div className="mx-auto max-w-xl rounded-2xl border border-amber-200 bg-white p-6 shadow-sm">
           <h1 className="text-xl font-semibold text-neutral-950">
-            Envíos manuales
+            Operaciones BisonTCG
           </h1>
           <p className="mt-3 text-sm leading-6 text-neutral-700">
             Falta configurar <code>SHIPPING_OPERATIONS_TOKEN</code> en el
@@ -50,7 +51,7 @@ export default async function ShippingOperationsPage({
       <main className="min-h-screen bg-neutral-50 px-4 py-12">
         <div className="mx-auto max-w-md rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
           <h1 className="text-xl font-semibold text-neutral-950">
-            Envíos manuales
+            Operaciones BisonTCG
           </h1>
           <p className="mt-2 text-sm leading-6 text-neutral-600">
             Acceso interno. Introduce la clave de operaciones de envío. La
@@ -102,11 +103,11 @@ export default async function ShippingOperationsPage({
               BisonTCG · Operaciones
             </p>
             <h1 className="mt-1 text-2xl font-semibold text-neutral-950">
-              Envíos manuales
+              Operaciones BisonTCG
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-600">
-              Guarda tracking y actualiza el estado del fulfillment en Spree.
-              Esta pantalla no crea envíos, etiquetas ni recogidas en Correos.
+              Centralita interna para controles operativos del storefront.
+              Envíos y programas especiales comparten esta sesión protegida.
             </p>
           </div>
 
@@ -121,7 +122,21 @@ export default async function ShippingOperationsPage({
           </form>
         </div>
 
-        <ShippingOperationsPanel />
+        <div className="space-y-6">
+          <SpecialPricingOperationsPanel />
+
+          <section>
+            <div className="mb-3">
+              <h2 className="text-lg font-semibold text-neutral-950">
+                Envíos manuales
+              </h2>
+              <p className="mt-1 text-sm text-neutral-600">
+                Tracking y estados de fulfillment en Spree.
+              </p>
+            </div>
+            <ShippingOperationsPanel />
+          </section>
+        </div>
       </div>
     </main>
   );
