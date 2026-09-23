@@ -4352,7 +4352,12 @@ function vatRateForSku(sku: string): number {
 function isBookProduct(product: DevirProduct, key: string): boolean {
   if (isBookSku(product.sku)) return true;
   if (!key.startsWith("rol/")) return false;
-  return /manual|gu[ií]a|libro|compendio|aventura|campaña|bestiario|suplemento|reglamento|pantalla de direcci[oó]n|d&d|dungeons|pathfinder|warhammer/i.test(
+
+  // Do not classify an entire RPG brand as a fixed-price book. D&D,
+  // Pathfinder and Warhammer also contain starter sets, screens, map packs,
+  // cards and other accessories with non-book EANs. Keep the fallback only
+  // for clearly editorial product names when an ISBN is unavailable.
+  return /manual|gu[ií]a|libro|compendio|aventura|campaña|bestiario|suplemento|reglamento/i.test(
     product.name,
   );
 }
