@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { getDefaultCountry, getDefaultLocale } from "@/lib/store";
 import { cookies } from "next/headers";
 import {
   hasShippingOperationsToken,
@@ -28,6 +29,7 @@ export default async function ShippingOperationsPage({
     cookieStore.get(SHIPPING_OPERATIONS_SESSION_COOKIE)?.value,
   );
   const query = await searchParams;
+  const puckEditorHref = `/${getDefaultCountry()}/${getDefaultLocale()}/editor`;
 
   if (!configured) {
     return (
@@ -111,15 +113,23 @@ export default async function ShippingOperationsPage({
             </p>
           </div>
 
-          <form action="/api/internal/shipping/session" method="post">
-            <input type="hidden" name="action" value="logout" />
-            <button
+          <div className="flex flex-wrap gap-2">
+            <a
               className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700"
-              type="submit"
+              href={puckEditorHref}
             >
-              Cerrar sesión
-            </button>
-          </form>
+              Abrir Puck
+            </a>
+            <form action="/api/internal/shipping/session" method="post">
+              <input type="hidden" name="action" value="logout" />
+              <button
+                className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700"
+                type="submit"
+              >
+                Cerrar sesión
+              </button>
+            </form>
+          </div>
         </div>
 
         <div className="space-y-6">
