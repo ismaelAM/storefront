@@ -5584,104 +5584,38 @@ async function verifyDevirBatch(
 async function repairCategoryTreeAndMembership(config: ConfigRow): Promise<{
   categories: Array<{ id: string; name: string; permalink?: string }>;
   products_assigned: number;
+  canonical_keys_updated: number;
   conflicts: number;
+  missing_categories: number;
 }> {
+  // Keep the repair path aligned with the canonical category setup. The old
+  // implementation predated the RPG subcategories and treated "Rol" itself
+  // as a leaf, which left D&D/Pathfinder products outside their visible nodes.
+  await setupCatalogCategoriesAndMargins(config);
   const categories = await spreeCategories(config);
-  const juegos = await ensureCategory(
-    config,
-    categories,
-    "Juegos de mesa",
-    "juegos-de-mesa",
-  );
-  const warhammer = await ensureCategory(
-    config,
-    categories,
-    "Warhammer",
-    "warhammer",
-  );
-  const tcg = await ensureCategory(config, categories, "TCG", "tcg");
-  const mtg = await ensureCategory(config, categories, "MTG", "tcg/mtg");
-  const yugioh = await ensureCategory(
-    config,
-    categories,
-    "Yugioh",
+  const managedKeys = [
+    "juegos-de-mesa/general",
+    "juegos-de-mesa/expansiones",
+    "juegos-de-mesa/infantil",
+    "rol/dungeons-dragons",
+    "rol/pathfinder",
+    "rol/warhammer",
+    "rol/otros",
+    "tcg/mtg",
     "tcg/yugioh",
-  );
-  const rol = await ensureCategory(config, categories, "Rol", "rol");
-  const manga = await ensureCategory(
-    config,
-    categories,
-    "Manga y cómic",
     "manga-comic",
-  );
-  const accesorios = await ensureCategory(
-    config,
-    categories,
-    "Accesorios",
     "accesorios",
-  );
-
-  // Only move nodes whose parent is actually wrong. Repositioning an
-  // already-correct child can be rejected by Spree as a self/tree move.
-  const roots = [juegos, warhammer, tcg, rol, manga, accesorios];
-  for (let position = 0; position < roots.length; position += 1) {
-    if (roots[position].parent_id == null) continue;
-    await spreeRequest(
-      config,
-      "PATCH",
-      "/categories/" + encodeURIComponent(roots[position].id) + "/reposition",
-      { new_parent_id: null, new_position: position },
-    );
-  }
-  for (const [position, child] of [mtg, yugioh].entries()) {
-    if (child.parent_id === tcg.id) continue;
-    await spreeRequest(
-      config,
-      "PATCH",
-      "/categories/" + encodeURIComponent(child.id) + "/reposition",
-      { new_parent_id: tcg.id, new_position: position },
-    );
-  }
-
-  for (const [permalink, margin] of Object.entries(DEFAULT_CATEGORY_MARGINS)) {
-    const category = categories.find((item) => item.permalink === permalink);
-    if (category) await setCategoryMargin(config, category, margin);
-  }
+  ];
+  const managedCategories = managedKeys.flatMap((key) => {
+    const category = categoryForKey(categories, key);
+    return category ? [category] : [];
+  });
 
   const { data, error } = await supabase
     .from("devir_sync_catalog")
     .select("supplier_sku,name,source_url,spree_product_id")
     .not("spree_product_id", "is", null);
   if (error) throw error;
-
-  const allProductIds = Array.from(
-    new Set(
-      (data ?? [])
-        .map((row) => String(row.spree_product_id ?? ""))
-        .filter(Boolean),
-    ),
-  );
-  const leafCategories = [
-    juegos,
-    warhammer,
-    mtg,
-    yugioh,
-    rol,
-    manga,
-    accesorios,
-  ];
-
-  // Remove only Devir-managed product memberships, then rebuild deterministically.
-  for (const category of leafCategories) {
-    for (let index = 0; index < allProductIds.length; index += 80) {
-      await spreeRequest(
-        config,
-        "DELETE",
-        "/categories/" + encodeURIComponent(category.id) + "/products",
-        { product_ids: allProductIds.slice(index, index + 80) },
-      );
-    }
-  }
 
   const productKeys = new Map<string, Set<string>>();
   for (const row of data ?? []) {
@@ -5703,11 +5637,10 @@ async function repairCategoryTreeAndMembership(config: ConfigRow): Promise<{
     productKeys.set(productId, set);
   }
 
-  const byPermalink = new Map(
-    leafCategories.map((category) => [category.permalink, category]),
-  );
-  const memberships = new Map<string, string[]>();
+  let productsAssigned = 0;
+  let canonicalKeysUpdated = 0;
   let conflicts = 0;
+  let missingCategories = 0;
 
   for (const [productId, keys] of productKeys) {
     if (keys.size !== 1) {
@@ -5721,36 +5654,44 @@ async function repairCategoryTreeAndMembership(config: ConfigRow): Promise<{
         .eq("spree_product_id", productId);
       continue;
     }
-    const key = Array.from(keys)[0];
-    const category = byPermalink.get(key);
-    if (!category) continue;
-    const list = memberships.get(category.id) ?? [];
-    list.push(productId);
-    memberships.set(category.id, list);
-  }
 
-  let productsAssigned = 0;
-  for (const [categoryId, productIds] of memberships) {
-    for (let index = 0; index < productIds.length; index += 80) {
-      const chunk = productIds.slice(index, index + 80);
-      await spreeRequest(
-        config,
-        "POST",
-        "/categories/" + encodeURIComponent(categoryId) + "/products",
-        { product_ids: chunk },
-      );
-      productsAssigned += chunk.length;
+    const key = Array.from(keys)[0];
+    const category = categoryForKey(categories, key);
+    if (!category) {
+      missingCategories += 1;
+      continue;
     }
+
+    await spreeRequest(
+      config,
+      "PATCH",
+      "/products/" + encodeURIComponent(productId),
+      { category_ids: [category.id] },
+    );
+    productsAssigned += 1;
+
+    const { data: updatedProducts, error: canonicalUpdateError } = await supabase
+      .from("catalog_products")
+      .update({
+        category_key: key,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("spree_product_id", productId)
+      .select("id");
+    if (canonicalUpdateError) throw canonicalUpdateError;
+    canonicalKeysUpdated += updatedProducts?.length ?? 0;
   }
 
   return {
-    categories: leafCategories.map((item) => ({
+    categories: managedCategories.map((item) => ({
       id: item.id,
       name: item.name,
       permalink: item.permalink,
     })),
     products_assigned: productsAssigned,
+    canonical_keys_updated: canonicalKeysUpdated,
     conflicts,
+    missing_categories: missingCategories,
   };
 }
 
