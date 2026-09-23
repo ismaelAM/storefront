@@ -54,8 +54,8 @@ export default async function ShippingOperationsPage({
             Operaciones BisonTCG
           </h1>
           <p className="mt-2 text-sm leading-6 text-neutral-600">
-            Acceso interno. Introduce la clave de operaciones de envío. La
-            sesión dura hasta 8 horas.
+            Acceso interno. Introduce la clave de operaciones. La sesión dura hasta
+            8 horas.
           </p>
 
           {query.error ? (
