@@ -1554,6 +1554,7 @@ async function upsertVariantProvenance(
 interface SpreeStockItem {
   id: string;
   variant_id?: string | null;
+  stock_location_id?: string | null;
   count_on_hand?: number;
   backorderable?: boolean;
 }
@@ -1629,11 +1630,116 @@ async function patchVariantInventory(
       },
     );
   }
+  if (updated.backorderable !== backorderable) {
+    await setVariantBackorderability(
+      config,
+      productId,
+      variantId,
+      backorderable,
+    );
+    updated = await spreeRequest<SpreeVariant>(
+      config,
+      "GET",
+      "/products/" +
+        encodeURIComponent(productId) +
+        "/variants/" +
+        encodeURIComponent(variantId),
+    );
+  }
   return updated;
+}
+
+async function stockItemsForVariant(
+  config: ConfigRow,
+  variantId: string,
+): Promise<SpreeStockItem[]> {
+  const attempts = [
+    "/stock_items?q[variant_id_eq]=" + encodeURIComponent(variantId),
+    "/stock_items?q[variant_prefixed_id_eq]=" + encodeURIComponent(variantId),
+  ];
+  for (const path of attempts) {
+    try {
+      const items = await spreeList<SpreeStockItem>(config, path);
+      if (items.length) return items;
+    } catch {
+      // Compatibility fallback between Spree versions.
+    }
+  }
+
+  const all = await spreeListAll<SpreeStockItem>(config, "/stock_items");
+  return all.filter((item) => item.variant_id === variantId);
+}
+
+async function setVariantBackorderability(
+  config: ConfigRow,
+  productId: string | null,
+  variantId: string,
+  desired: boolean,
+): Promise<number> {
+  let items = await stockItemsForVariant(config, variantId);
+  let mismatched = items.filter((item) => item.backorderable !== desired);
+  if (!mismatched.length) return 0;
+
+  // Prefer the ordinary stock-item update. Some hosted Spree 5.x builds return
+  // 200 here but silently keep the old backorderable value, so verify it.
+  for (const item of mismatched) {
+    await spreeRequest(config, "PATCH", "/stock_items/" + item.id, {
+      backorderable: desired,
+    });
+  }
+  items = await stockItemsForVariant(config, variantId);
+  mismatched = items.filter((item) => item.backorderable !== desired);
+  if (!mismatched.length) return 1;
+  if (!productId) {
+    throw new Error(
+      "Spree no aplicó backorderable y falta productId para recrear inventario",
+    );
+  }
+
+  const inventory = items.map((item) => {
+    const stockLocationId = String(item.stock_location_id ?? "");
+    if (!stockLocationId) {
+      throw new Error("Stock item sin stock_location_id: " + item.id);
+    }
+    return {
+      stock_location_id: stockLocationId,
+      count_on_hand: Math.max(0, Number(item.count_on_hand ?? 0)),
+      backorderable: desired,
+    };
+  });
+
+  // Compatibility fallback: on the affected Spree build, updating the boolean
+  // of an existing stock item is ignored. Recreating only the mismatched rows
+  // through Variant#stock_items= persists the flag while preserving real stock.
+  for (const item of mismatched) {
+    await spreeRequest(config, "DELETE", "/stock_items/" + item.id);
+  }
+  await spreeRequest(
+    config,
+    "PATCH",
+    "/products/" +
+      encodeURIComponent(productId) +
+      "/variants/" +
+      encodeURIComponent(variantId),
+    {
+      track_inventory: true,
+      stock_items: inventory,
+    },
+  );
+
+  const verified = await stockItemsForVariant(config, variantId);
+  if (
+    verified.length !== inventory.length ||
+    verified.some((item) => item.backorderable !== desired)
+  ) {
+    throw new Error("Spree no dejó el inventario con backorderable=" + desired);
+  }
+  return mismatched.length;
 }
 
 async function syncBackorderability(
   config: ConfigRow,
+  productId: string | null,
   variantId: string | null,
   availability: DevirProduct["availability"],
   fulfillmentMode: CatalogFulfillmentMode = "supplier_or_physical",
@@ -1643,33 +1749,12 @@ async function syncBackorderability(
     availability,
     fulfillmentMode,
   });
-  const attempts = [
-    "/stock_items?q[variant_id_eq]=" + encodeURIComponent(variantId),
-    "/stock_items?q[variant_prefixed_id_eq]=" + encodeURIComponent(variantId),
-  ];
-  let items: SpreeStockItem[] = [];
-  for (const path of attempts) {
-    try {
-      items = await spreeList<SpreeStockItem>(config, path);
-      if (items.length) break;
-    } catch {
-      // Compatibility fallback between Spree versions.
-    }
-  }
-  if (!items.length) {
-    const all = await spreeList<SpreeStockItem>(config, "/stock_items");
-    items = all.filter((item) => item.variant_id === variantId);
-  }
-
-  let changed = 0;
-  for (const item of items) {
-    if (item.backorderable === desired) continue;
-    await spreeRequest(config, "PATCH", "/stock_items/" + item.id, {
-      backorderable: desired,
-    });
-    changed += 1;
-  }
-  return changed;
+  return await setVariantBackorderability(
+    config,
+    productId,
+    variantId,
+    desired,
+  );
 }
 
 async function enforceVariantFulfillmentFlags(
@@ -1681,6 +1766,7 @@ async function enforceVariantFulfillmentFlags(
 ): Promise<number> {
   const changed = await syncBackorderability(
     config,
+    productId,
     variantId,
     availability,
     fulfillmentMode,
@@ -3162,6 +3248,7 @@ async function syncProductToSpree(
 
   let backorderItems = await syncBackorderability(
     config,
+    productId,
     variantId,
     product.availability,
     fulfillmentMode,
@@ -10976,7 +11063,7 @@ async function finishCycle(config: ConfigRow, cycleId: string): Promise<void> {
 
   const { data: missingRows, error: missingReadError } = await supabase
     .from("devir_sync_catalog")
-    .select("supplier_sku,missing_cycles,spree_variant_id")
+    .select("supplier_sku,missing_cycles,spree_product_id,spree_variant_id")
     .or(`last_seen_cycle_id.is.null,last_seen_cycle_id.neq.${cycleId}`);
   if (missingReadError) throw missingReadError;
 
@@ -11015,7 +11102,12 @@ async function finishCycle(config: ConfigRow, cycleId: string): Promise<void> {
         if (offer.variant_id) affectedVariantIds.add(String(offer.variant_id));
       }
       if (!retiredOffers?.length && row.spree_variant_id) {
-        await syncBackorderability(config, row.spree_variant_id, "unavailable");
+        await syncBackorderability(
+          config,
+          row.spree_product_id ? String(row.spree_product_id) : null,
+          String(row.spree_variant_id),
+          "unavailable",
+        );
       }
     }
   }
