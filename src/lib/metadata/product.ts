@@ -110,7 +110,7 @@ export async function generateProductMetadata({
         : {}),
       "product:availability": product.preorder
         ? "preorder"
-        : product.in_stock
+        : product.purchasable
           ? "in stock"
           : "out of stock",
       ...(product.default_variant?.sku
