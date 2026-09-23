@@ -791,13 +791,6 @@ export function PaymentSection({
           const pmGatewayId = pm.session_required
             ? resolveGatewayId(pm.type)
             : null;
-          const normalizedMethodName = pm.name.trim().toLowerCase();
-          const isWalletMethod =
-            normalizedMethodName.includes("google pay") ||
-            normalizedMethodName.includes("amazon pay");
-          const showSelectedDetails =
-            pm.session_required || Boolean(pm.description) || !isWalletMethod;
-
           return (
             <div key={pm.id}>
               {/* Method header row */}
@@ -827,7 +820,7 @@ export function PaymentSection({
               )}
 
               {/* Sub-form for the selected method */}
-              {isSelected && showSelectedDetails && (
+              {isSelected && (
                 <div className="border-t bg-gray-50">
                   {pm.session_required ? (
                     <>
@@ -1013,11 +1006,9 @@ export function PaymentSection({
                           {pm.description}
                         </p>
                       )}
-                      {!isWalletMethod && (
-                        <p className="text-sm text-gray-500">
-                          {t("manualPaymentInfo")}
-                        </p>
-                      )}
+                      <p className="text-sm text-gray-500">
+                        {t("manualPaymentInfo")}
+                      </p>
                     </div>
                   )}
                 </div>
