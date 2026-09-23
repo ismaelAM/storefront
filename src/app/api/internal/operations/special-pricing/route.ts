@@ -33,10 +33,15 @@ async function programSnapshot() {
     : 0;
   const updatedAt = new Date(program.updated_at).getTime();
 
+  const oneDay = 24 * 60 * 60 * 1000;
+
   return {
     program,
     requests: requests ?? [],
-    pricesNeedSync: !lastSyncedAt || updatedAt > lastSyncedAt + 1000,
+    pricesNeedSync:
+      !lastSyncedAt ||
+      updatedAt > lastSyncedAt + 1000 ||
+      Date.now() - lastSyncedAt > oneDay,
   };
 }
 
@@ -146,9 +151,13 @@ export async function POST(request: Request) {
       }
 
       if (action === "approve") {
-        // One-click approval also refreshes the price rows first so an account
-        // never receives a stale BISON3 price list after a margin/cost change.
-        await callPricingAction("special-pricing-setup");
+        // Keep approval one-click, but avoid repricing the whole catalog on
+        // every account. Refresh when the program changed or the list is old
+        // enough that supplier costs may have moved.
+        const current = await programSnapshot();
+        if (current.pricesNeedSync) {
+          await callPricingAction("special-pricing-setup");
+        }
       }
 
       await callPricingAction(
