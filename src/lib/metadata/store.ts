@@ -6,6 +6,7 @@ import {
   getMarketLocales,
 } from "@/i18n/markets";
 import { getMarkets } from "@/lib/data/markets";
+import { validateMetadataRoute } from "@/lib/metadata/validate-route";
 import { SOCIAL_IMAGE_PATH } from "@/lib/seo";
 import {
   getStoreMetaDescription,
@@ -74,6 +75,7 @@ export async function generateStoreMetadata({
   locale,
   country,
 }: StoreMetadataParams): Promise<Metadata> {
+  validateMetadataRoute(country, locale);
   const storeName = getStoreSeoTitle();
   const storeUrl = getStoreUrl();
   const metaDescription = getStoreMetaDescription();

@@ -46,21 +46,30 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
 
-  const event = JSON.parse(payload) as {
-    type?: string;
-    data?: { object?: { id?: string } };
+  let event: {
+    type?: unknown;
+    data?: { object?: { id?: unknown } };
   };
+  try {
+    event = JSON.parse(payload);
+    if (!event || typeof event.type !== "string") {
+      return NextResponse.json({ error: "Invalid event" }, { status: 400 });
+    }
+  } catch {
+    return NextResponse.json({ error: "Invalid event" }, { status: 400 });
+  }
 
   if (event.type === "payment_intent.succeeded") {
     const paymentIntentId = event.data?.object?.id;
-    if (paymentIntentId) {
-      try {
-        const intent = await getStripePaymentIntent(paymentIntentId);
-        await reconcileStripePaymentToSpree(intent);
-      } catch (error) {
-        console.error("Stripe webhook reconciliation failed", error);
-        return NextResponse.json({ error: "Reconciliation failed" }, { status: 500 });
-      }
+    if (typeof paymentIntentId !== "string" || !paymentIntentId) {
+      return NextResponse.json({ error: "Missing payment intent" }, { status: 400 });
+    }
+    try {
+      const intent = await getStripePaymentIntent(paymentIntentId);
+      await reconcileStripePaymentToSpree(intent);
+    } catch (error) {
+      console.error("Stripe webhook reconciliation failed", error);
+      return NextResponse.json({ error: "Reconciliation failed" }, { status: 500 });
     }
   }
 

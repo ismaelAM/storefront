@@ -2,7 +2,7 @@
 
 import type { ProductListParams } from "@spree/sdk";
 
-const CATALOG_CACHE_VERSION = "2026-09-21-vat27-manga-redirect-v5";
+const CATALOG_CACHE_VERSION = "2026-09-23-customer-pricing-v6";
 import { cacheLife, cacheTag } from "next/cache";
 import {
   cacheTagSuffix,
@@ -20,8 +20,8 @@ import {
  * - locale/country: determines language and market-specific pricing
  * - surface: DTC vs wholesale — different catalog + channel pricing. Baked
  *   into both the cache tag and the arguments so the two never share entries.
- * - userToken: per-user cache segmentation (separate arg, NOT passed to
- *   SDK). Authenticated users may see different prices (B2B, loyalty).
+ * - userToken: per-user cache segmentation and authenticated SDK pricing.
+ *   Authenticated users may see different prices (B2B, loyalty).
  *   Each user's JWT is unique so the cache is segmented per user.
  *   Guest users pass undefined. On the wholesale surface the token is
  *   always present — the channel 401s guests.
@@ -39,10 +39,8 @@ export async function cachedListProducts(
   cacheTag(`products${cacheTagSuffix(surface)}`);
   return getClientForSurface(surface).products.list(params, {
     ...options,
-    // Wholesale catalog requires the customer JWT — the channel is gated.
-    ...(surface === "wholesale" && userToken
-      ? { token: userToken }
-      : undefined),
+    // Spree resolves customer-specific prices on both storefront surfaces.
+    ...(userToken ? { token: userToken } : undefined),
   });
 }
 
@@ -67,8 +65,8 @@ export async function getProducts(
  * - slugOrId, expand: identify the product and response shape
  * - locale/country: determines language and market-specific pricing
  * - surface: DTC vs wholesale — see cachedListProducts
- * - userToken: per-user cache segmentation (separate arg, NOT passed to
- *   SDK). Authenticated users may see different prices (B2B, loyalty).
+ * - userToken: per-user cache segmentation and authenticated SDK pricing.
+ *   Authenticated users may see different prices (B2B, loyalty).
  *   Guest users pass undefined, so all guests share one entry.
  */
 export async function cachedGetProduct(
@@ -91,9 +89,7 @@ export async function cachedGetProduct(
     { expand },
     {
       ...options,
-      ...(surface === "wholesale" && userToken
-        ? { token: userToken }
-        : undefined),
+      ...(userToken ? { token: userToken } : undefined),
     },
   );
 }
@@ -128,9 +124,7 @@ async function cachedGetProductFilters(
   cacheTag(`product-filters${cacheTagSuffix(surface)}`);
   return getClientForSurface(surface).products.filters(params, {
     ...options,
-    ...(surface === "wholesale" && userToken
-      ? { token: userToken }
-      : undefined),
+    ...(userToken ? { token: userToken } : undefined),
   });
 }
 

@@ -61,15 +61,8 @@ export async function finalizeStripeLivePayment(
       throw new Error("El pago no pertenece a este pedido");
     }
 
-    const expected = amountInMinorUnits(cart.amount_due ?? cart.total);
-    if (
-      intent.status !== "succeeded" ||
-      intent.amount !== expected ||
-      intent.currency.toLowerCase() !== cart.currency.toLowerCase()
-    ) {
-      throw new Error("Stripe todavía no confirma el cobro correcto");
-    }
-
+    // Reconciliation validates the authoritative Admin order and its recorded
+    // payments. The storefront balance may already be zero after a webhook.
     const order = await reconcileStripePaymentToSpree(intent);
     return { order };
   }, "No se pudo reconciliar el pago con Spree");

@@ -257,6 +257,17 @@ describe("customer server actions", () => {
   });
 
   describe("login", () => {
+    it.each([429, 503, 403, 404])("handles cart association HTTP %s without undoing login", async (status) => {
+      const { getCartToken, getCartId, clearCartCookies } = await import("@/lib/spree");
+      vi.mocked(getCartToken).mockResolvedValueOnce("guest-token");
+      vi.mocked(getCartId).mockResolvedValueOnce("cart-1");
+      mockClient.auth.login.mockResolvedValueOnce({ token: "jwt", refresh_token: "rt", user: mockUser });
+      mockClient.carts.associate.mockRejectedValueOnce(Object.assign(new Error("Association failed"), { status }));
+
+      expect(await login("test@example.com", "password123")).toEqual({ success: true, user: mockUser });
+      expect(clearCartCookies).toHaveBeenCalledTimes(status === 403 || status === 404 ? 1 : 0);
+    });
+
     it("logs in and returns user", async () => {
       mockClient.auth.login.mockResolvedValue({
         token: "jwt",

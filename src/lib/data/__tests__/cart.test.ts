@@ -84,6 +84,19 @@ describe("cart server actions", () => {
   });
 
   describe("getCart", () => {
+    it("keeps the guest token when Spree has a transient outage", async () => {
+      const { clearCartCookies } = await import("@/lib/spree");
+      mockClient.carts.get.mockRejectedValue(Object.assign(new Error("Unavailable"), { status: 503 }));
+      await expect(getCart()).rejects.toThrow("Unavailable");
+      expect(clearCartCookies).not.toHaveBeenCalled();
+    });
+
+    it("clears a cookie only when the cart is confirmed missing", async () => {
+      const { clearCartCookies } = await import("@/lib/spree");
+      mockClient.carts.get.mockRejectedValue(Object.assign(new Error("Not found"), { status: 404 }));
+      expect(await getCart()).toBeNull();
+      expect(clearCartCookies).toHaveBeenCalledWith("dtc");
+    });
     it("fetches cart by ID and token", async () => {
       mockClient.carts.get.mockResolvedValue(mockCart);
       const result = await getCart();
@@ -142,6 +155,11 @@ describe("cart server actions", () => {
   });
 
   describe("getOrCreateCart", () => {
+    it("does not replace an existing cart when Spree rate limits its lookup", async () => {
+      mockClient.carts.get.mockRejectedValue(Object.assign(new Error("Rate limited"), { status: 429 }));
+      await expect(getOrCreateCart()).rejects.toThrow("Rate limited");
+      expect(mockClient.carts.create).not.toHaveBeenCalled();
+    });
     it("returns existing cart if found", async () => {
       mockClient.carts.get.mockResolvedValue(mockCart);
       const result = await getOrCreateCart();
@@ -277,6 +295,22 @@ describe("cart server actions", () => {
   });
 
   describe("associateCartWithUser", () => {
+    it.each([429, 503])("preserves the guest cart on association HTTP %s", async (status) => {
+      const { getAccessToken, clearCartCookies } = await import("@/lib/spree");
+      vi.mocked(getAccessToken).mockResolvedValueOnce("jwt-token");
+      mockClient.carts.associate.mockRejectedValueOnce(Object.assign(new Error("Temporary failure"), { status }));
+      expect(await associateCartWithUser()).toEqual({ success: false, error: "Temporary failure" });
+      expect(clearCartCookies).not.toHaveBeenCalled();
+    });
+
+    it.each([403, 404])("clears inaccessible cart on association HTTP %s", async (status) => {
+      const { getAccessToken, clearCartCookies } = await import("@/lib/spree");
+      vi.mocked(getAccessToken).mockResolvedValueOnce("jwt-token");
+      mockClient.carts.associate.mockRejectedValueOnce(Object.assign(new Error("Inaccessible"), { status }));
+      expect(await associateCartWithUser()).toEqual({ success: true });
+      expect(clearCartCookies).toHaveBeenCalledWith("dtc");
+    });
+
     it("returns success", async () => {
       const { getAccessToken } = await import("@/lib/spree");
       (getAccessToken as ReturnType<typeof vi.fn>).mockResolvedValue(

@@ -21,7 +21,7 @@ import {
   setRefreshToken,
   withAuthRefresh,
 } from "@/lib/spree";
-import { actionResult } from "./utils";
+import { actionResult, isCartAccessError } from "./utils";
 
 /**
  * Fetch the current customer with automatic token refresh. Throws on any
@@ -48,9 +48,10 @@ async function finalizeAuth(token: string, refreshToken: string) {
         token,
         spreeToken: cartToken,
       });
-    } catch {
-      // Cart belongs to another user or is invalid — clear stale cookies
-      await clearCartCookies();
+    } catch (error) {
+      // Login succeeded. Keep the guest cart through temporary association
+      // failures; only discard credentials confirmed missing or inaccessible.
+      if (isCartAccessError(error)) await clearCartCookies();
     }
   }
 

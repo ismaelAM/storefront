@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockClient = {
+  orders: { get: vi.fn() },
   carts: {
     get: vi.fn(),
     list: vi.fn(),
@@ -51,14 +52,22 @@ const mockOrder = {
   id: "cart-1",
   number: "R100",
   current_step: "complete",
+  completed_at: "2026-09-23T00:00:00Z",
 };
 
 describe("payment server actions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockClient.orders.get.mockResolvedValue(null);
   });
 
   describe("createCheckoutPaymentSession", () => {
+    it("creates a session for the requested checkout when the cookie points elsewhere", async () => {
+      mockClient.carts.paymentSessions.create.mockResolvedValueOnce(mockSession);
+      await createCheckoutPaymentSession("cart-previous", "pm-1");
+      expect(mockClient.carts.paymentSessions.create).toHaveBeenCalledWith("cart-previous", { payment_method_id: "pm-1" }, expect.any(Object));
+    });
+
     it("returns success with session", async () => {
       mockClient.carts.paymentSessions.create.mockResolvedValue(mockSession);
 
@@ -151,7 +160,7 @@ describe("payment server actions", () => {
       expect(result).toEqual({ success: true, order: mockOrder });
     });
 
-    it("treats 403 as success (order already completed)", async () => {
+    it("does not report a forbidden checkout as completed without an order", async () => {
       const spreeError = Object.assign(new Error("Not authorized"), {
         status: 403,
       });
@@ -159,10 +168,10 @@ describe("payment server actions", () => {
 
       const result = await completeCheckoutOrder("cart-1");
 
-      expect(result).toEqual({ success: true, order: null });
+      expect(result).toEqual({ success: false, error: "Not authorized" });
     });
 
-    it("treats 422 as success (state_lock_version conflict)", async () => {
+    it("does not report a validation failure as completed without an order", async () => {
       const spreeError = Object.assign(new Error("Unprocessable Content"), {
         status: 422,
       });
@@ -170,7 +179,19 @@ describe("payment server actions", () => {
 
       const result = await completeCheckoutOrder("cart-1");
 
-      expect(result).toEqual({ success: true, order: null });
+      expect(result).toEqual({ success: false, error: "Unprocessable Content" });
+    });
+
+    it.each([403, 409, 422])("recovers a concurrently completed order after HTTP %s", async (status) => {
+      mockClient.carts.complete.mockRejectedValue(Object.assign(new Error("Conflict"), { status }));
+      mockClient.orders.get.mockResolvedValue(mockOrder);
+      expect(await completeCheckoutOrder("cart-1")).toEqual({ success: true, order: mockOrder });
+    });
+
+    it("rejects an order that is still in checkout", async () => {
+      mockClient.carts.complete.mockRejectedValue(Object.assign(new Error("Payment required"), { status: 422 }));
+      mockClient.orders.get.mockResolvedValue({ id: "cart-1", completed_at: null });
+      expect(await completeCheckoutOrder("cart-1")).toEqual({ success: false, error: "Payment required" });
     });
 
     it("returns error on non-403 failure", async () => {
@@ -196,6 +217,14 @@ describe("payment server actions", () => {
   });
 
   describe("confirmPaymentAndCompleteCart", () => {
+    it("confirms the returning checkout's session when another cart is in the cookie", async () => {
+      mockClient.carts.get.mockResolvedValueOnce({ id: "cart-previous", current_step: "payment" });
+      mockClient.carts.paymentSessions.complete.mockResolvedValueOnce({ status: "completed" });
+      mockClient.carts.complete.mockResolvedValueOnce({ ...mockOrder, id: "cart-previous" });
+      expect((await confirmPaymentAndCompleteCart("cart-previous", "session-old")).success).toBe(true);
+      expect(mockClient.carts.paymentSessions.complete).toHaveBeenCalledWith("cart-previous", "session-old", undefined, expect.any(Object));
+    });
+
     it("passes cartId to getCart for explicit lookup", async () => {
       mockClient.carts.get.mockResolvedValue({
         id: "cart-1",
@@ -283,13 +312,13 @@ describe("payment server actions", () => {
       expect(result).toEqual({ success: true, order: mockOrder });
     });
 
-    it("returns success when cart is not found (already completed by webhook)", async () => {
+    it("returns an error when neither cart nor completed order can be verified", async () => {
       mockClient.carts.get.mockRejectedValue(new Error("Not found"));
 
       const result = await confirmPaymentAndCompleteCart("cart-1", "session-1");
 
       expect(mockClient.carts.complete).not.toHaveBeenCalled();
-      expect(result).toEqual({ success: true, order: null });
+      expect(result.success).toBe(false);
     });
 
     it("returns error when complete throws non-403 error", async () => {
@@ -309,7 +338,7 @@ describe("payment server actions", () => {
       });
     });
 
-    it("treats 403 from complete as success (order already completed)", async () => {
+    it("preserves a 403 from completion when no completed order exists", async () => {
       mockClient.carts.get.mockResolvedValue({
         id: "cart-1",
         current_step: "payment",
@@ -321,17 +350,21 @@ describe("payment server actions", () => {
 
       const result = await confirmPaymentAndCompleteCart("cart-1");
 
-      expect(result).toEqual({ success: true, order: null });
+      expect(result).toEqual({ success: false, error: "Not authorized" });
     });
 
-    it("returns success when getCart throws (cart may have been completed)", async () => {
+    it("does not turn an unavailable cart into a successful purchase", async () => {
       mockClient.carts.get.mockRejectedValue("unexpected");
 
       const result = await confirmPaymentAndCompleteCart("cart-1");
 
-      // getCart() returns null on error (clears stale cookies),
-      // so confirmPaymentAndCompleteCart treats it as already completed
-      expect(result).toEqual({ success: true, order: null });
+      expect(result.success).toBe(false);
+    });
+
+    it("recovers a verified order completed by the webhook", async () => {
+      mockClient.carts.get.mockRejectedValue(Object.assign(new Error("Cart completed"), { status: 404 }));
+      mockClient.orders.get.mockResolvedValue(mockOrder);
+      expect(await confirmPaymentAndCompleteCart("cart-1")).toEqual({ success: true, order: mockOrder });
     });
   });
 });

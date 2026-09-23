@@ -83,6 +83,28 @@ describe("checkout server actions", () => {
   });
 
   describe("getCheckoutOrder", () => {
+    it("preserves the guest token while recovering a completed order", async () => {
+      const { clearCartCookies, getCartOptions } = await import("@/lib/spree");
+      let guestToken: string | undefined = "order-token-123";
+      vi.mocked(clearCartCookies).mockImplementationOnce(async () => { guestToken = undefined; });
+      vi.mocked(getCartOptions).mockImplementationOnce(async () => ({ spreeToken: guestToken, token: undefined }));
+      mockClient.carts.get.mockRejectedValueOnce(Object.assign(new Error("Completed cart"), { status: 404 }));
+      const completedOrder = { ...mockOrder, completed_at: "2026-09-23T00:00:00Z" };
+      mockClient.orders.get.mockImplementationOnce(async (_id, _params, options) => {
+        if (!options.spreeToken) throw new Error("Unauthorized guest");
+        return completedOrder;
+      });
+
+      expect(await getCheckoutOrder("order-1")).toBe(completedOrder);
+      expect(clearCartCookies).not.toHaveBeenCalled();
+    });
+
+    it("fetches the requested checkout even when the current cart cookie differs", async () => {
+      mockClient.carts.get.mockImplementationOnce(async (id) => ({ ...mockOrder, id }));
+      expect(await getCheckoutOrder("order-previous")).toMatchObject({ id: "order-previous" });
+      expect(mockClient.carts.get).toHaveBeenCalledWith("order-previous", expect.any(Object));
+    });
+
     it("returns cart when still in checkout", async () => {
       mockClient.carts.get.mockResolvedValue(mockOrder);
 
@@ -94,7 +116,7 @@ describe("checkout server actions", () => {
 
     it("falls back to getOrder when cart is null (completed)", async () => {
       const completedOrder = { ...mockOrder, current_step: "complete" };
-      mockClient.carts.get.mockRejectedValue(new Error("Not found"));
+      mockClient.carts.get.mockRejectedValue(Object.assign(new Error("Not found"), { status: 404 }));
       mockClient.orders.get.mockResolvedValue(completedOrder);
 
       const result = await getCheckoutOrder("order-1");
@@ -104,7 +126,7 @@ describe("checkout server actions", () => {
     });
 
     it("returns null when both cart and order fail", async () => {
-      mockClient.carts.get.mockRejectedValue(new Error("Not found"));
+      mockClient.carts.get.mockRejectedValue(Object.assign(new Error("Not found"), { status: 404 }));
       mockClient.orders.get.mockRejectedValue(new Error("Not found"));
 
       const result = await getCheckoutOrder("bad-id");
@@ -114,6 +136,12 @@ describe("checkout server actions", () => {
   });
 
   describe("updateOrderAddresses", () => {
+    it("updates the requested checkout rather than another tab's current cart", async () => {
+      mockClient.carts.update.mockResolvedValueOnce({ ...mockOrder, id: "order-previous" });
+      await updateOrderAddresses("order-previous", { email: "test@example.com" });
+      expect(mockClient.carts.update).toHaveBeenCalledWith("order-previous", { email: "test@example.com" }, expect.any(Object));
+    });
+
     it("returns success with order", async () => {
       mockClient.carts.update.mockResolvedValue(mockOrder);
       const addresses = { email: "test@example.com" };

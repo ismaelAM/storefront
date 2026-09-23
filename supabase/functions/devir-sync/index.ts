@@ -1554,6 +1554,7 @@ async function upsertVariantProvenance(
 interface SpreeStockItem {
   id: string;
   variant_id?: string | null;
+  stock_location_id?: string | null;
   count_on_hand?: number;
   backorderable?: boolean;
 }
@@ -1629,11 +1630,103 @@ async function patchVariantInventory(
       },
     );
   }
+  if (updated.backorderable !== backorderable) {
+    await setVariantBackorderability(
+      config,
+      productId,
+      variantId,
+      backorderable,
+    );
+    updated = await spreeRequest<SpreeVariant>(
+      config,
+      "GET",
+      "/products/" +
+        encodeURIComponent(productId) +
+        "/variants/" +
+        encodeURIComponent(variantId),
+    );
+  }
   return updated;
+}
+
+async function stockItemsForVariant(
+  config: ConfigRow,
+  variantId: string,
+): Promise<SpreeStockItem[]> {
+  const attempts = [
+    "/stock_items?q[variant_id_eq]=" + encodeURIComponent(variantId),
+    "/stock_items?q[variant_prefixed_id_eq]=" + encodeURIComponent(variantId),
+    "/stock_items",
+  ];
+  let lastError: unknown;
+  for (const path of attempts) {
+    try {
+      const items: SpreeStockItem[] = [];
+      for (let page = 1; page <= 25; page += 1) {
+        const sep = path.includes("?") ? "&" : "?";
+        const payload = await spreeRequest<{
+          data?: SpreeStockItem[];
+          meta?: { next?: number | null; pages?: number };
+        }>(config, "GET", path + sep + "limit=100&page=" + page);
+        if (!Array.isArray(payload.data) || payload.data.some((item) => !item.id || !item.variant_id)) {
+          throw new Error("Spree devolvió inventario sin identidad verificable");
+        }
+        // Unsupported filters may be ignored by older Spree versions.
+        items.push(...payload.data.filter((item) => item.variant_id === variantId));
+        const pages = Number(payload.meta?.pages);
+        const more = Number.isInteger(pages) && pages > 0
+          ? page < pages
+          : payload.meta?.next != null ||
+            (payload.meta?.next !== null && payload.data.length === 100);
+        if (!more) {
+          if (items.length || path === "/stock_items") return items;
+          break;
+        }
+        if (page === 25) throw new Error("Inventario incompleto: límite de paginación alcanzado");
+      }
+    } catch (error) {
+      lastError = error;
+      // Retry the alternative filter, then the unfiltered paginated listing.
+    }
+  }
+  throw lastError ?? new Error("No se pudo verificar el inventario de la variante");
+}
+
+async function setVariantBackorderability(
+  config: ConfigRow,
+  _productId: string | null,
+  variantId: string,
+  desired: boolean,
+): Promise<number> {
+  const items = await stockItemsForVariant(config, variantId);
+  if (!items.length) throw new Error("Variante sin inventario verificable: " + variantId);
+  const mismatched = items.filter((item) => item.backorderable !== desired);
+  if (!mismatched.length) return 0;
+
+  // Prefer the ordinary stock-item update. Some hosted Spree 5.x builds return
+  // 200 here but silently keep the old backorderable value, so verify it.
+  for (const item of mismatched) {
+    await spreeRequest(config, "PATCH", "/stock_items/" + item.id, {
+      backorderable: desired,
+    });
+  }
+  // Never delete stock items or replay a quantity snapshot to change a flag.
+  // A hosted backend ignoring PATCH requires a backend repair, not data loss.
+  const verified = await stockItemsForVariant(config, variantId);
+  const expectedIds = new Set(items.map((item) => item.id));
+  if (
+    verified.length !== expectedIds.size ||
+    new Set(verified.map((item) => item.id)).size !== expectedIds.size ||
+    verified.some((item) => !expectedIds.has(item.id) || item.backorderable !== desired)
+  ) {
+    throw new Error("Spree no confirmó backorderable=" + desired + "; inventario conservado, requiere revisión");
+  }
+  return mismatched.length;
 }
 
 async function syncBackorderability(
   config: ConfigRow,
+  productId: string | null,
   variantId: string | null,
   availability: DevirProduct["availability"],
   fulfillmentMode: CatalogFulfillmentMode = "supplier_or_physical",
@@ -1643,33 +1736,12 @@ async function syncBackorderability(
     availability,
     fulfillmentMode,
   });
-  const attempts = [
-    "/stock_items?q[variant_id_eq]=" + encodeURIComponent(variantId),
-    "/stock_items?q[variant_prefixed_id_eq]=" + encodeURIComponent(variantId),
-  ];
-  let items: SpreeStockItem[] = [];
-  for (const path of attempts) {
-    try {
-      items = await spreeList<SpreeStockItem>(config, path);
-      if (items.length) break;
-    } catch {
-      // Compatibility fallback between Spree versions.
-    }
-  }
-  if (!items.length) {
-    const all = await spreeList<SpreeStockItem>(config, "/stock_items");
-    items = all.filter((item) => item.variant_id === variantId);
-  }
-
-  let changed = 0;
-  for (const item of items) {
-    if (item.backorderable === desired) continue;
-    await spreeRequest(config, "PATCH", "/stock_items/" + item.id, {
-      backorderable: desired,
-    });
-    changed += 1;
-  }
-  return changed;
+  return await setVariantBackorderability(
+    config,
+    productId,
+    variantId,
+    desired,
+  );
 }
 
 async function enforceVariantFulfillmentFlags(
@@ -1681,6 +1753,7 @@ async function enforceVariantFulfillmentFlags(
 ): Promise<number> {
   const changed = await syncBackorderability(
     config,
+    productId,
     variantId,
     availability,
     fulfillmentMode,
@@ -3162,6 +3235,7 @@ async function syncProductToSpree(
 
   let backorderItems = await syncBackorderability(
     config,
+    productId,
     variantId,
     product.availability,
     fulfillmentMode,
@@ -6294,7 +6368,7 @@ async function repairSellabilityBatch(
   failed: number;
   remaining: number;
 }> {
-  const version = "catalog-stock-v3";
+  const version = "catalog-stock-v4";
   const categories = await spreeCategories(config);
   const defs = await definitions(config);
   const { data, error } = await supabase
@@ -7442,13 +7516,22 @@ async function syncSpecialPriceRows(
     throw new Error("Margen especial inválido");
   }
 
-  const { data, error } = await supabase
-    .from("catalog_selected_supply")
-    .select("variant_id,canonical_sku,spree_variant_id,normalized_cost,supplier_code")
-    .not("spree_variant_id", "is", null)
-    .not("supplier_code", "is", null)
-    .order("canonical_sku");
-  if (error) throw error;
+  const data: Array<Record<string, unknown>> = [];
+  // PostgREST caps unpaginated results; a successful first page is not a
+  // complete price synchronization. Read all pages before writing prices.
+  for (let offset = 0; ; offset += 500) {
+    const { data: page, error } = await supabase
+      .from("catalog_selected_supply")
+      .select("variant_id,canonical_sku,spree_variant_id,normalized_cost,supplier_code")
+      .not("spree_variant_id", "is", null)
+      .not("supplier_code", "is", null)
+      .order("variant_id")
+      .range(offset, offset + 499);
+    if (error) throw error;
+    const batch = page ?? [];
+    data.push(...batch);
+    if (batch.length < 500) break;
+  }
 
   // BISON3 is a discount overlay, never an alternative tariff that can make
   // a product more expensive than its normal automatic storefront price.
@@ -8088,7 +8171,7 @@ async function validateSpreeAdminKey(
     throw new Error("La clave de Spree no es una Secret API Key válida.");
   const response = await fetch(
     spreeApiUrl.replace(/\/$/, "") + "/api/v3/admin/products?limit=1",
-    { headers: { accept: "application/json", "x-spree-api-key": key } },
+    { redirect: "error", headers: { accept: "application/json", "x-spree-api-key": key } },
   );
   if (!response.ok) {
     throw new Error(
@@ -9541,6 +9624,10 @@ async function operatorAction(
   const providedKey = req.headers.get("x-spree-admin-key") ?? "";
 
   if (action === "bootstrap") {
+    // Reconfiguration must authenticate against the existing installation.
+    if (config.spree_admin_api_key && !(await operatorAuthorized(config, providedKey))) {
+      return json({ error: "unauthorized" }, 401);
+    }
     const spreeApiUrl =
       typeof body.spreeApiUrl === "string" && body.spreeApiUrl
         ? body.spreeApiUrl
@@ -9553,6 +9640,13 @@ async function operatorAction(
       body.sessionState && typeof body.sessionState === "object"
         ? (body.sessionState as ConfigRow["session_state"])
         : null;
+
+    // The initial key must be validated by our trusted Spree server, never by
+    // a URL supplied as its own authority. Devir's destination is fixed too.
+    if (spreeApiUrl.replace(/\/$/, "") !== "https://bisontcg.spree.sh" ||
+        baseUrl.replace(/\/$/, "") !== "https://b2bdevir.es") {
+      return json({ error: "bootstrap_untrusted_destination" }, 400);
+    }
 
     if (!providedKey || !sessionState) {
       return json({ error: "bootstrap_missing_credentials" }, 400);
@@ -10976,7 +11070,7 @@ async function finishCycle(config: ConfigRow, cycleId: string): Promise<void> {
 
   const { data: missingRows, error: missingReadError } = await supabase
     .from("devir_sync_catalog")
-    .select("supplier_sku,missing_cycles,spree_variant_id")
+    .select("supplier_sku,missing_cycles,spree_product_id,spree_variant_id")
     .or(`last_seen_cycle_id.is.null,last_seen_cycle_id.neq.${cycleId}`);
   if (missingReadError) throw missingReadError;
 
@@ -11015,7 +11109,12 @@ async function finishCycle(config: ConfigRow, cycleId: string): Promise<void> {
         if (offer.variant_id) affectedVariantIds.add(String(offer.variant_id));
       }
       if (!retiredOffers?.length && row.spree_variant_id) {
-        await syncBackorderability(config, row.spree_variant_id, "unavailable");
+        await syncBackorderability(
+          config,
+          row.spree_product_id ? String(row.spree_product_id) : null,
+          String(row.spree_variant_id),
+          "unavailable",
+        );
       }
     }
   }
