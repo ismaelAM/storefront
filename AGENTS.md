@@ -17,36 +17,41 @@ Objetivo final:
 
 ## 2. Git: regla crítica
 
-La rama de trabajo es:
-
-`puck_editor`
-
-NUNCA hacer push a:
+La rama principal del proyecto es:
 
 `main`
 
-No hacer merge a `main` automáticamente.
+`puck_editor` fue una rama temporal usada para integrar Puck. **No es la rama de trabajo por defecto** y no debe reutilizarse para cambios nuevos salvo petición expresa.
 
 Antes de modificar archivos:
 
 ```bash
 git status
 git branch --show-current
+```
 
-La rama esperada es:
+No asumir una rama de trabajo fija. Para cada tarea:
 
-puck_editor
+- comprobar primero la rama y el estado actual;
+- usar una rama específica de la tarea cuando el cambio requiera aislamiento o revisión;
+- no reutilizar ramas históricas por su nombre;
+- no hacer merge a `main` automáticamente;
+- si el usuario pide explícitamente un cambio directo en `main`, comprobar el diff y validar antes de escribir.
 
 Antes de hacer commit:
 
+```bash
 git diff
 git status
+```
 
 Después de un cambio:
 
+```bash
 pnpm exec tsc --noEmit
+```
 
-No asumir que algo está desplegado. Los cambios locales solo llegan a Vercel después de commit + push.
+No asumir que algo está desplegado. Los cambios solo llegan a Vercel después del commit/push correspondiente y del deployment asociado.
 
 3. Regla de oro: leer antes de editar
 
