@@ -5581,12 +5581,19 @@ async function verifyDevirBatch(
   };
 }
 
-async function repairCategoryTreeAndMembership(config: ConfigRow): Promise<{
+async function repairCategoryTreeAndMembership(
+  config: ConfigRow,
+  offset = 0,
+  limit = 100,
+): Promise<{
   categories: Array<{ id: string; name: string; permalink?: string }>;
+  processed: number;
   products_assigned: number;
   canonical_keys_updated: number;
   conflicts: number;
   missing_categories: number;
+  failed: number;
+  next_offset: number | null;
 }> {
   // Keep the repair path aligned with the canonical category setup. The old
   // implementation predated the RPG subcategories and treated "Rol" itself
@@ -5637,49 +5644,81 @@ async function repairCategoryTreeAndMembership(config: ConfigRow): Promise<{
     productKeys.set(productId, set);
   }
 
+  const entries = Array.from(productKeys.entries()).sort(([left], [right]) =>
+    left.localeCompare(right),
+  );
+  const batch = entries.slice(offset, offset + limit);
+
   let productsAssigned = 0;
   let canonicalKeysUpdated = 0;
   let conflicts = 0;
   let missingCategories = 0;
+  let failed = 0;
 
-  for (const [productId, keys] of productKeys) {
-    if (keys.size !== 1) {
-      conflicts += 1;
+  const repairOne = async ([productId, keys]: [string, Set<string>]) => {
+    try {
+      if (keys.size !== 1) {
+        conflicts += 1;
+        await supabase
+          .from("devir_sync_catalog")
+          .update({
+            last_error: "CATEGORY-CONFLICT: " + Array.from(keys).join(","),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("spree_product_id", productId);
+        return;
+      }
+
+      const key = Array.from(keys)[0];
+      const category = categoryForKey(categories, key);
+      if (!category) {
+        missingCategories += 1;
+        return;
+      }
+
+      await spreeRequest(
+        config,
+        "PATCH",
+        "/products/" + encodeURIComponent(productId),
+        { category_ids: [category.id] },
+      );
+      productsAssigned += 1;
+
+      const { data: updatedProducts, error: canonicalUpdateError } =
+        await supabase
+          .from("catalog_products")
+          .update({
+            category_key: key,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("spree_product_id", productId)
+          .select("id");
+      if (canonicalUpdateError) throw canonicalUpdateError;
+      canonicalKeysUpdated += updatedProducts?.length ?? 0;
+
       await supabase
         .from("devir_sync_catalog")
         .update({
-          last_error: "CATEGORY-CONFLICT: " + Array.from(keys).join(","),
+          last_error: null,
           updated_at: new Date().toISOString(),
         })
         .eq("spree_product_id", productId);
-      continue;
+    } catch (error) {
+      failed += 1;
+      await supabase
+        .from("devir_sync_catalog")
+        .update({
+          last_error:
+            "CATEGORY-REPAIR: " +
+            (error instanceof Error ? error.message : String(error)),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("spree_product_id", productId);
     }
+  };
 
-    const key = Array.from(keys)[0];
-    const category = categoryForKey(categories, key);
-    if (!category) {
-      missingCategories += 1;
-      continue;
-    }
-
-    await spreeRequest(
-      config,
-      "PATCH",
-      "/products/" + encodeURIComponent(productId),
-      { category_ids: [category.id] },
-    );
-    productsAssigned += 1;
-
-    const { data: updatedProducts, error: canonicalUpdateError } = await supabase
-      .from("catalog_products")
-      .update({
-        category_key: key,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("spree_product_id", productId)
-      .select("id");
-    if (canonicalUpdateError) throw canonicalUpdateError;
-    canonicalKeysUpdated += updatedProducts?.length ?? 0;
+  for (let index = 0; index < batch.length; index += 8) {
+    await Promise.all(batch.slice(index, index + 8).map(repairOne));
   }
 
   return {
@@ -5688,10 +5727,14 @@ async function repairCategoryTreeAndMembership(config: ConfigRow): Promise<{
       name: item.name,
       permalink: item.permalink,
     })),
+    processed: batch.length,
     products_assigned: productsAssigned,
     canonical_keys_updated: canonicalKeysUpdated,
     conflicts,
     missing_categories: missingCategories,
+    failed,
+    next_offset:
+      offset + batch.length < entries.length ? offset + batch.length : null,
   };
 }
 
@@ -10346,9 +10389,11 @@ async function operatorAction(
 
   if (action === "repair-categories") {
     await updateReviewFieldLabels(config);
+    const offset = Math.max(0, Number(body.offset ?? 0) || 0);
+    const limit = Math.min(200, Math.max(1, Number(body.limit ?? 100) || 100));
     return json({
       ok: true,
-      ...(await repairCategoryTreeAndMembership(config)),
+      ...(await repairCategoryTreeAndMembership(config, offset, limit)),
     });
   }
 
