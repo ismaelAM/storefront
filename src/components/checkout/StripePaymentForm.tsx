@@ -73,12 +73,7 @@ function StripePaymentFormInner({
     <div>
       <PaymentElement
         options={{
-          layout: {
-            type: "accordion",
-            defaultCollapsed: false,
-            radios: true,
-            spacedAccordionItems: false,
-          },
+          layout: "tabs",
         }}
       />
       {error && (
