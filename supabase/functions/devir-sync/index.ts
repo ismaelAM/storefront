@@ -6381,7 +6381,7 @@ async function repairSellabilityBatch(
   failed: number;
   remaining: number;
 }> {
-  const version = "catalog-stock-v3";
+  const version = "catalog-stock-v4";
   const categories = await spreeCategories(config);
   const defs = await definitions(config);
   const { data, error } = await supabase
