@@ -6,7 +6,6 @@ import {
   cacheTagSuffix,
   getCartOptions,
   getClientForSurface,
-  requireCartId,
   type Surface,
 } from "@/lib/spree";
 import { getCart } from "./cart";
@@ -33,7 +32,7 @@ export async function createCheckoutPaymentSession(
   return actionResult(async () => {
     const surface = await resolveSurfaceForCart(cartId);
     const options = await getCartOptions(surface);
-    const id = await requireCartId(surface);
+    const id = cartId;
     const session = await getClientForSurface(
       surface,
     ).carts.paymentSessions.create(
@@ -62,7 +61,7 @@ export async function updateCheckoutPaymentSession(
   return actionResult(async () => {
     const surface = await resolveSurfaceForCart(cartId);
     const options = await getCartOptions(surface);
-    const id = await requireCartId(surface);
+    const id = cartId;
     const session = await getClientForSurface(
       surface,
     ).carts.paymentSessions.update(id, sessionId, params, options);
@@ -82,7 +81,7 @@ export async function createDirectPayment(
   return actionResult(async () => {
     const surface = await resolveSurfaceForCart(cartId);
     const options = await getCartOptions(surface);
-    const id = await requireCartId(surface);
+    const id = cartId;
     const payment = await getClientForSurface(surface).carts.payments.create(
       id,
       { payment_method_id: paymentMethodId },
@@ -101,7 +100,7 @@ export async function completeCheckoutPaymentSession(
   return actionResult(async () => {
     const surface = await resolveSurfaceForCart(cartId);
     const options = await getCartOptions(surface);
-    const id = await requireCartId(surface);
+    const id = cartId;
     const session = await getClientForSurface(
       surface,
     ).carts.paymentSessions.complete(id, sessionId, params, options);
@@ -111,12 +110,9 @@ export async function completeCheckoutPaymentSession(
 }
 
 /**
- * Completes the order. Treats 403 and 422 as success:
- * - 403 = cart already completed (e.g. webhook handler completed it)
- * - 422 = state_lock_version conflict (concurrent request)
- *
- * When the order was already completed (403/422), fetch it from the API
- * so the caller always gets the order data for caching on the thank-you page.
+ * Completes the order. A concurrent completion may cause 403/409/422,
+ * but these statuses also represent real authorization/validation failures.
+ * Recover only when the API verifies that this order actually completed.
  */
 export async function completeCheckoutOrder(
   cartId: string,
@@ -135,15 +131,17 @@ export async function completeCheckoutOrder(
   } catch (error: unknown) {
     if (error && typeof error === "object" && "status" in error) {
       const status = (error as { status: number }).status;
-      if (status === 403 || status === 422) {
+      if (status === 403 || status === 409 || status === 422) {
         // Order already completed — try to fetch it so the thank-you page
         // can cache and display it without a second round-trip.
         const completedOrder = await getOrder(cartId, undefined, surface).catch(
           () => null,
         );
-        updateTag(checkoutTag(surface));
-        updateTag(cartTag(surface));
-        return { success: true as const, order: completedOrder };
+        if (completedOrder?.id === cartId && completedOrder.completed_at) {
+          updateTag(checkoutTag(surface));
+          updateTag(cartTag(surface));
+          return { success: true as const, order: completedOrder };
+        }
       }
     }
     return {
@@ -190,7 +188,13 @@ export async function confirmPaymentAndCompleteCart(
       const completedOrder = await getOrder(cartId, undefined, surface).catch(
         () => null,
       );
-      return { success: true, order: completedOrder };
+      if (completedOrder?.id === cartId && completedOrder.completed_at) {
+        return { success: true, order: completedOrder };
+      }
+      return {
+        success: false,
+        error: "Couldn't confirm your order yet. Please try again in a moment.",
+      };
     }
 
     if (cart.current_step === "complete") {
@@ -199,7 +203,7 @@ export async function confirmPaymentAndCompleteCart(
 
     if (sessionId) {
       const options = await getCartOptions(surface);
-      const id = await requireCartId(surface);
+      const id = cartId;
       const completeResult = await getClientForSurface(
         surface,
       ).carts.paymentSessions.complete(
@@ -218,7 +222,7 @@ export async function confirmPaymentAndCompleteCart(
       // Adyen redirect flow: redirectResult is appended by Adyen to the return URL.
       // Pass it to the backend which resolves the session and processes the redirect.
       const options = await getCartOptions(surface);
-      const id = await requireCartId(surface);
+      const id = cartId;
       const completeResult = await getClientForSurface(
         surface,
       ).carts.paymentSessions.complete(

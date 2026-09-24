@@ -9,7 +9,6 @@ import {
   getCartOptions,
   getClientForSurface,
   isWholesaleEnabled,
-  requireCartId,
   type Surface,
 } from "@/lib/spree";
 import { createSupabaseClient } from "@/lib/supabase/server";
@@ -90,8 +89,10 @@ function cartTag(surface: Surface): string {
 export async function getCheckoutOrder(cartId: string): Promise<Cart | null> {
   const surface = await resolveSurfaceForCart(cartId);
 
-  // Try active cart first (order may still be in checkout)
-  const cart = await getCart(undefined, surface);
+  // An explicit lookup preserves the guest token if this cart just completed,
+  // so the order fallback can still authenticate. It also targets this checkout
+  // when the browser's current cart has changed in another tab.
+  const cart = await getCart(cartId, surface);
   if (cart && cart.id === cartId) return cart;
 
   // Cart completed — fetch as completed order.
@@ -128,7 +129,7 @@ export async function updateOrderAddresses(
   return actionResult(async () => {
     const surface = await resolveSurfaceForCart(cartId);
     const options = await getCartOptions(surface);
-    const id = await requireCartId(surface);
+    const id = cartId;
     const cart = await getClientForSurface(surface).carts.update(
       id,
       addresses,
@@ -146,7 +147,7 @@ export async function updateCartMarket(
   return actionResult(async () => {
     const surface = await resolveSurfaceForCart(cartId);
     const options = await getCartOptions(surface);
-    const id = await requireCartId(surface);
+    const id = cartId;
     const cart = await getClientForSurface(surface).carts.update(
       id,
       params,
@@ -165,7 +166,7 @@ export async function selectDeliveryRate(
   return actionResult(async () => {
     const surface = await resolveSurfaceForCart(cartId);
     const options = await getCartOptions(surface);
-    const id = await requireCartId(surface);
+    const id = cartId;
     const client = getClientForSurface(surface);
     await client.carts.fulfillments.update(
       id,
@@ -191,7 +192,7 @@ export async function selectDeliveryRate(
 export async function applyCode(cartId: string, code: string) {
   const surface = await resolveSurfaceForCart(cartId);
   const options = await getCartOptions(surface);
-  const id = await requireCartId(surface);
+  const id = cartId;
   const client = getClientForSurface(surface);
   const normalizedCode = code.trim().toUpperCase();
 
@@ -328,7 +329,7 @@ export async function removeDiscountCode(cartId: string, code: string) {
   return actionResult(async () => {
     const surface = await resolveSurfaceForCart(cartId);
     const options = await getCartOptions(surface);
-    const id = await requireCartId(surface);
+    const id = cartId;
     const cart = await getClientForSurface(surface).carts.discountCodes.remove(
       id,
       code,
@@ -344,7 +345,7 @@ export async function removeGiftCard(cartId: string, giftCardId: string) {
   return actionResult(async () => {
     const surface = await resolveSurfaceForCart(cartId);
     const options = await getCartOptions(surface);
-    const id = await requireCartId(surface);
+    const id = cartId;
     const cart = await getClientForSurface(surface).carts.giftCards.remove(
       id,
       giftCardId,

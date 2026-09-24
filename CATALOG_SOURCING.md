@@ -312,12 +312,20 @@ recargo MOQ normales. Los PVP manuales siguen excluidos de la rotación.
 
 ## Revisión humana persistente y fulfillment seguro
 
-La revisión humana ya no se deduce de si un operador cambia manualmente el
-estado del producto en Spree. `catalog_products.review_decision` conserva una
+Publicar en Spree un producto marcado para revisión registra la aprobación en
+la siguiente sincronización. Se reconocen únicamente los motivos previamente
+mostrados, conservados en el campo privado `catalog.review_pending_fingerprint`
+(o sus textos históricos). El bot confirma primero el estado borrador antes
+de guardar motivos nuevos, para no confundir un fallo parcial con aprobación.
+`catalog_products.review_decision` conserva una
 decisión explícita `pending`, `approved` o `rejected`. Una aprobación guarda
 además la huella ordenada de los motivos que se aprobaron. Si en un sync futuro
-aparece un motivo nuevo, la huella deja de coincidir y el producto vuelve a
+aparece un motivo nuevo, no queda cubierto y el producto vuelve a
 revisión; los bots no convierten una aprobación antigua en un permiso genérico.
+Si desaparece un motivo ya aprobado, los demás siguen aprobados. La revisión
+no congela stock ni precios automáticos; se conservan las protecciones de
+precios manuales, `physical_only` y `disabled`. Un rechazo explícito del catálogo
+se mantiene hasta cambiar esa decisión mediante sus acciones.
 
 Acciones internas del worker:
 

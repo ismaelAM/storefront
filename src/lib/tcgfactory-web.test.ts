@@ -10,6 +10,11 @@ import {
 } from "../../supabase/functions/_shared/tcgfactory-web";
 
 describe("TcgFactory public web parser", () => {
+  it.each(["Restock", "RESTOCK", "Restock 30/10/2026"])("excludes the explicit product status %s", (status) => {
+    const product = parseTcgFactoryPublicProduct(`<h1>Fundas</h1><dl><dt>Estado de producto:</dt><dd>${status}</dd></dl><aside>Disponible</aside>`, "https://tcgfactory.com/es/distribucion/fundas.html");
+    expect(product.availability).toBe("unavailable");
+    expect(mapTcgFactoryPublicAvailability(status)).toBe("unavailable");
+  });
   it("discovers official product detail URLs and pagination", () => {
     const html = `
       <a href="/es/distribucion/fundas-standard-negro.html">Fundas</a>

@@ -2,8 +2,15 @@
 
 import type { Data } from "@puckeditor/core";
 import { createSupabaseClient } from "@/lib/supabase/server";
+import { assertPuckEditorAccess } from "./editor-auth";
 
 export async function saveSitePageData(pageId: string, data: Data) {
+  await assertPuckEditorAccess();
+
+  if (typeof pageId !== "string" || !pageId.trim() || !data || typeof data !== "object" || !Array.isArray(data.content)) {
+    throw new Error("Invalid Puck data");
+  }
+
   const supabase = createSupabaseClient();
   const { error } = await supabase.from("pages").upsert(
     {

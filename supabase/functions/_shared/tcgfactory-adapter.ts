@@ -120,6 +120,8 @@ export function mapTcgFactoryAvailability(
   value: unknown,
 ): SupplierAvailability {
   const normalized = normalizeText(String(value ?? ""));
+  // Restock is replenishment, not a preorder or stock available to sell.
+  if (/(^|-)restock($|-)/.test(normalized)) return "unavailable";
   if (
     ["disponible", "en-stock", "stock", "available", "in-stock"].includes(
       normalized,

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { buildHreflangLanguages } from "@/lib/metadata/alternates";
+import { validateMetadataRoute } from "@/lib/metadata/validate-route";
 import { buildCanonicalUrl, SOCIAL_IMAGE_PATH } from "@/lib/seo";
 import {
   getStoreMetaDescription,
@@ -16,6 +17,7 @@ export async function generateHomeMetadata({
   country,
   locale,
 }: HomeMetadataParams): Promise<Metadata> {
+  validateMetadataRoute(country, locale);
   const storeName = getStoreSeoTitle();
   const description = getStoreMetaDescription();
   const storeUrl = getStoreUrl();

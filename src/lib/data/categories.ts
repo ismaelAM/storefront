@@ -4,7 +4,7 @@ import type { CategoryListParams, ProductListParams } from "@spree/sdk";
 import { cacheLife, cacheTag } from "next/cache";
 import { getAccessToken, getClient, getLocaleOptions } from "@/lib/spree";
 
-const CATEGORY_PRODUCTS_CACHE_VERSION = "2026-09-23-role-taxonomy-v7";
+const CATEGORY_PRODUCTS_CACHE_VERSION = "2026-09-23-role-taxonomy-customer-pricing-v8";
 
 async function cachedListCategories(
   params: CategoryListParams | undefined,
@@ -52,7 +52,7 @@ async function cachedListCategoryProducts(
   categoryId: string,
   params: ProductListParams | undefined,
   options: { locale?: string; country?: string },
-  _userToken?: string,
+  userToken?: string,
   cacheVersion = CATEGORY_PRODUCTS_CACHE_VERSION,
 ) {
   "use cache: remote";
@@ -61,7 +61,7 @@ async function cachedListCategoryProducts(
   cacheTag("products", `category-products:${categoryId}`);
   return getClient().products.list(
     { ...params, in_category: categoryId },
-    options,
+    { ...options, ...(userToken ? { token: userToken } : undefined) },
   );
 }
 

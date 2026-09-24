@@ -2,7 +2,7 @@
 
 import type { Data } from "@puckeditor/core";
 import { getProductPageId } from "@/lib/puck/get-product-data";
-import { createSupabaseClient } from "@/lib/supabase/server";
+import { saveSitePageData } from "./save-site-page-data";
 
 export async function saveProductPageData(slug: string, data: Data) {
   if (
@@ -14,20 +14,7 @@ export async function saveProductPageData(slug: string, data: Data) {
     throw new Error("Invalid product Puck data");
   }
 
-  const supabase = createSupabaseClient();
-  const { error } = await supabase.from("pages").upsert(
-    {
-      page_id: getProductPageId(slug),
-      published_data: data,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "page_id" },
-  );
-
-  if (error) {
-    console.error("Supabase error saving product data:", error);
-    throw new Error("Failed to save product page data");
-  }
+  await saveSitePageData(getProductPageId(slug), data);
 
   return { success: true };
 }

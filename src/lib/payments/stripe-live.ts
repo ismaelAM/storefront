@@ -22,9 +22,10 @@ function stripeSecret(): string {
 }
 
 function spreeAdminKey(): string {
+  // Order operations need order scopes; the Devir key may only allow catalog access.
   const value =
-    process.env.DEVIR_B2B_SPREE_ADMIN_API_KEY?.trim() ||
-    process.env.SPREE_ADMIN_API_KEY?.trim();
+    process.env.SPREE_ADMIN_API_KEY?.trim() ||
+    process.env.DEVIR_B2B_SPREE_ADMIN_API_KEY?.trim();
   if (!value || !value.startsWith("sk_")) {
     throw new Error("Falta la Secret API Key Admin de Spree");
   }
@@ -33,8 +34,8 @@ function spreeAdminKey(): string {
 
 function spreeApiUrl(): string {
   return (
-    process.env.DEVIR_B2B_SPREE_API_URL?.trim() ||
     process.env.SPREE_API_URL?.trim() ||
+    process.env.DEVIR_B2B_SPREE_API_URL?.trim() ||
     "https://bisontcg.spree.sh"
   ).replace(/\/$/, "");
 }
@@ -128,6 +129,7 @@ async function spreeAdminRequest<T>(
   method: string,
   path: string,
   body?: Record<string, unknown>,
+  idempotencyKey?: string,
 ): Promise<T> {
   const response = await fetch(`${spreeApiUrl()}/api/v3/admin${path}`, {
     method,
@@ -135,6 +137,7 @@ async function spreeAdminRequest<T>(
       accept: "application/json",
       "content-type": "application/json",
       "x-spree-api-key": spreeAdminKey(),
+      ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
     },
     ...(body ? { body: JSON.stringify(body) } : {}),
     cache: "no-store",
@@ -161,6 +164,7 @@ interface AdminOrder {
   status?: string;
   state?: string;
   total?: string | number;
+  amount_due?: string | number | null;
   currency?: string;
   metadata?: Record<string, unknown>;
 }
@@ -188,47 +192,82 @@ export async function reconcileStripePaymentToSpree(
     `/orders/${encodeURIComponent(cartId)}`,
   );
 
-  const orderTotal = Number(order.total);
-  const expectedAmount = Math.round(orderTotal * 100);
-  if (!Number.isFinite(orderTotal) || expectedAmount !== paymentIntent.amount) {
-    throw new Error("El importe de Stripe no coincide con el pedido de Spree");
-  }
   if (
-    order.currency &&
+    !order.currency ||
     order.currency.toLowerCase() !== paymentIntent.currency.toLowerCase()
   ) {
     throw new Error("La moneda de Stripe no coincide con el pedido de Spree");
+  }
+
+  if (["canceled", "cancelled"].includes(order.status ?? order.state ?? "")) {
+    throw new Error("El pedido está cancelado; el cobro requiere revisión");
+  }
+
+  const recordedIntentId = order.metadata?.stripe_payment_intent_id;
+  if (recordedIntentId && recordedIntentId !== paymentIntent.id) {
+    throw new Error("El pedido ya está vinculado a otro pago de Stripe");
   }
 
   const paymentsResponse = await spreeAdminRequest<{ data?: AdminPayment[] }>(
     "GET",
     `/orders/${encodeURIComponent(cartId)}/payments?limit=100`,
   );
-  const alreadyRecorded = (paymentsResponse.data ?? []).some(
+  const activeExternalPayments = (paymentsResponse.data ?? []).filter(
     (payment) =>
-      payment.payment_method_id === EXTERNAL_PAYMENT_METHOD_ID ||
-      payment.payment_method?.id === EXTERNAL_PAYMENT_METHOD_ID ||
-      payment.payment_method?.name === "Stripe Live External",
+      (payment.payment_method_id === EXTERNAL_PAYMENT_METHOD_ID ||
+        payment.payment_method?.id === EXTERNAL_PAYMENT_METHOD_ID) &&
+      ["checkout", "pending", "processing", "completed"].includes(payment.status ?? payment.state ?? ""),
   );
 
-  if (!alreadyRecorded) {
-    await spreeAdminRequest(
+  const recordedPaymentId = order.metadata?.stripe_spree_payment_id;
+  let recordedPayment = activeExternalPayments.length === 1
+    ? activeExternalPayments[0]
+    : undefined;
+  // Amount alone cannot identify a charge. Legacy records must link the
+  // intent on the order; new records also persist Spree's exact payment ID.
+  if (activeExternalPayments.length > 0 || recordedIntentId || recordedPaymentId) {
+    if (recordedIntentId !== paymentIntent.id || !recordedPayment ||
+        (recordedPaymentId && recordedPaymentId !== recordedPayment.id) ||
+        Math.round(Number(recordedPayment.amount) * 100) !== paymentIntent.amount) {
+      throw new Error("No se pudo identificar de forma inequívoca el pago de Spree");
+    }
+  }
+
+  // amount_due includes gift cards and store credit. Once this payment has
+  // settled, add it back only for validation of a replay of the same charge.
+  const due = Number(order.amount_due ?? order.total);
+  const settled = (recordedPayment?.status ?? recordedPayment?.state) === "completed";
+  const expectedAmount = Math.round(due * 100) +
+    (order.amount_due != null && settled ? paymentIntent.amount : 0);
+  if (!Number.isFinite(due) || !Number.isSafeInteger(paymentIntent.amount) ||
+      paymentIntent.amount <= 0 || expectedAmount !== paymentIntent.amount) {
+    throw new Error("El importe de Stripe no coincide con el pedido de Spree");
+  }
+
+  if (!recordedPayment) {
+    recordedPayment = await spreeAdminRequest<AdminPayment>(
       "POST",
       `/orders/${encodeURIComponent(cartId)}/payments`,
       {
         payment_method_id: EXTERNAL_PAYMENT_METHOD_ID,
         amount: (paymentIntent.amount / 100).toFixed(2),
       },
+      `bisontcg:stripe-payment:${cartId}:${paymentIntent.id}`,
     );
   }
 
-  await spreeAdminRequest("PATCH", `/orders/${encodeURIComponent(cartId)}`, {
-    metadata: {
-      ...(order.metadata ?? {}),
-      stripe_payment_intent_id: paymentIntent.id,
-      stripe_payment_status: paymentIntent.status,
-    },
-  });
+  if (!recordedPayment.id) throw new Error("Spree no devolvió un identificador de pago");
+  if (recordedIntentId !== paymentIntent.id || recordedPaymentId !== recordedPayment.id ||
+      order.metadata?.stripe_payment_status !== paymentIntent.status) {
+    await spreeAdminRequest("PATCH", `/orders/${encodeURIComponent(cartId)}`, {
+      metadata: {
+        ...(order.metadata ?? {}),
+        stripe_payment_intent_id: paymentIntent.id,
+        stripe_spree_payment_id: recordedPayment.id,
+        stripe_payment_status: paymentIntent.status,
+      },
+    });
+  }
 
   if (order.status === "complete" || order.state === "complete") return order;
 

@@ -1,3 +1,9 @@
+/** Only a missing or forbidden cart justifies discarding its guest credentials. */
+export function isCartAccessError(error: unknown): boolean {
+  return !!error && typeof error === "object" && "status" in error &&
+    (error.status === 403 || error.status === 404);
+}
+
 /**
  * Wraps a server action in a try/catch that returns a standardized
  * { success: true, ...data } | { success: false, error: string } result.

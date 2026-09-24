@@ -1393,6 +1393,12 @@ async function definitions(
       field_type: "long_text",
     },
     {
+      namespace: "catalog",
+      key: "review_pending_fingerprint",
+      label: "Catálogo · Motivos pendientes registrados",
+      field_type: "long_text",
+    },
+    {
       namespace: "pricing",
       key: "profile",
       label: "Precio · Perfil comercial",
@@ -1554,6 +1560,7 @@ async function upsertVariantProvenance(
 interface SpreeStockItem {
   id: string;
   variant_id?: string | null;
+  stock_location_id?: string | null;
   count_on_hand?: number;
   backorderable?: boolean;
 }
@@ -1583,18 +1590,20 @@ async function patchVariantInventory(
   backorderable: boolean,
   preorderable: boolean,
   preorderShipsAt: string | null,
+  initializeInventory = false,
 ): Promise<SpreeVariant> {
-  const locationId = await defaultStockLocationId(config);
-  const inventory = [
+  if (initializeInventory && countOnHand !== 0) {
+    throw new Error("Una variante nueva debe inicializarse con stock cero");
+  }
+  // Replaying aggregate stock into one location can duplicate quantities or undo sales.
+  // Only a just-created variant may initialize its zero inventory.
+  const inventory = initializeInventory ? [
     {
-      stock_location_id: locationId,
-      count_on_hand: Math.max(
-        0,
-        Number.isFinite(countOnHand) ? countOnHand : 0,
-      ),
+      stock_location_id: await defaultStockLocationId(config),
+      count_on_hand: 0,
       backorderable,
     },
-  ];
+  ] : undefined;
 
   let updated = await spreeRequest<SpreeVariant>(
     config,
@@ -1607,13 +1616,13 @@ async function patchVariantInventory(
       track_inventory: true,
       preorderable,
       preorder_ships_at: preorderable ? preorderShipsAt : null,
-      stock_levels: inventory,
+      ...(inventory ? { stock_levels: inventory } : {}),
     },
   );
 
   // Spree 5.x accepts the legacy stock_items key while newer releases use
   // stock_levels. Verify the result and transparently fall back when needed.
-  if (updated.backorderable !== backorderable) {
+  if (inventory && updated.backorderable !== backorderable) {
     updated = await spreeRequest<SpreeVariant>(
       config,
       "PATCH",
@@ -1629,11 +1638,106 @@ async function patchVariantInventory(
       },
     );
   }
+  if (updated.backorderable !== backorderable) {
+    await setVariantBackorderability(
+      config,
+      productId,
+      variantId,
+      backorderable,
+    );
+    updated = await spreeRequest<SpreeVariant>(
+      config,
+      "GET",
+      "/products/" +
+        encodeURIComponent(productId) +
+        "/variants/" +
+        encodeURIComponent(variantId),
+    );
+  }
+  if (updated.backorderable !== backorderable || updated.preorderable !== preorderable) {
+    throw new Error("Spree no confirmó las banderas de disponibilidad; inventario conservado");
+  }
   return updated;
+}
+
+async function stockItemsForVariant(
+  config: ConfigRow,
+  variantId: string,
+): Promise<SpreeStockItem[]> {
+  const attempts = [
+    "/stock_items?q[variant_id_eq]=" + encodeURIComponent(variantId),
+    "/stock_items?q[variant_prefixed_id_eq]=" + encodeURIComponent(variantId),
+    "/stock_items",
+  ];
+  let lastError: unknown;
+  for (const path of attempts) {
+    try {
+      const items: SpreeStockItem[] = [];
+      for (let page = 1; page <= 25; page += 1) {
+        const sep = path.includes("?") ? "&" : "?";
+        const payload = await spreeRequest<{
+          data?: SpreeStockItem[];
+          meta?: { next?: number | null; pages?: number };
+        }>(config, "GET", path + sep + "limit=100&page=" + page);
+        if (!Array.isArray(payload.data) || payload.data.some((item) => !item.id || !item.variant_id)) {
+          throw new Error("Spree devolvió inventario sin identidad verificable");
+        }
+        // Unsupported filters may be ignored by older Spree versions.
+        items.push(...payload.data.filter((item) => item.variant_id === variantId));
+        const pages = Number(payload.meta?.pages);
+        const more = Number.isInteger(pages) && pages > 0
+          ? page < pages
+          : payload.meta?.next != null ||
+            (payload.meta?.next !== null && payload.data.length === 100);
+        if (!more) {
+          if (items.length || path === "/stock_items") return items;
+          break;
+        }
+        if (page === 25) throw new Error("Inventario incompleto: límite de paginación alcanzado");
+      }
+    } catch (error) {
+      lastError = error;
+      // Retry the alternative filter, then the unfiltered paginated listing.
+    }
+  }
+  throw lastError ?? new Error("No se pudo verificar el inventario de la variante");
+}
+
+async function setVariantBackorderability(
+  config: ConfigRow,
+  _productId: string | null,
+  variantId: string,
+  desired: boolean,
+): Promise<number> {
+  const items = await stockItemsForVariant(config, variantId);
+  if (!items.length) throw new Error("Variante sin inventario verificable: " + variantId);
+  const mismatched = items.filter((item) => item.backorderable !== desired);
+  if (!mismatched.length) return 0;
+
+  // Prefer the ordinary stock-item update. Some hosted Spree 5.x builds return
+  // 200 here but silently keep the old backorderable value, so verify it.
+  for (const item of mismatched) {
+    await spreeRequest(config, "PATCH", "/stock_items/" + item.id, {
+      backorderable: desired,
+    });
+  }
+  // Never delete stock items or replay a quantity snapshot to change a flag.
+  // A hosted backend ignoring PATCH requires a backend repair, not data loss.
+  const verified = await stockItemsForVariant(config, variantId);
+  const expectedIds = new Set(items.map((item) => item.id));
+  if (
+    verified.length !== expectedIds.size ||
+    new Set(verified.map((item) => item.id)).size !== expectedIds.size ||
+    verified.some((item) => !expectedIds.has(item.id) || item.backorderable !== desired)
+  ) {
+    throw new Error("Spree no confirmó backorderable=" + desired + "; inventario conservado, requiere revisión");
+  }
+  return mismatched.length;
 }
 
 async function syncBackorderability(
   config: ConfigRow,
+  productId: string | null,
   variantId: string | null,
   availability: DevirProduct["availability"],
   fulfillmentMode: CatalogFulfillmentMode = "supplier_or_physical",
@@ -1643,33 +1747,12 @@ async function syncBackorderability(
     availability,
     fulfillmentMode,
   });
-  const attempts = [
-    "/stock_items?q[variant_id_eq]=" + encodeURIComponent(variantId),
-    "/stock_items?q[variant_prefixed_id_eq]=" + encodeURIComponent(variantId),
-  ];
-  let items: SpreeStockItem[] = [];
-  for (const path of attempts) {
-    try {
-      items = await spreeList<SpreeStockItem>(config, path);
-      if (items.length) break;
-    } catch {
-      // Compatibility fallback between Spree versions.
-    }
-  }
-  if (!items.length) {
-    const all = await spreeList<SpreeStockItem>(config, "/stock_items");
-    items = all.filter((item) => item.variant_id === variantId);
-  }
-
-  let changed = 0;
-  for (const item of items) {
-    if (item.backorderable === desired) continue;
-    await spreeRequest(config, "PATCH", "/stock_items/" + item.id, {
-      backorderable: desired,
-    });
-    changed += 1;
-  }
-  return changed;
+  return await setVariantBackorderability(
+    config,
+    productId,
+    variantId,
+    desired,
+  );
 }
 
 async function enforceVariantFulfillmentFlags(
@@ -1681,6 +1764,7 @@ async function enforceVariantFulfillmentFlags(
 ): Promise<number> {
   const changed = await syncBackorderability(
     config,
+    productId,
     variantId,
     availability,
     fulfillmentMode,
@@ -1904,6 +1988,7 @@ async function appendToExistingLanguageProduct(
         product.availability === "preorder",
       product.availability === "preorder",
       product.releaseDate,
+      true,
     );
     return { product: parent, variant: inventoryVariant };
   }
@@ -2825,7 +2910,7 @@ async function syncProductToSpree(
   if (catalogContext?.reviewDecision === "rejected") {
     reasons.push("operator_rejected");
   }
-  const review = shouldRequireCatalogReview({
+  let review = shouldRequireCatalogReview({
     reasons,
     decision: catalogContext?.reviewDecision ?? "pending",
     approvedFingerprint: catalogContext?.approvedReviewFingerprint ?? null,
@@ -2950,6 +3035,16 @@ async function syncProductToSpree(
     );
   }
 
+  if (existing && catalogContext) {
+    const adopted = await adoptPublishedCatalogReview(config, existing.product, reasons);
+    if (adopted) {
+      catalogContext.reviewDecision = adopted.review_decision;
+      catalogContext.approvedReviewFingerprint = adopted.approved_review_fingerprint;
+      review = shouldRequireCatalogReview({ reasons, decision: adopted.review_decision,
+        approvedFingerprint: adopted.approved_review_fingerprint });
+    }
+  }
+
   let productId: string;
   let variantId: string | null = null;
   let manualPrice = false;
@@ -3060,14 +3155,17 @@ async function syncProductToSpree(
     );
     const refreshManagedMetadata =
       managed && (!active || forceDraftForSplit || needsManagedCleanup);
-    await spreeRequest(config, "PATCH", "/products/" + productId, {
+    const markedProduct = await spreeRequest<SpreeProduct>(config, "PATCH", "/products/" + productId, {
       tags,
-      ...(forceDraftForSplit ? { status: "draft" } : {}),
+      ...(review ? { status: "draft" } : {}),
       ...(refreshManagedMetadata ? { name: spreeProductName } : {}),
       ...(refreshManagedMetadata && category
         ? { category_ids: [category.id] }
         : {}),
     });
+    if (review && markedProduct.status !== "draft") {
+      throw new Error("Spree no confirmó el borrador; no registrar nuevos motivos de revisión");
+    }
     await spreeRequest(
       config,
       "PATCH",
@@ -3127,6 +3225,7 @@ async function syncProductToSpree(
       : reasons.length > 0 && catalogContext?.reviewDecision === "approved"
         ? "✓ APROBADO"
         : "LISTO",
+    "catalog.review_pending_fingerprint": review ? catalogReviewFingerprint(reasons) : "none",
     "catalog.review_reason": review
       ? humanizeReviewReasons(reasons)
       : reasons.length > 0 && catalogContext?.reviewDecision === "approved"
@@ -3162,6 +3261,7 @@ async function syncProductToSpree(
 
   let backorderItems = await syncBackorderability(
     config,
+    productId,
     variantId,
     product.availability,
     fulfillmentMode,
@@ -3506,6 +3606,7 @@ async function createGroupedVariant(
     product.availability === "available" || product.availability === "preorder",
     product.availability === "preorder",
     product.releaseDate,
+    true,
   );
 }
 
@@ -5878,6 +5979,7 @@ async function preparePublishBatch(
       return;
     }
 
+    await adoptPublishedCatalogReview(config, spreeProduct, await currentCatalogReviewReasonsForSpreeProduct(productId));
     // Product-level policy is required below for every variant in this batch.
     const { data: catalogProductPolicy, error: catalogProductPolicyError } =
       await supabase
@@ -6189,7 +6291,7 @@ async function preparePublishBatch(
         ? categoryForKey(categories, Array.from(categoryKeys)[0])
         : undefined;
 
-    await spreeRequest(
+    const preparedProduct = await spreeRequest<SpreeProduct>(
       config,
       "PATCH",
       "/products/" + encodeURIComponent(productId),
@@ -6199,6 +6301,7 @@ async function preparePublishBatch(
         ...(resolvedCategory ? { category_ids: [resolvedCategory.id] } : {}),
       },
     );
+    if (human && preparedProduct.status !== "draft") throw new Error("Spree no confirmó el borrador de revisión");
 
     if (publish) {
       await spreeRequest(
@@ -6230,6 +6333,7 @@ async function preparePublishBatch(
         : productReasons.size > 0 && reviewDecision === "approved"
           ? "✓ APROBADO"
           : "LISTO",
+      "catalog.review_pending_fingerprint": human ? catalogReviewFingerprint(productReasons) : "none",
       "catalog.review_reason": human
         ? humanizeReviewReasons(productReasons)
         : productReasons.size > 0 && reviewDecision === "approved"
@@ -6294,7 +6398,7 @@ async function repairSellabilityBatch(
   failed: number;
   remaining: number;
 }> {
-  const version = "catalog-stock-v3";
+  const version = "catalog-stock-v4";
   const categories = await spreeCategories(config);
   const defs = await definitions(config);
   const { data, error } = await supabase
@@ -6866,6 +6970,41 @@ async function repairRetailUnitProducts(
 
 const HUMAN_REVIEW_MARKER_VERSION = "catalog-review-v1";
 
+async function adoptPublishedCatalogReview(
+  config: ConfigRow,
+  product: SpreeProduct,
+  currentReasons: Iterable<string> = [],
+): Promise<Pick<CatalogProductRow, "review_decision" | "approved_review_fingerprint"> | null> {
+  const { data: policy, error } = await supabase.from("catalog_products")
+    .select("id,review_decision,approved_review_fingerprint,updated_at")
+    .eq("spree_product_id", product.id).maybeSingle();
+  if (error) throw error;
+  if (!policy) return null;
+  if (policy.review_decision === "rejected" || product.status !== "active" || !(product.tags ?? []).some(tag =>
+    ["catalog-review", "devir-review", "REVISION-HUMANA", "NECESITA-TU-AYUDA"].includes(tag))) return policy;
+  const fields = await productFields(config, product.id);
+  const recorded = String(fields.find(field => field.key === "catalog.review_pending_fingerprint")?.value ?? "");
+  // Legacy products already have the human-readable reasons displayed in Spree.
+  // Only adopt reasons actually displayed there, never newly discovered issues.
+  const displayed = String(fields.find(field => field.key === "catalog.review_reason")?.value ?? "");
+  const legacy = Array.from(currentReasons).filter(reason => displayed.includes(humanizeReviewReason(reason)));
+  const pending = recorded && recorded !== "none" ? recorded.split("|") : legacy;
+  if (!pending.length) return policy;
+  const fingerprint = catalogReviewFingerprint([
+    ...String(policy.approved_review_fingerprint ?? "").split("|"), ...pending,
+  ]);
+  if (policy.review_decision === "approved" && policy.approved_review_fingerprint === fingerprint) return policy;
+  const { data: approved, error: approvalError } = await supabase.from("catalog_products")
+    .update({ review_decision: "approved", approved_review_fingerprint: fingerprint,
+      review_decided_at: new Date().toISOString(), review_note: "Aprobación detectada al publicar en Spree",
+      updated_at: new Date().toISOString() })
+    .eq("id", policy.id).eq("review_decision", policy.review_decision)
+    .eq("updated_at", policy.updated_at).select("*").maybeSingle();
+  if (approvalError) throw approvalError;
+  if (!approved) throw new Error("La revisión cambió durante la aprobación; reintentar");
+  return approved as CatalogProductRow;
+}
+
 function reviewReasonsFromLastError(value: unknown): string[] {
   const text = String(value ?? "")
     .replace(/^REVIEW:\s*/i, "")
@@ -6968,6 +7107,16 @@ async function refreshHumanReviewMarkersBatch(
       "GET",
       "/products/" + encodeURIComponent(productId),
     );
+    const adopted = await adoptPublishedCatalogReview(config, product, reasons);
+    if (adopted && !shouldRequireCatalogReview({ reasons, decision: adopted.review_decision,
+      approvedFingerprint: adopted.approved_review_fingerprint })) {
+      const { error: markerError } = await supabase.from("devir_sync_catalog")
+        .update({ review_marker_version: HUMAN_REVIEW_MARKER_VERSION, updated_at: new Date().toISOString() })
+        .eq("spree_product_id", productId).eq("catalog_state", "review");
+      if (markerError) throw markerError;
+      processed += 1;
+      continue;
+    }
     const tags = Array.from(
       new Set([
         ...(product.tags ?? []).filter(
@@ -6979,14 +7128,16 @@ async function refreshHumanReviewMarkersBatch(
         "NECESITA-TU-AYUDA",
       ]),
     );
-    await spreeRequest(
+    const drafted = await spreeRequest<SpreeProduct>(
       config,
       "PATCH",
       "/products/" + encodeURIComponent(productId),
       { status: "draft", tags },
     );
+    if (drafted.status !== "draft") throw new Error("Spree no confirmó el borrador de revisión");
     await upsertProductFields(config, productId, defs, {
       "catalog.review_status": "⚠ NECESITA TU AYUDA",
+      "catalog.review_pending_fingerprint": catalogReviewFingerprint(reasons),
       "catalog.review_reason": humanizeReviewReasons(reasons),
       "devir.review_status": "⚠ REVISIÓN HUMANA",
       "devir.review_reasons": humanizeReviewReasons(reasons),
@@ -7085,6 +7236,9 @@ async function hideCatalogPolicyViolations(
       "GET",
       "/products/" + encodeURIComponent(productId),
     );
+    const adopted = await adoptPublishedCatalogReview(config, product, reasons);
+    if (adopted && !shouldRequireCatalogReview({ reasons, decision: adopted.review_decision,
+      approvedFingerprint: adopted.approved_review_fingerprint })) continue;
     const tags = Array.from(
       new Set([
         ...(product.tags ?? []).filter(
@@ -7101,12 +7255,13 @@ async function hideCatalogPolicyViolations(
         "NECESITA-TU-AYUDA",
       ]),
     );
-    await spreeRequest(
+    const drafted = await spreeRequest<SpreeProduct>(
       config,
       "PATCH",
       "/products/" + encodeURIComponent(productId),
       { status: "draft", tags },
     );
+    if (drafted.status !== "draft") throw new Error("Spree no confirmó el borrador de revisión");
     if (channel) {
       try {
         await spreeRequest(
@@ -7122,6 +7277,7 @@ async function hideCatalogPolicyViolations(
     const reason = Array.from(reasons).join(", ");
     await upsertProductFields(config, productId, defs, {
       "catalog.review_status": "⚠ NECESITA TU AYUDA",
+      "catalog.review_pending_fingerprint": catalogReviewFingerprint(reasons),
       "catalog.review_reason": humanizeReviewReasons(reasons),
       "devir.review_status": "⚠ REVISIÓN HUMANA",
       "devir.review_reasons": humanizeReviewReasons(reasons),
@@ -7442,13 +7598,22 @@ async function syncSpecialPriceRows(
     throw new Error("Margen especial inválido");
   }
 
-  const { data, error } = await supabase
-    .from("catalog_selected_supply")
-    .select("variant_id,canonical_sku,spree_variant_id,normalized_cost,supplier_code")
-    .not("spree_variant_id", "is", null)
-    .not("supplier_code", "is", null)
-    .order("canonical_sku");
-  if (error) throw error;
+  const data: Array<Record<string, unknown>> = [];
+  // PostgREST caps unpaginated results; a successful first page is not a
+  // complete price synchronization. Read all pages before writing prices.
+  for (let offset = 0; ; offset += 500) {
+    const { data: page, error } = await supabase
+      .from("catalog_selected_supply")
+      .select("variant_id,canonical_sku,spree_variant_id,normalized_cost,supplier_code")
+      .not("spree_variant_id", "is", null)
+      .not("supplier_code", "is", null)
+      .order("variant_id")
+      .range(offset, offset + 499);
+    if (error) throw error;
+    const batch = page ?? [];
+    data.push(...batch);
+    if (batch.length < 500) break;
+  }
 
   // BISON3 is a discount overlay, never an alternative tariff that can make
   // a product more expensive than its normal automatic storefront price.
@@ -8088,7 +8253,7 @@ async function validateSpreeAdminKey(
     throw new Error("La clave de Spree no es una Secret API Key válida.");
   const response = await fetch(
     spreeApiUrl.replace(/\/$/, "") + "/api/v3/admin/products?limit=1",
-    { headers: { accept: "application/json", "x-spree-api-key": key } },
+    { redirect: "error", headers: { accept: "application/json", "x-spree-api-key": key } },
   );
   if (!response.ok) {
     throw new Error(
@@ -9229,6 +9394,50 @@ async function tcgFactoryStatus(): Promise<Record<string, unknown>> {
   };
 }
 
+async function reconcileUnavailableTcgFactoryProduct(
+  config: ConfigRow,
+  supplierId: string,
+  product: TcgFactoryPublicProduct,
+  runId: string | null,
+  categories: SpreeCategory[],
+  defs: Map<string, SpreeFieldDefinition>,
+): Promise<void> {
+  const now = new Date().toISOString();
+  // A negative observation must replace the previous availability immediately.
+  // Keep validated costs and physical quantities; do not create a new offer.
+  const { data: offers, error } = await supabase
+    .from("catalog_supplier_offers")
+    .update({ availability: product.availability, last_seen_run_id: runId,
+      last_seen_at: now, missing_runs: 0, updated_at: now })
+    .eq("supplier_id", supplierId)
+    .eq("source_url", product.sourceUrl)
+    .select("variant_id");
+  if (error) throw error;
+  const productIds = new Set<string>();
+  for (const variantId of new Set((offers ?? []).map(row => String(row.variant_id)))) {
+    const synced = await reconcileCatalogVariant(config, await loadCatalogVariant(variantId), categories, defs);
+    if (synced.productId) productIds.add(synced.productId);
+  }
+  for (const productId of productIds) {
+    const variants = await spreeListAll<SpreeVariant>(config, "/products/" + encodeURIComponent(productId) + "/variants");
+    if (!variants.length) throw new Error("No se pudo verificar la disponibilidad del producto");
+    let sellable = false;
+    for (const variant of variants) {
+      const supply = await selectedSupplyForSpreeVariant(variant.id);
+      if (shouldAutoPublishCatalogProduct({ review: false,
+        availability: supply?.supplier_code ? supply.availability ?? "unknown" : "unavailable",
+        physicalStockOnHand: Number(variant.total_on_hand ?? 0),
+        fulfillmentMode: supply?.fulfillment_mode ?? "supplier_or_physical" })) {
+        sellable = true;
+        break;
+      }
+    }
+    // Another eligible supplier/variant or physical stock may keep it on sale.
+    // This negative observation never publishes a draft or approves a review.
+    if (!sellable) await spreeRequest(config, "PATCH", "/products/" + encodeURIComponent(productId), { status: "draft" });
+  }
+}
+
 async function tcgFactoryTick(
   config: ConfigRow,
   force = false,
@@ -9345,6 +9554,7 @@ async function tcgFactoryTick(
         publicProduct.availability !== "available" &&
         publicProduct.availability !== "preorder"
       ) {
+        await reconcileUnavailableTcgFactoryProduct(config, supplier.id, publicProduct, state.run_id, categories, defs);
         continue;
       }
 
@@ -9356,6 +9566,10 @@ async function tcgFactoryTick(
         authenticatedDetail.html,
         url,
       );
+      if (authenticatedProduct.availability !== "available" && authenticatedProduct.availability !== "preorder") {
+        await reconcileUnavailableTcgFactoryProduct(config, supplier.id, authenticatedProduct, state.run_id, categories, defs);
+        continue;
+      }
       const price = safeTcgFactoryB2bPrice(
         authenticatedDetail.html,
         publicProduct.referencePriceNet,
@@ -9541,6 +9755,10 @@ async function operatorAction(
   const providedKey = req.headers.get("x-spree-admin-key") ?? "";
 
   if (action === "bootstrap") {
+    // Reconfiguration must authenticate against the existing installation.
+    if (config.spree_admin_api_key && !(await operatorAuthorized(config, providedKey))) {
+      return json({ error: "unauthorized" }, 401);
+    }
     const spreeApiUrl =
       typeof body.spreeApiUrl === "string" && body.spreeApiUrl
         ? body.spreeApiUrl
@@ -9553,6 +9771,13 @@ async function operatorAction(
       body.sessionState && typeof body.sessionState === "object"
         ? (body.sessionState as ConfigRow["session_state"])
         : null;
+
+    // The initial key must be validated by our trusted Spree server, never by
+    // a URL supplied as its own authority. Devir's destination is fixed too.
+    if (spreeApiUrl.replace(/\/$/, "") !== "https://bisontcg.spree.sh" ||
+        baseUrl.replace(/\/$/, "") !== "https://b2bdevir.es") {
+      return json({ error: "bootstrap_untrusted_destination" }, 400);
+    }
 
     if (!providedKey || !sessionState) {
       return json({ error: "bootstrap_missing_credentials" }, 400);
@@ -10964,7 +11189,7 @@ async function processProducts(
   return { done: false, processed, images, reviews };
 }
 
-async function finishCycle(config: ConfigRow, cycleId: string): Promise<void> {
+async function retireMissingDevirOffers(config: ConfigRow, cycleId: string): Promise<void> {
   // A completed full crawl is the only safe moment to infer that a supplier SKU
   // disappeared. Missing once is recorded; it is not treated as deletion.
   const nowIso = new Date().toISOString();
@@ -10976,7 +11201,7 @@ async function finishCycle(config: ConfigRow, cycleId: string): Promise<void> {
 
   const { data: missingRows, error: missingReadError } = await supabase
     .from("devir_sync_catalog")
-    .select("supplier_sku,missing_cycles,spree_variant_id")
+    .select("supplier_sku,missing_cycles,spree_product_id,spree_variant_id")
     .or(`last_seen_cycle_id.is.null,last_seen_cycle_id.neq.${cycleId}`);
   if (missingReadError) throw missingReadError;
 
@@ -11015,7 +11240,12 @@ async function finishCycle(config: ConfigRow, cycleId: string): Promise<void> {
         if (offer.variant_id) affectedVariantIds.add(String(offer.variant_id));
       }
       if (!retiredOffers?.length && row.spree_variant_id) {
-        await syncBackorderability(config, row.spree_variant_id, "unavailable");
+        await syncBackorderability(
+          config,
+          row.spree_product_id ? String(row.spree_product_id) : null,
+          String(row.spree_variant_id),
+          "unavailable",
+        );
       }
     }
   }
@@ -11033,16 +11263,35 @@ async function finishCycle(config: ConfigRow, cycleId: string): Promise<void> {
     }
   }
 
-  const { count: products } = await supabase
+}
+
+async function finishCycle(config: ConfigRow, cycleId: string): Promise<boolean> {
+  const { count: inProgress, error: jobsError } = await supabase
     .from("devir_sync_jobs")
-    .select("*", { head: true, count: "exact" })
+    .select("id", { head: true, count: "exact" })
     .eq("cycle_id", cycleId)
-    .eq("kind", "product");
-  const { count: errors } = await supabase
+    .in("status", ["pending", "processing"]);
+  if (jobsError) throw jobsError;
+  if (inProgress === null || inProgress === undefined) throw new Error("No se pudo comprobar el ciclo");
+  if (inProgress > 0) return false;
+
+  const { count: errors, error: errorsError } = await supabase
     .from("devir_sync_jobs")
-    .select("*", { head: true, count: "exact" })
+    .select("id", { head: true, count: "exact" })
     .eq("cycle_id", cycleId)
     .eq("status", "error");
+  if (errorsError) throw errorsError;
+  if (errors === null || errors === undefined) throw new Error("No se pudieron comprobar los errores del ciclo");
+  const { count: products, error: productsError } = await supabase
+    .from("devir_sync_jobs")
+    .select("id", { head: true, count: "exact" })
+    .eq("cycle_id", cycleId)
+    .eq("kind", "product");
+  if (productsError) throw productsError;
+  // A failed crawl must schedule another attempt without treating unseen SKUs
+  // as missing. In-flight jobs are handled above and must not close the cycle.
+  if (errors === 0) await retireMissingDevirOffers(config, cycleId);
+
   const now = new Date();
   const next = new Date(now.getTime() + config.interval_hours * 60 * 60 * 1000);
   await supabase
@@ -11073,7 +11322,7 @@ async function finishCycle(config: ConfigRow, cycleId: string): Promise<void> {
     .update({
       next_sync_at: next.toISOString(),
       last_success_at: (errors ?? 0) > 0 ? undefined : now.toISOString(),
-      last_completed_run_id: cycleId,
+      last_completed_run_id: errors > 0 ? undefined : cycleId,
       last_error:
         (errors ?? 0) > 0
           ? String(errors) + " jobs terminaron con error"
@@ -11082,6 +11331,7 @@ async function finishCycle(config: ConfigRow, cycleId: string): Promise<void> {
     })
     .eq("code", "devir");
   if (supplierSyncError) throw supplierSyncError;
+  return true;
 }
 
 Deno.serve(async (req) => {
@@ -11215,7 +11465,9 @@ Deno.serve(async (req) => {
       const productResult = await processProducts(config, cycleId);
 
       if (categoryResult.done && productResult.done) {
-        await finishCycle(config, cycleId);
+        if (!(await finishCycle(config, cycleId))) {
+          return json({ ok: true, cycle_id: cycleId, phase, waiting: "unfinished_jobs" });
+        }
         return json({
           ok: true,
           cycle_id: cycleId,
@@ -11251,7 +11503,9 @@ Deno.serve(async (req) => {
     if (phase === "products") {
       const result = await processProducts(config, cycleId);
       if (result.done) {
-        await finishCycle(config, cycleId);
+        if (!(await finishCycle(config, cycleId))) {
+          return json({ ok: true, cycle_id: cycleId, phase, waiting: "unfinished_jobs" });
+        }
         return json({
           ok: true,
           cycle_id: cycleId,

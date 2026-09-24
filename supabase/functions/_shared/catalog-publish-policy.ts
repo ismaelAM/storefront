@@ -25,7 +25,10 @@ export function isCatalogReviewApproved(input: {
 }): boolean {
   if (input.decision !== "approved") return false;
   const fingerprint = catalogReviewFingerprint(input.reasons);
-  return Boolean(fingerprint) && fingerprint === (input.approvedFingerprint ?? "");
+  const approved = new Set((input.approvedFingerprint ?? "").split("|").filter(Boolean));
+  // Resolved issues must not invalidate the remaining approved reasons.
+  // A newly introduced reason still requires a fresh human decision.
+  return approved.size > 0 && (!fingerprint || fingerprint.split("|").every(reason => approved.has(reason)));
 }
 
 export function shouldRequireCatalogReview(input: {

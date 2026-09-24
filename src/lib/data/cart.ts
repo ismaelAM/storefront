@@ -17,7 +17,7 @@ import {
   type Surface,
   setCartCookies,
 } from "@/lib/spree";
-import { actionResult } from "./utils";
+import { actionResult, isCartAccessError } from "./utils";
 
 /** Cache tag for a surface's cart, so DTC and wholesale carts invalidate independently. */
 function cartTag(surface: Surface): string {
@@ -97,8 +97,12 @@ export async function getCart(
     }
 
     return null;
-  } catch {
-    // Cart not found (e.g., order was completed) — clear stale cookies.
+  } catch (error) {
+    // An outage or rate limit says nothing about whether this cart exists.
+    // Propagate it so getOrCreateCart cannot replace a customer's cart.
+    if (!isCartAccessError(error)) throw error;
+
+    // Confirmed missing/inaccessible cart — clear stale cookies.
     // Wrapped in try/catch because clearCartCookies sets cookies, which
     // is not allowed in Server Components (only in Server Actions).
     if (!explicitCartId) {
@@ -228,8 +232,9 @@ export async function associateCartWithUser(
         token,
       });
       updateTag(cartTag(surface));
-    } catch {
-      // Cart might already belong to another user — clear it
+    } catch (error) {
+      if (!isCartAccessError(error)) throw error;
+      // Confirmed missing or inaccessible cart — clear stale credentials.
       await clearCartCookies(surface);
       updateTag(cartTag(surface));
     }

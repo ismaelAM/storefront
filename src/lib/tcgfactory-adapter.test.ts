@@ -31,6 +31,10 @@ function record(overrides: Record<string, unknown> = {}) {
 }
 
 describe("TcgFactory adapter", () => {
+  it.each(["Restock", "RESTOCK", "Restock 30/10/2026", "En reposición"])("excludes %s even if an old quantity is positive", (availability) => {
+    expect(mapTcgFactoryAvailability(availability)).toBe("unavailable");
+    expect(tcgFactoryRecordToCatalogItem(record({ availability, stockQuantity: 10 })).availability).toBe("unavailable");
+  });
   it("maps the B2B bridge contract without losing variant dimensions", () => {
     const item = normalizeTcgFactoryRecord(record());
 
