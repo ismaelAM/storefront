@@ -1584,18 +1584,20 @@ async function patchVariantInventory(
   backorderable: boolean,
   preorderable: boolean,
   preorderShipsAt: string | null,
+  initializeInventory = false,
 ): Promise<SpreeVariant> {
-  const locationId = await defaultStockLocationId(config);
-  const inventory = [
+  if (initializeInventory && countOnHand !== 0) {
+    throw new Error("Una variante nueva debe inicializarse con stock cero");
+  }
+  // Replaying aggregate stock into one location can duplicate quantities or undo sales.
+  // Only a just-created variant may initialize its zero inventory.
+  const inventory = initializeInventory ? [
     {
-      stock_location_id: locationId,
-      count_on_hand: Math.max(
-        0,
-        Number.isFinite(countOnHand) ? countOnHand : 0,
-      ),
+      stock_location_id: await defaultStockLocationId(config),
+      count_on_hand: 0,
       backorderable,
     },
-  ];
+  ] : undefined;
 
   let updated = await spreeRequest<SpreeVariant>(
     config,
@@ -1608,13 +1610,13 @@ async function patchVariantInventory(
       track_inventory: true,
       preorderable,
       preorder_ships_at: preorderable ? preorderShipsAt : null,
-      stock_levels: inventory,
+      ...(inventory ? { stock_levels: inventory } : {}),
     },
   );
 
   // Spree 5.x accepts the legacy stock_items key while newer releases use
   // stock_levels. Verify the result and transparently fall back when needed.
-  if (updated.backorderable !== backorderable) {
+  if (inventory && updated.backorderable !== backorderable) {
     updated = await spreeRequest<SpreeVariant>(
       config,
       "PATCH",
@@ -1645,6 +1647,9 @@ async function patchVariantInventory(
         "/variants/" +
         encodeURIComponent(variantId),
     );
+  }
+  if (updated.backorderable !== backorderable || updated.preorderable !== preorderable) {
+    throw new Error("Spree no confirmó las banderas de disponibilidad; inventario conservado");
   }
   return updated;
 }
@@ -1977,6 +1982,7 @@ async function appendToExistingLanguageProduct(
         product.availability === "preorder",
       product.availability === "preorder",
       product.releaseDate,
+      true,
     );
     return { product: parent, variant: inventoryVariant };
   }
@@ -3580,6 +3586,7 @@ async function createGroupedVariant(
     product.availability === "available" || product.availability === "preorder",
     product.availability === "preorder",
     product.releaseDate,
+    true,
   );
 }
 
@@ -11058,7 +11065,7 @@ async function processProducts(
   return { done: false, processed, images, reviews };
 }
 
-async function finishCycle(config: ConfigRow, cycleId: string): Promise<void> {
+async function retireMissingDevirOffers(config: ConfigRow, cycleId: string): Promise<void> {
   // A completed full crawl is the only safe moment to infer that a supplier SKU
   // disappeared. Missing once is recorded; it is not treated as deletion.
   const nowIso = new Date().toISOString();
@@ -11132,16 +11139,35 @@ async function finishCycle(config: ConfigRow, cycleId: string): Promise<void> {
     }
   }
 
-  const { count: products } = await supabase
+}
+
+async function finishCycle(config: ConfigRow, cycleId: string): Promise<boolean> {
+  const { count: inProgress, error: jobsError } = await supabase
     .from("devir_sync_jobs")
-    .select("*", { head: true, count: "exact" })
+    .select("id", { head: true, count: "exact" })
     .eq("cycle_id", cycleId)
-    .eq("kind", "product");
-  const { count: errors } = await supabase
+    .in("status", ["pending", "processing"]);
+  if (jobsError) throw jobsError;
+  if (inProgress === null || inProgress === undefined) throw new Error("No se pudo comprobar el ciclo");
+  if (inProgress > 0) return false;
+
+  const { count: errors, error: errorsError } = await supabase
     .from("devir_sync_jobs")
-    .select("*", { head: true, count: "exact" })
+    .select("id", { head: true, count: "exact" })
     .eq("cycle_id", cycleId)
     .eq("status", "error");
+  if (errorsError) throw errorsError;
+  if (errors === null || errors === undefined) throw new Error("No se pudieron comprobar los errores del ciclo");
+  const { count: products, error: productsError } = await supabase
+    .from("devir_sync_jobs")
+    .select("id", { head: true, count: "exact" })
+    .eq("cycle_id", cycleId)
+    .eq("kind", "product");
+  if (productsError) throw productsError;
+  // A failed crawl must schedule another attempt without treating unseen SKUs
+  // as missing. In-flight jobs are handled above and must not close the cycle.
+  if (errors === 0) await retireMissingDevirOffers(config, cycleId);
+
   const now = new Date();
   const next = new Date(now.getTime() + config.interval_hours * 60 * 60 * 1000);
   await supabase
@@ -11172,7 +11198,7 @@ async function finishCycle(config: ConfigRow, cycleId: string): Promise<void> {
     .update({
       next_sync_at: next.toISOString(),
       last_success_at: (errors ?? 0) > 0 ? undefined : now.toISOString(),
-      last_completed_run_id: cycleId,
+      last_completed_run_id: errors > 0 ? undefined : cycleId,
       last_error:
         (errors ?? 0) > 0
           ? String(errors) + " jobs terminaron con error"
@@ -11181,6 +11207,7 @@ async function finishCycle(config: ConfigRow, cycleId: string): Promise<void> {
     })
     .eq("code", "devir");
   if (supplierSyncError) throw supplierSyncError;
+  return true;
 }
 
 Deno.serve(async (req) => {
@@ -11314,7 +11341,9 @@ Deno.serve(async (req) => {
       const productResult = await processProducts(config, cycleId);
 
       if (categoryResult.done && productResult.done) {
-        await finishCycle(config, cycleId);
+        if (!(await finishCycle(config, cycleId))) {
+          return json({ ok: true, cycle_id: cycleId, phase, waiting: "unfinished_jobs" });
+        }
         return json({
           ok: true,
           cycle_id: cycleId,
@@ -11350,7 +11379,9 @@ Deno.serve(async (req) => {
     if (phase === "products") {
       const result = await processProducts(config, cycleId);
       if (result.done) {
-        await finishCycle(config, cycleId);
+        if (!(await finishCycle(config, cycleId))) {
+          return json({ ok: true, cycle_id: cycleId, phase, waiting: "unfinished_jobs" });
+        }
         return json({
           ok: true,
           cycle_id: cycleId,

@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 
 // Run the real function bodies without starting Deno.serve or reading secrets.
 const source = ts.createSourceFile("index.ts", readFileSync("supabase/functions/devir-sync/index.ts", "utf8"), ts.ScriptTarget.Latest, true);
-const names = ["operatorAction", "operatorAuthorized", "validateSpreeAdminKey", "stockItemsForVariant", "setVariantBackorderability", "spreeList", "spreeListAll", "syncSpecialPriceRows"];
+const names = ["operatorAction", "operatorAuthorized", "validateSpreeAdminKey", "stockItemsForVariant", "setVariantBackorderability", "spreeList", "spreeListAll", "syncSpecialPriceRows", "patchVariantInventory", "finishCycle", "retireMissingDevirOffers"];
 const bodies = source.statements.filter(node => ts.isFunctionDeclaration(node) && names.includes(node.name?.text ?? "")).map(node => node.getText(source)).join("\n");
 const code = ts.transpileModule(bodies, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 
@@ -16,11 +16,12 @@ function fixture(overrides: Record<string, unknown> = {}) {
   const fetch = vi.fn(async () => Response.json({ data: [] }));
   const devirFetch = vi.fn(async () => "authenticated fixture");
   const spreeRequest = vi.fn();
-  const api = runInNewContext(`${code}; ({ operatorAction, validateSpreeAdminKey, stockItemsForVariant, setVariantBackorderability, syncSpecialPriceRows })`, {
+  const api = runInNewContext(`${code}; ({ operatorAction, validateSpreeAdminKey, stockItemsForVariant, setVariantBackorderability, syncSpecialPriceRows, patchVariantInventory, finishCycle })`, {
     Request, Response, URL, fetch, devirFetch, spreeRequest,
     json: (body: unknown, status = 200) => Response.json(body, { status }),
     sha256: async (value: string) => createHash("sha256").update(value).digest("hex"),
     supabase: { from: () => ({ update }) },
+    defaultStockLocationId: async () => "sl_1",
     ...overrides,
   }) as {
     operatorAction: (action: string, req: Request, config: Record<string, unknown>, body: Record<string, unknown>) => Promise<Response>;
@@ -28,6 +29,8 @@ function fixture(overrides: Record<string, unknown> = {}) {
     stockItemsForVariant: (config: object, id: string) => Promise<Array<typeof stock>>;
     setVariantBackorderability: (config: object, productId: string, variantId: string, desired: boolean) => Promise<number>;
     syncSpecialPriceRows: (config: object, program: object, priceList: object) => Promise<number>;
+    patchVariantInventory: (config: object, productId: string, variantId: string, quantity: number, backorder: boolean, preorder: boolean, date: string | null, initialize?: boolean) => Promise<unknown>;
+    finishCycle: (config: object, cycleId: string) => Promise<boolean>;
   };
   return { api, fetch, devirFetch, spreeRequest, update };
 }
@@ -109,6 +112,39 @@ describe("BISON3 catalog coverage", () => {
 });
 
 describe("Devir inventory boundaries", () => {
+  it.each([12, -2])("does not replay aggregate stock %s while updating availability", async (quantity) => {
+    const f = fixture();
+    f.spreeRequest.mockResolvedValue({ backorderable: true, preorderable: false });
+    await f.api.patchVariantInventory({}, "product_1", "variant_target", quantity, true, false, null);
+    for (const call of f.spreeRequest.mock.calls.filter(call => call[1] !== "GET")) {
+      expect(JSON.stringify(call[3])).not.toMatch(/count_on_hand|stock_levels|stock_items/);
+    }
+  });
+  it("initializes zero inventory only for an explicitly new variant", async () => {
+    const f = fixture();
+    f.spreeRequest.mockResolvedValue({ backorderable: true, preorderable: false });
+    await f.api.patchVariantInventory({}, "product_1", "variant_new", 0, true, false, null, true);
+    expect(f.spreeRequest.mock.calls[0][3].stock_levels).toEqual([{ stock_location_id: "sl_1", count_on_hand: 0, backorderable: true }]);
+  });
+  it("never initializes a new variant with invented or invalid stock", async () => {
+    const f = fixture();
+    f.spreeRequest.mockResolvedValue({ backorderable: true, preorderable: false });
+    for (const quantity of [12, -2, Number.NaN]) {
+      await expect(f.api.patchVariantInventory({}, "product_1", "variant_new", quantity, true, false, null, true)).rejects.toThrow("cero");
+    }
+    expect(f.spreeRequest).not.toHaveBeenCalled();
+  });
+  it("does not confirm preorder when the backend ignores that flag", async () => {
+    const f = fixture();
+    f.spreeRequest.mockResolvedValue({ backorderable: true, preorderable: false });
+    await expect(f.api.patchVariantInventory({}, "product_1", "variant_target", 0, true, true, null)).rejects.toThrow("confirm");
+  });
+  it("rejects a variant response that still has the wrong availability after fallback", async () => {
+    const f = fixture();
+    f.spreeRequest.mockImplementation(async (_config, _method, path: string) =>
+      path.startsWith("/stock_items") ? { data: [{ ...stock, backorderable: true }] } : { backorderable: false, preorderable: false });
+    await expect(f.api.patchVariantInventory({}, "product_1", "variant_target", 0, true, false, null)).rejects.toThrow("confirm");
+  });
   it("never returns another variant when a server ignores search filters", async () => {
     const f = fixture();
     f.spreeRequest.mockResolvedValue({ data: [{ ...stock, variant_id: "variant_other" }, stock] });
@@ -164,5 +200,68 @@ describe("Devir inventory boundaries", () => {
     f.spreeRequest.mockResolvedValue({ data: [stock] });
     expect(await f.api.setVariantBackorderability({}, "product_1", "variant_target", false)).toBe(0);
     expect(f.spreeRequest.mock.calls.every(call => call[1] === "GET")).toBe(true);
+  });
+});
+
+describe("Devir complete-crawl requirement", () => {
+  it("preserves successful completion after every job has finished", async () => {
+    const writes: Array<{ table: string; value: Record<string, unknown> }> = [];
+    const f = fixture({
+      configuredCatalogSupplier: async () => ({ id: "supplier_fixture" }),
+      supabase: { from: (table: string) => {
+        const query = {
+          select: () => query, eq: () => query, neq: () => query, or: () => query, in: () => query,
+          update: (value: Record<string, unknown>) => { writes.push({ table, value }); return query; },
+          // biome-ignore lint/suspicious/noThenProperty: Models a completed crawl with no missing rows.
+          then: (resolve: (value: unknown) => void) => resolve({ count: 0, error: null, data: [] }),
+        };
+        return query;
+      } },
+    });
+    await f.api.finishCycle({ interval_hours: 6 }, "cycle_fixture");
+    expect(writes).toContainEqual({ table: "devir_sync_cycles", value: expect.objectContaining({ status: "success" }) });
+    expect(writes).toContainEqual({ table: "catalog_suppliers", value: expect.objectContaining({ last_completed_run_id: "cycle_fixture" }) });
+  });
+  it.each(["pending", "processing"])("waits without retiring offers when a job is %s", async (status) => {
+    const writes = vi.fn();
+    const query = {
+      select: () => query, eq: () => query, neq: () => query, in: () => query,
+      // biome-ignore lint/suspicious/noThenProperty: Models a PostgREST count query.
+      then: (resolve: (value: unknown) => void) => resolve({ count: 1, error: null, data: [{ status }] }),
+    };
+    const f = fixture({ supabase: { from: () => ({ ...query, update: writes }) } });
+    expect(await f.api.finishCycle({ interval_hours: 6 }, "cycle_fixture")).toBe(false);
+    expect(writes).not.toHaveBeenCalled();
+  });
+  it("schedules the next cycle after failed jobs without inferring missing supply", async () => {
+    const writes: Array<{ table: string; value: Record<string, unknown> }> = [];
+    const f = fixture({ supabase: { from: (table: string) => {
+      let count = 0;
+      const query = {
+        select: () => query, neq: () => { count = 1; return query; },
+        in: () => query,
+        eq: (key: string, value: string) => { if (key === "status" && value === "error") count = 1; return query; },
+        update: (value: Record<string, unknown>) => { writes.push({ table, value }); return query; },
+        // biome-ignore lint/suspicious/noThenProperty: Models a crawl with one failed terminal job.
+        then: (resolve: (value: unknown) => void) => resolve({ count, error: null, data: [] }),
+      };
+      return query;
+    } } });
+    expect(await f.api.finishCycle({ interval_hours: 6 }, "failed_cycle")).toBe(true);
+    expect(writes.map(write => write.table)).not.toContain("devir_sync_catalog");
+    expect(writes.map(write => write.table)).not.toContain("catalog_supplier_offers");
+    expect(writes).toContainEqual({ table: "devir_sync_config", value: expect.objectContaining({ phase: "idle", active_cycle_id: null, last_error: "1 jobs terminaron con error" }) });
+    expect(writes.find(write => write.table === "catalog_suppliers")?.value.last_completed_run_id).toBeUndefined();
+  });
+  it("does not infer absence if the job count cannot be read", async () => {
+    const writes = vi.fn();
+    const query = {
+      select: () => query, eq: () => query, neq: () => query, in: () => query,
+      // biome-ignore lint/suspicious/noThenProperty: Models a PostgREST count query.
+      then: (resolve: (value: unknown) => void) => resolve({ count: null, error: new Error("database unavailable") }),
+    };
+    const f = fixture({ supabase: { from: () => ({ ...query, update: writes }) } });
+    await expect(f.api.finishCycle({}, "cycle_fixture")).rejects.toThrow("database unavailable");
+    expect(writes).not.toHaveBeenCalled();
   });
 });
