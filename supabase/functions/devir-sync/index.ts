@@ -1393,6 +1393,12 @@ async function definitions(
       field_type: "long_text",
     },
     {
+      namespace: "catalog",
+      key: "review_pending_fingerprint",
+      label: "Catálogo · Motivos pendientes registrados",
+      field_type: "long_text",
+    },
+    {
       namespace: "pricing",
       key: "profile",
       label: "Precio · Perfil comercial",
@@ -2904,7 +2910,7 @@ async function syncProductToSpree(
   if (catalogContext?.reviewDecision === "rejected") {
     reasons.push("operator_rejected");
   }
-  const review = shouldRequireCatalogReview({
+  let review = shouldRequireCatalogReview({
     reasons,
     decision: catalogContext?.reviewDecision ?? "pending",
     approvedFingerprint: catalogContext?.approvedReviewFingerprint ?? null,
@@ -3029,6 +3035,16 @@ async function syncProductToSpree(
     );
   }
 
+  if (existing && catalogContext) {
+    const adopted = await adoptPublishedCatalogReview(config, existing.product, reasons);
+    if (adopted) {
+      catalogContext.reviewDecision = adopted.review_decision;
+      catalogContext.approvedReviewFingerprint = adopted.approved_review_fingerprint;
+      review = shouldRequireCatalogReview({ reasons, decision: adopted.review_decision,
+        approvedFingerprint: adopted.approved_review_fingerprint });
+    }
+  }
+
   let productId: string;
   let variantId: string | null = null;
   let manualPrice = false;
@@ -3139,14 +3155,17 @@ async function syncProductToSpree(
     );
     const refreshManagedMetadata =
       managed && (!active || forceDraftForSplit || needsManagedCleanup);
-    await spreeRequest(config, "PATCH", "/products/" + productId, {
+    const markedProduct = await spreeRequest<SpreeProduct>(config, "PATCH", "/products/" + productId, {
       tags,
-      ...(forceDraftForSplit ? { status: "draft" } : {}),
+      ...(review ? { status: "draft" } : {}),
       ...(refreshManagedMetadata ? { name: spreeProductName } : {}),
       ...(refreshManagedMetadata && category
         ? { category_ids: [category.id] }
         : {}),
     });
+    if (review && markedProduct.status !== "draft") {
+      throw new Error("Spree no confirmó el borrador; no registrar nuevos motivos de revisión");
+    }
     await spreeRequest(
       config,
       "PATCH",
@@ -3206,6 +3225,7 @@ async function syncProductToSpree(
       : reasons.length > 0 && catalogContext?.reviewDecision === "approved"
         ? "✓ APROBADO"
         : "LISTO",
+    "catalog.review_pending_fingerprint": review ? catalogReviewFingerprint(reasons) : "none",
     "catalog.review_reason": review
       ? humanizeReviewReasons(reasons)
       : reasons.length > 0 && catalogContext?.reviewDecision === "approved"
@@ -5959,6 +5979,7 @@ async function preparePublishBatch(
       return;
     }
 
+    await adoptPublishedCatalogReview(config, spreeProduct, await currentCatalogReviewReasonsForSpreeProduct(productId));
     // Product-level policy is required below for every variant in this batch.
     const { data: catalogProductPolicy, error: catalogProductPolicyError } =
       await supabase
@@ -6270,7 +6291,7 @@ async function preparePublishBatch(
         ? categoryForKey(categories, Array.from(categoryKeys)[0])
         : undefined;
 
-    await spreeRequest(
+    const preparedProduct = await spreeRequest<SpreeProduct>(
       config,
       "PATCH",
       "/products/" + encodeURIComponent(productId),
@@ -6280,6 +6301,7 @@ async function preparePublishBatch(
         ...(resolvedCategory ? { category_ids: [resolvedCategory.id] } : {}),
       },
     );
+    if (human && preparedProduct.status !== "draft") throw new Error("Spree no confirmó el borrador de revisión");
 
     if (publish) {
       await spreeRequest(
@@ -6311,6 +6333,7 @@ async function preparePublishBatch(
         : productReasons.size > 0 && reviewDecision === "approved"
           ? "✓ APROBADO"
           : "LISTO",
+      "catalog.review_pending_fingerprint": human ? catalogReviewFingerprint(productReasons) : "none",
       "catalog.review_reason": human
         ? humanizeReviewReasons(productReasons)
         : productReasons.size > 0 && reviewDecision === "approved"
@@ -6947,6 +6970,41 @@ async function repairRetailUnitProducts(
 
 const HUMAN_REVIEW_MARKER_VERSION = "catalog-review-v1";
 
+async function adoptPublishedCatalogReview(
+  config: ConfigRow,
+  product: SpreeProduct,
+  currentReasons: Iterable<string> = [],
+): Promise<Pick<CatalogProductRow, "review_decision" | "approved_review_fingerprint"> | null> {
+  const { data: policy, error } = await supabase.from("catalog_products")
+    .select("id,review_decision,approved_review_fingerprint,updated_at")
+    .eq("spree_product_id", product.id).maybeSingle();
+  if (error) throw error;
+  if (!policy) return null;
+  if (policy.review_decision === "rejected" || product.status !== "active" || !(product.tags ?? []).some(tag =>
+    ["catalog-review", "devir-review", "REVISION-HUMANA", "NECESITA-TU-AYUDA"].includes(tag))) return policy;
+  const fields = await productFields(config, product.id);
+  const recorded = String(fields.find(field => field.key === "catalog.review_pending_fingerprint")?.value ?? "");
+  // Legacy products already have the human-readable reasons displayed in Spree.
+  // Only adopt reasons actually displayed there, never newly discovered issues.
+  const displayed = String(fields.find(field => field.key === "catalog.review_reason")?.value ?? "");
+  const legacy = Array.from(currentReasons).filter(reason => displayed.includes(humanizeReviewReason(reason)));
+  const pending = recorded && recorded !== "none" ? recorded.split("|") : legacy;
+  if (!pending.length) return policy;
+  const fingerprint = catalogReviewFingerprint([
+    ...String(policy.approved_review_fingerprint ?? "").split("|"), ...pending,
+  ]);
+  if (policy.review_decision === "approved" && policy.approved_review_fingerprint === fingerprint) return policy;
+  const { data: approved, error: approvalError } = await supabase.from("catalog_products")
+    .update({ review_decision: "approved", approved_review_fingerprint: fingerprint,
+      review_decided_at: new Date().toISOString(), review_note: "Aprobación detectada al publicar en Spree",
+      updated_at: new Date().toISOString() })
+    .eq("id", policy.id).eq("review_decision", policy.review_decision)
+    .eq("updated_at", policy.updated_at).select("*").maybeSingle();
+  if (approvalError) throw approvalError;
+  if (!approved) throw new Error("La revisión cambió durante la aprobación; reintentar");
+  return approved as CatalogProductRow;
+}
+
 function reviewReasonsFromLastError(value: unknown): string[] {
   const text = String(value ?? "")
     .replace(/^REVIEW:\s*/i, "")
@@ -7049,6 +7107,16 @@ async function refreshHumanReviewMarkersBatch(
       "GET",
       "/products/" + encodeURIComponent(productId),
     );
+    const adopted = await adoptPublishedCatalogReview(config, product, reasons);
+    if (adopted && !shouldRequireCatalogReview({ reasons, decision: adopted.review_decision,
+      approvedFingerprint: adopted.approved_review_fingerprint })) {
+      const { error: markerError } = await supabase.from("devir_sync_catalog")
+        .update({ review_marker_version: HUMAN_REVIEW_MARKER_VERSION, updated_at: new Date().toISOString() })
+        .eq("spree_product_id", productId).eq("catalog_state", "review");
+      if (markerError) throw markerError;
+      processed += 1;
+      continue;
+    }
     const tags = Array.from(
       new Set([
         ...(product.tags ?? []).filter(
@@ -7060,14 +7128,16 @@ async function refreshHumanReviewMarkersBatch(
         "NECESITA-TU-AYUDA",
       ]),
     );
-    await spreeRequest(
+    const drafted = await spreeRequest<SpreeProduct>(
       config,
       "PATCH",
       "/products/" + encodeURIComponent(productId),
       { status: "draft", tags },
     );
+    if (drafted.status !== "draft") throw new Error("Spree no confirmó el borrador de revisión");
     await upsertProductFields(config, productId, defs, {
       "catalog.review_status": "⚠ NECESITA TU AYUDA",
+      "catalog.review_pending_fingerprint": catalogReviewFingerprint(reasons),
       "catalog.review_reason": humanizeReviewReasons(reasons),
       "devir.review_status": "⚠ REVISIÓN HUMANA",
       "devir.review_reasons": humanizeReviewReasons(reasons),
@@ -7166,6 +7236,9 @@ async function hideCatalogPolicyViolations(
       "GET",
       "/products/" + encodeURIComponent(productId),
     );
+    const adopted = await adoptPublishedCatalogReview(config, product, reasons);
+    if (adopted && !shouldRequireCatalogReview({ reasons, decision: adopted.review_decision,
+      approvedFingerprint: adopted.approved_review_fingerprint })) continue;
     const tags = Array.from(
       new Set([
         ...(product.tags ?? []).filter(
@@ -7182,12 +7255,13 @@ async function hideCatalogPolicyViolations(
         "NECESITA-TU-AYUDA",
       ]),
     );
-    await spreeRequest(
+    const drafted = await spreeRequest<SpreeProduct>(
       config,
       "PATCH",
       "/products/" + encodeURIComponent(productId),
       { status: "draft", tags },
     );
+    if (drafted.status !== "draft") throw new Error("Spree no confirmó el borrador de revisión");
     if (channel) {
       try {
         await spreeRequest(
@@ -7203,6 +7277,7 @@ async function hideCatalogPolicyViolations(
     const reason = Array.from(reasons).join(", ");
     await upsertProductFields(config, productId, defs, {
       "catalog.review_status": "⚠ NECESITA TU AYUDA",
+      "catalog.review_pending_fingerprint": catalogReviewFingerprint(reasons),
       "catalog.review_reason": humanizeReviewReasons(reasons),
       "devir.review_status": "⚠ REVISIÓN HUMANA",
       "devir.review_reasons": humanizeReviewReasons(reasons),
@@ -9319,6 +9394,50 @@ async function tcgFactoryStatus(): Promise<Record<string, unknown>> {
   };
 }
 
+async function reconcileUnavailableTcgFactoryProduct(
+  config: ConfigRow,
+  supplierId: string,
+  product: TcgFactoryPublicProduct,
+  runId: string | null,
+  categories: SpreeCategory[],
+  defs: Map<string, SpreeFieldDefinition>,
+): Promise<void> {
+  const now = new Date().toISOString();
+  // A negative observation must replace the previous availability immediately.
+  // Keep validated costs and physical quantities; do not create a new offer.
+  const { data: offers, error } = await supabase
+    .from("catalog_supplier_offers")
+    .update({ availability: product.availability, last_seen_run_id: runId,
+      last_seen_at: now, missing_runs: 0, updated_at: now })
+    .eq("supplier_id", supplierId)
+    .eq("source_url", product.sourceUrl)
+    .select("variant_id");
+  if (error) throw error;
+  const productIds = new Set<string>();
+  for (const variantId of new Set((offers ?? []).map(row => String(row.variant_id)))) {
+    const synced = await reconcileCatalogVariant(config, await loadCatalogVariant(variantId), categories, defs);
+    if (synced.productId) productIds.add(synced.productId);
+  }
+  for (const productId of productIds) {
+    const variants = await spreeListAll<SpreeVariant>(config, "/products/" + encodeURIComponent(productId) + "/variants");
+    if (!variants.length) throw new Error("No se pudo verificar la disponibilidad del producto");
+    let sellable = false;
+    for (const variant of variants) {
+      const supply = await selectedSupplyForSpreeVariant(variant.id);
+      if (shouldAutoPublishCatalogProduct({ review: false,
+        availability: supply?.supplier_code ? supply.availability ?? "unknown" : "unavailable",
+        physicalStockOnHand: Number(variant.total_on_hand ?? 0),
+        fulfillmentMode: supply?.fulfillment_mode ?? "supplier_or_physical" })) {
+        sellable = true;
+        break;
+      }
+    }
+    // Another eligible supplier/variant or physical stock may keep it on sale.
+    // This negative observation never publishes a draft or approves a review.
+    if (!sellable) await spreeRequest(config, "PATCH", "/products/" + encodeURIComponent(productId), { status: "draft" });
+  }
+}
+
 async function tcgFactoryTick(
   config: ConfigRow,
   force = false,
@@ -9435,6 +9554,7 @@ async function tcgFactoryTick(
         publicProduct.availability !== "available" &&
         publicProduct.availability !== "preorder"
       ) {
+        await reconcileUnavailableTcgFactoryProduct(config, supplier.id, publicProduct, state.run_id, categories, defs);
         continue;
       }
 
@@ -9446,6 +9566,10 @@ async function tcgFactoryTick(
         authenticatedDetail.html,
         url,
       );
+      if (authenticatedProduct.availability !== "available" && authenticatedProduct.availability !== "preorder") {
+        await reconcileUnavailableTcgFactoryProduct(config, supplier.id, authenticatedProduct, state.run_id, categories, defs);
+        continue;
+      }
       const price = safeTcgFactoryB2bPrice(
         authenticatedDetail.html,
         publicProduct.referencePriceNet,

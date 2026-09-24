@@ -10,6 +10,12 @@ import {
 } from "../../supabase/functions/_shared/catalog-publish-policy";
 
 describe("catalog publish policy", () => {
+  it("keeps approval when already reviewed issues disappear", () => {
+    const approvedFingerprint = catalogReviewFingerprint(["product_image_missing", "catalan_requires_operator_review"]);
+    expect(shouldRequireCatalogReview({ reasons: ["catalan_requires_operator_review"], decision: "approved", approvedFingerprint })).toBe(false);
+    expect(isCatalogReviewApproved({ reasons: [], decision: "approved", approvedFingerprint })).toBe(true);
+    expect(shouldRequireCatalogReview({ reasons: ["grouping_requires_operator_review"], decision: "approved", approvedFingerprint })).toBe(true);
+  });
   it("publishes supplier-backed products only when they do not need review", () => {
     expect(
       shouldAutoPublishCatalogProduct({

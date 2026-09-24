@@ -2,6 +2,7 @@ import {
   normalizeText,
   type SupplierAvailability,
 } from "./catalog-sourcing.ts";
+import { mapTcgFactoryAvailability } from "./tcgfactory-adapter.ts";
 
 export const TCGFACTORY_BASE_URL = "https://tcgfactory.com";
 export const TCGFACTORY_ACCESSORIES_URL =
@@ -164,25 +165,7 @@ function isoDate(value: string | null): string | null {
 export function mapTcgFactoryPublicAvailability(
   value: string | null | undefined,
 ): SupplierAvailability {
-  const normalized = normalizeText(value ?? "");
-  if (["disponible", "en-stock", "stock"].includes(normalized)) {
-    return "available";
-  }
-  if (["preventa", "reserva", "preorder", "pre-order"].includes(normalized)) {
-    return "preorder";
-  }
-  if (
-    [
-      "en-reposicion",
-      "agotado",
-      "sin-stock",
-      "no-disponible",
-      "descatalogado",
-    ].includes(normalized)
-  ) {
-    return "unavailable";
-  }
-  return "unknown";
+  return mapTcgFactoryAvailability(value);
 }
 
 export function tcgFactoryAccessoryCategory(
@@ -462,7 +445,7 @@ export function parseTcgFactoryPublicProduct(
   const reportedAvailability =
     field(lines, /^Estado de producto\s*:?/i) ??
     text.match(
-      /\b(Disponible|En reposici[oó]n|Preventa|Agotado|Sin stock)\b/i,
+      /\b(Disponible|En reposici[oó]n|Restock|Preventa|Agotado|Sin stock)\b/i,
     )?.[1] ??
     "";
   const productType =

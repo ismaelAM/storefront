@@ -176,11 +176,20 @@ El adaptador aplica este mapa conservador:
 | `Disponible`, `En stock` | `available` |
 | `Preventa`, `Reserva` | `preorder` |
 | `Agotado`, `Sin stock`, `No disponible`, `Descatalogado` | `unavailable` |
+| `Restock` (también con fecha), `En reposición` | `unavailable` |
 | Cualquier texto nuevo | `unknown` |
 
 Un artículo `available` con `stockQuantity: 0` pasa a `unavailable`. Una
 preventa puede tener stock cero. Un estado desconocido nunca compite como oferta
 elegible; añadir primero una prueba y después ampliar el mapa.
+
+El parser público y el adaptador B2B comparten el mismo mapa. Una observación
+no vendible actualiza la oferta existente de TcgFactory y vuelve a seleccionar
+proveedor inmediatamente; no conserva el antiguo `available` hasta finalizar
+el rastreo. No inventa un coste ni modifica stock físico. Sin otra fuente válida
+el producto pasa a borrador; con stock físico u otro proveedor elegible conserva
+su disponibilidad. La ficha autenticada también puede bloquear la oferta aunque
+la página pública todavía diga disponible.
 
 ## Flujo de validación e ingesta
 
