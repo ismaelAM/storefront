@@ -4,6 +4,8 @@ import { createHash } from "node:crypto";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
+import { isCatalogReviewApproved } from "../../supabase/functions/_shared/catalog-publish-policy";
+import { supplierPackChildVariantIds } from "../../supabase/functions/_shared/mtg-precon-policy";
 
 // Run the real function bodies without starting Deno.serve or reading secrets.
 const rawSource = readFileSync("supabase/functions/devir-sync/index.ts", "utf8");
@@ -126,6 +128,146 @@ describe("BISON3 catalog coverage", () => {
     const written = f.spreeRequest.mock.calls.flatMap(call => call[3].prices);
     expect(written).toHaveLength(1250);
     expect(new Set(written.map(row => row.variant_id)).size).toBe(1250);
+  });
+});
+
+describe("Supplier pack child stock propagation", () => {
+  const helperSource = source.statements
+    .filter(
+      node =>
+        ts.isFunctionDeclaration(node) &&
+        ["supplierPackSplitApproved", "syncApprovedSupplierPackChildren"].includes(
+          node.name?.text ?? "",
+        ),
+    )
+    .map(node => node.getText(source))
+    .join("\n");
+  const helperCode = ts.transpileModule(helperSource, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+
+  function packFixture(
+    availability: "available" | "preorder" | "unavailable",
+    managedVariantIds = ["variant_pack"],
+  ) {
+    const setVariantBackorderability = vi.fn(async () => 1);
+    const spreeRequest = vi.fn(async () => ({}));
+    const query = {
+      select: () => query,
+      eq: () => query,
+      not: async () => ({
+        data: managedVariantIds.map(spree_variant_id => ({ spree_variant_id })),
+        error: null,
+      }),
+    };
+    const run = runInNewContext(
+      `${helperCode}; syncApprovedSupplierPackChildren`,
+      {
+        supabase: { from: () => query },
+        spreeList: async () => [
+          { id: "variant_pack" },
+          { id: "variant_child_a" },
+          { id: "variant_child_b" },
+          ...(managedVariantIds.includes("variant_pack_2")
+            ? [{ id: "variant_pack_2" }]
+            : []),
+        ],
+        setVariantBackorderability,
+        spreeRequest,
+        isCatalogReviewApproved,
+        supplierPackChildVariantIds,
+      },
+    ) as (
+      config: object,
+      context: object,
+      productId: string,
+      availability: typeof availability,
+      releaseDate: string | null,
+    ) => Promise<number>;
+
+    return {
+      run,
+      setVariantBackorderability,
+      spreeRequest,
+      context: {
+        catalogProductId: "catalog_product_1",
+        reviewDecision: "approved",
+        approvedReviewFingerprint: "pack_requires_operator_split",
+      },
+      availability,
+    };
+  }
+
+  it("turns every manual child off when the supplier pack is unavailable", async () => {
+    const f = packFixture("unavailable");
+    expect(
+      await f.run({}, f.context, "prod_1", f.availability, null),
+    ).toBe(2);
+    expect(f.setVariantBackorderability).toHaveBeenCalledTimes(2);
+    expect(f.setVariantBackorderability).toHaveBeenCalledWith(
+      {},
+      "prod_1",
+      "variant_child_a",
+      false,
+    );
+    expect(f.setVariantBackorderability).toHaveBeenCalledWith(
+      {},
+      "prod_1",
+      "variant_child_b",
+      false,
+    );
+    expect(f.spreeRequest).toHaveBeenCalledWith(
+      {},
+      "PATCH",
+      "/products/prod_1/variants/variant_child_a",
+      expect.objectContaining({
+        preorderable: false,
+        preorder_ships_at: null,
+      }),
+    );
+  });
+
+  it("enables supplier fulfillment on children when the approved pack is available", async () => {
+    const f = packFixture("available");
+    await f.run({}, f.context, "prod_1", f.availability, null);
+    expect(f.setVariantBackorderability).toHaveBeenCalledWith(
+      {},
+      "prod_1",
+      "variant_child_a",
+      true,
+    );
+  });
+
+  it("does nothing before the operator approves the pack split", async () => {
+    const f = packFixture("available");
+    await f.run(
+      {},
+      { ...f.context, reviewDecision: "pending", approvedReviewFingerprint: null },
+      "prod_1",
+      f.availability,
+      null,
+    );
+    expect(f.setVariantBackorderability).not.toHaveBeenCalled();
+  });
+
+  it("does not fan out when more than one catalog-managed pack source exists", async () => {
+    const f = packFixture("unavailable", ["variant_pack", "variant_pack_2"]);
+    expect(
+      await f.run({}, f.context, "prod_1", f.availability, null),
+    ).toBe(0);
+    expect(f.setVariantBackorderability).not.toHaveBeenCalled();
+  });
+
+  it("wires the cascade into both eligible and no-offer reconciliation paths", () => {
+    expect(
+      rawSource.match(/syncApprovedSupplierPackChildren\(/g)?.length ?? 0,
+    ).toBeGreaterThanOrEqual(3);
+    expect(rawSource).toContain(
+      'mappedProductId,\n      "unavailable",\n      null,',
+    );
+    expect(rawSource).toContain(
+      "productId,\n      product.availability,\n      product.releaseDate,",
+    );
   });
 });
 
