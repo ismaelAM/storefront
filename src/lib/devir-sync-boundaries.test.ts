@@ -8,7 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 // Run the real function bodies without starting Deno.serve or reading secrets.
 const rawSource = readFileSync("supabase/functions/devir-sync/index.ts", "utf8");
 const source = ts.createSourceFile("index.ts", rawSource, ts.ScriptTarget.Latest, true);
-const names = ["operatorAction", "operatorAuthorized", "validateSpreeAdminKey", "stockItemsForVariant", "setVariantBackorderability", "spreeList", "spreeListAll", "syncSpecialPriceRows", "patchVariantInventory", "definitions", "retireReplacementSource", "reconcileUnavailableTcgFactoryProduct", "recoverExpiredCycleJobs", "finishCycle", "retireMissingDevirOffers"];
+const names = ["operatorAction", "operatorAuthorized", "validateSpreeAdminKey", "stockItemsForVariant", "setVariantBackorderability", "spreeList", "spreeListAll", "syncSpecialPriceRows", "patchVariantInventory", "initializeVerifiedEmptyBackorderStock", "definitions", "retireReplacementSource", "reconcileUnavailableTcgFactoryProduct", "recoverExpiredCycleJobs", "finishCycle", "retireMissingDevirOffers"];
 const bodies = source.statements.filter(node => ts.isFunctionDeclaration(node) && names.includes(node.name?.text ?? "")).map(node => node.getText(source)).join("\n");
 const code = ts.transpileModule(bodies, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 
@@ -17,7 +17,7 @@ function fixture(overrides: Record<string, unknown> = {}) {
   const fetch = vi.fn(async () => Response.json({ data: [] }));
   const devirFetch = vi.fn(async () => "authenticated fixture");
   const spreeRequest = vi.fn();
-  const api = runInNewContext(`${code}; ({ operatorAction, validateSpreeAdminKey, stockItemsForVariant, setVariantBackorderability, syncSpecialPriceRows, patchVariantInventory, definitions, retireReplacementSource, reconcileUnavailableTcgFactoryProduct, recoverExpiredCycleJobs, finishCycle })`, {
+  const api = runInNewContext(`${code}; ({ operatorAction, validateSpreeAdminKey, stockItemsForVariant, setVariantBackorderability, syncSpecialPriceRows, patchVariantInventory, initializeVerifiedEmptyBackorderStock, definitions, retireReplacementSource, reconcileUnavailableTcgFactoryProduct, recoverExpiredCycleJobs, finishCycle })`, {
     Request, Response, URL, fetch, devirFetch, spreeRequest,
     json: (body: unknown, status = 200) => Response.json(body, { status }),
     sha256: async (value: string) => createHash("sha256").update(value).digest("hex"),
@@ -31,6 +31,7 @@ function fixture(overrides: Record<string, unknown> = {}) {
     setVariantBackorderability: (config: object, productId: string, variantId: string, desired: boolean) => Promise<number>;
     syncSpecialPriceRows: (config: object, program: object, priceList: object) => Promise<number>;
     patchVariantInventory: (config: object, productId: string, variantId: string, quantity: number, backorder: boolean, preorder: boolean, date: string | null, initialize?: boolean) => Promise<unknown>;
+    initializeVerifiedEmptyBackorderStock: (config: object, productId: string, variantId: string) => Promise<number>;
     definitions: (config: object) => Promise<Map<string, unknown>>;
     retireReplacementSource: (config: object, productId: string, replacementId: string) => Promise<void>;
     reconcileUnavailableTcgFactoryProduct: (config: object, supplierId: string, product: object, runId: string | null, categories: unknown[], defs: Map<string, unknown>) => Promise<void>;
@@ -254,6 +255,78 @@ describe("Devir inventory boundaries", () => {
     expect(await f.api.setVariantBackorderability({}, "product_1", "variant_target", true)).toBe(1);
     expect(current.count_on_hand).toBe(-2);
   });
+  it("treats a missing stock row as safely non-backorderable when no supplier is selected", async () => {
+    const f = fixture();
+    f.spreeRequest.mockResolvedValue({ data: [] });
+    expect(
+      await f.api.setVariantBackorderability(
+        {},
+        "product_1",
+        "variant_target",
+        false,
+      ),
+    ).toBe(0);
+    expect(f.spreeRequest.mock.calls.every(call => call[1] === "GET")).toBe(true);
+  });
+
+  it("initializes only zero inventory when supplier backorder is required and Spree confirms zero", async () => {
+    const f = fixture();
+    let initialized = false;
+    f.spreeRequest.mockImplementation(async (_config, method, path, body) => {
+      if (path.startsWith("/stock_items")) {
+        return {
+          data: initialized
+            ? [{
+                id: "si_new",
+                variant_id: "variant_target",
+                stock_location_id: "sl_1",
+                count_on_hand: 0,
+                backorderable: true,
+              }]
+            : [],
+        };
+      }
+      if (method === "GET") {
+        return { total_on_hand: 0, backorderable: false };
+      }
+      initialized = true;
+      expect(body.stock_levels ?? body.stock_items).toEqual([
+        {
+          stock_location_id: "sl_1",
+          count_on_hand: 0,
+          backorderable: true,
+        },
+      ]);
+      return { total_on_hand: 0, backorderable: true };
+    });
+    expect(
+      await f.api.setVariantBackorderability(
+        {},
+        "product_1",
+        "variant_target",
+        true,
+      ),
+    ).toBe(1);
+  });
+
+  it("refuses to create a stock row when Spree reports non-zero aggregate stock", async () => {
+    const f = fixture();
+    f.spreeRequest.mockImplementation(async (_config, method, path) => {
+      if (path.startsWith("/stock_items")) return { data: [] };
+      if (method === "GET") return { total_on_hand: 2, backorderable: false };
+      throw new Error("unexpected write");
+    });
+    await expect(
+      f.api.setVariantBackorderability(
+        {},
+        "product_1",
+        "variant_target",
+        true,
+      ),
+    ).rejects.toThrow("verificablemente cero");
+    expect(f.spreeRequest.mock.calls.every(call => call[1] === "GET")).toBe(true);
+  });
+
   it("does not report success when stock rows disappear during verification", async () => {
     const f = fixture();
     let patched = false;
