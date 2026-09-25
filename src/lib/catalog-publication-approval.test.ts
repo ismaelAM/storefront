@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import { catalogReviewFingerprint, shouldRequireCatalogReview } from "../../supabase/functions/_shared/catalog-publish-policy";
 
 const source = ts.createSourceFile("index.ts", readFileSync("supabase/functions/devir-sync/index.ts", "utf8"), ts.ScriptTarget.Latest, true);
-const code = ts.transpileModule(source.statements.filter(node => ts.isFunctionDeclaration(node) && ["adoptPublishedCatalogReview", "humanizeReviewReason"].includes(node.name?.text ?? "")).map(node => node.getText(source)).join("\n"), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+const code = ts.transpileModule(source.statements.filter(node => ts.isFunctionDeclaration(node) && ["adoptPublishedCatalogReview", "humanizeReviewReason", "reviewReasonsFromLastError"].includes(node.name?.text ?? "")).map(node => node.getText(source)).join("\n"), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 
 function fixture(decision = "pending", snapshot = "catalan_requires_operator_review", displayed = "") {
   const policy = { id: "cat_1", review_decision: decision, approved_review_fingerprint: null, updated_at: "2026-09-24" };
@@ -21,6 +21,12 @@ function fixture(decision = "pending", snapshot = "catalan_requires_operator_rev
 }
 
 describe("publishing in Spree approves the recorded review", () => {
+  it("does not invent a review reason from an empty legacy marker", () => {
+    const parse = runInNewContext(`${code}; reviewReasonsFromLastError`, {}) as (value: unknown) => string[];
+    expect(parse(null)).toEqual([]);
+    expect(parse("")).toEqual([]);
+  });
+
   it("checkpoints approved review markers instead of blocking the batch queue", async () => {
     const body = source.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === "refreshHumanReviewMarkersBatch")!;
     const compiled = ts.transpileModule(body.getText(source), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
