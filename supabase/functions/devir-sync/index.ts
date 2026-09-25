@@ -738,7 +738,7 @@ function parseAvailability(html: string): {
   // ("available" / "unavailable"). Text is a fallback because Devir has used
   // several templates over time. Generic "Disponibilidad:" labels are ignored.
   if (
-    /\bunavailable\b|no est[aá] disponible|agotad[oa]|sin stock|no disponible/i.test(
+    /\bunavailable\b|no est[aá] disponible|agotad[oa]|sin stock|no disponible|en reposici[oó]n|reposici[oó]n/i.test(
       combined,
     )
   ) {
