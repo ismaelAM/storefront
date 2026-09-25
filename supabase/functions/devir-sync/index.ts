@@ -9458,28 +9458,16 @@ async function reconcileUnavailableTcgFactoryProduct(
     .eq("source_url", product.sourceUrl)
     .select("variant_id");
   if (error) throw error;
-  const productIds = new Set<string>();
   for (const variantId of new Set((offers ?? []).map(row => String(row.variant_id)))) {
-    const synced = await reconcileCatalogVariant(config, await loadCatalogVariant(variantId), categories, defs);
-    if (synced.productId) productIds.add(synced.productId);
-  }
-  for (const productId of productIds) {
-    const variants = await spreeListAll<SpreeVariant>(config, "/products/" + encodeURIComponent(productId) + "/variants");
-    if (!variants.length) throw new Error("No se pudo verificar la disponibilidad del producto");
-    let sellable = false;
-    for (const variant of variants) {
-      const supply = await selectedSupplyForSpreeVariant(variant.id);
-      if (shouldAutoPublishCatalogProduct({ review: false,
-        availability: supply?.supplier_code ? supply.availability ?? "unknown" : "unavailable",
-        physicalStockOnHand: Number(variant.total_on_hand ?? 0),
-        fulfillmentMode: supply?.fulfillment_mode ?? "supplier_or_physical" })) {
-        sellable = true;
-        break;
-      }
-    }
-    // Another eligible supplier/variant or physical stock may keep it on sale.
-    // This negative observation never publishes a draft or approves a review.
-    if (!sellable) await spreeRequest(config, "PATCH", "/products/" + encodeURIComponent(productId), { status: "draft" });
+    // Reconciliation updates supplier flags, selection and review policy. Product
+    // visibility is decided centrally by syncProductToSpree; an unavailable
+    // supplier observation must never hide an otherwise valid catalog page.
+    await reconcileCatalogVariant(
+      config,
+      await loadCatalogVariant(variantId),
+      categories,
+      defs,
+    );
   }
 }
 
