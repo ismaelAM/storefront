@@ -10,7 +10,7 @@ import { supplierPackChildVariantIds } from "../../supabase/functions/_shared/mt
 // Run the real function bodies without starting Deno.serve or reading secrets.
 const rawSource = readFileSync("supabase/functions/devir-sync/index.ts", "utf8");
 const source = ts.createSourceFile("index.ts", rawSource, ts.ScriptTarget.Latest, true);
-const names = ["operatorAction", "operatorAuthorized", "validateSpreeAdminKey", "stockItemsForVariant", "setVariantBackorderability", "spreeList", "spreeListAll", "syncSpecialPriceRows", "patchVariantInventory", "initializeVerifiedEmptyBackorderStock", "definitions", "retireReplacementSource", "reconcileUnavailableTcgFactoryProduct", "recoverExpiredCycleJobs", "finishCycle", "retireMissingDevirOffers", "normalizeGroupKey", "safeMangaEditionSuffix", "groupingInfo"];
+const names = ["operatorAction", "operatorAuthorized", "validateSpreeAdminKey", "stockItemsForVariant", "setVariantBackorderability", "spreeList", "spreeListAll", "syncSpecialPriceRows", "patchVariantInventory", "initializeVerifiedEmptyBackorderStock", "definitions", "retireReplacementSource", "reconcileUnavailableTcgFactoryProduct", "recoverExpiredCycleJobs", "finishCycle", "retireMissingDevirOffers", "normalizeGroupKey", "safeMangaEditionSuffix", "groupingInfo", "tcgFactoryItemFailureDisposition"];
 const bodies = source.statements.filter(node => ts.isFunctionDeclaration(node) && names.includes(node.name?.text ?? "")).map(node => node.getText(source)).join("\n");
 const code = ts.transpileModule(bodies, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 
@@ -19,7 +19,7 @@ function fixture(overrides: Record<string, unknown> = {}) {
   const fetch = vi.fn(async () => Response.json({ data: [] }));
   const devirFetch = vi.fn(async () => "authenticated fixture");
   const spreeRequest = vi.fn();
-  const api = runInNewContext(`${code}; ({ operatorAction, validateSpreeAdminKey, stockItemsForVariant, setVariantBackorderability, syncSpecialPriceRows, patchVariantInventory, initializeVerifiedEmptyBackorderStock, definitions, retireReplacementSource, reconcileUnavailableTcgFactoryProduct, recoverExpiredCycleJobs, finishCycle, groupingInfo })`, {
+  const api = runInNewContext(`${code}; ({ operatorAction, validateSpreeAdminKey, stockItemsForVariant, setVariantBackorderability, syncSpecialPriceRows, patchVariantInventory, initializeVerifiedEmptyBackorderStock, definitions, retireReplacementSource, reconcileUnavailableTcgFactoryProduct, recoverExpiredCycleJobs, finishCycle, groupingInfo, tcgFactoryItemFailureDisposition })`, {
     Request, Response, URL, fetch, devirFetch, spreeRequest,
     json: (body: unknown, status = 200) => Response.json(body, { status }),
     sha256: async (value: string) => createHash("sha256").update(value).digest("hex"),
@@ -51,6 +51,7 @@ function fixture(overrides: Record<string, unknown> = {}) {
       variantPosition: number | null;
       confidence: "none" | "high" | "ambiguous";
     };
+    tcgFactoryItemFailureDisposition: (error: unknown) => "retry" | "skip" | "fail";
   };
   return { api, fetch, devirFetch, spreeRequest, update };
 }
@@ -267,6 +268,75 @@ describe("Supplier pack child stock propagation", () => {
     );
     expect(rawSource).toContain(
       "productId,\n      product.availability,\n      product.releaseDate,",
+    );
+  });
+});
+
+describe("Catalog maintenance resilience", () => {
+  it("treats TcgFactory product-lock contention as retryable", () => {
+    const f = fixture();
+    expect(
+      f.api.tcgFactoryItemFailureDisposition(
+        new Error("El producto cat_1 está siendo sincronizado por otro worker"),
+      ),
+    ).toBe("retry");
+  });
+
+  it("treats stale TcgFactory listing 404s as non-fatal skips", () => {
+    const f = fixture();
+    expect(
+      f.api.tcgFactoryItemFailureDisposition(
+        new Error("TcgFactory HTTP 404 en /es/distribucion/producto-antiguo.html"),
+      ),
+    ).toBe("skip");
+  });
+
+  it("keeps genuine TcgFactory validation failures fatal", () => {
+    const f = fixture();
+    expect(
+      f.api.tcgFactoryItemFailureDisposition(
+        new Error("Precio B2B inválido"),
+      ),
+    ).toBe("fail");
+  });
+
+  it("does not advance the TcgFactory cursor over a retryable product lock", () => {
+    const fn = source.statements.find(
+      node => ts.isFunctionDeclaration(node) && node.name?.text === "tcgFactoryTick",
+    );
+    const body = fn?.getText(source) ?? "";
+    expect(body).toContain("retryBlocked = true");
+    expect(body).toContain("consumeThisItem = false");
+    expect(body).toContain("offset + consumed");
+    expect(body).not.toContain("offset + urls.length");
+  });
+
+  it("physical-only maintenance only enforces flags and never republishes or rewrites quantities", () => {
+    const fn = source.statements.find(
+      node =>
+        ts.isFunctionDeclaration(node) &&
+        node.name?.text === "reconcilePhysicalOnlyCatalogBatch",
+    );
+    const body = fn?.getText(source) ?? "";
+    expect(body).toContain("enforceVariantFulfillmentFlags");
+    expect(body).toContain('"unavailable"');
+    expect(body).toContain('"physical_only"');
+    expect(body).not.toContain("preparePublishBatch");
+    expect(body).not.toContain("markCatalogProductDirty");
+    expect(body).not.toContain("count_on_hand");
+  });
+
+  it("rotates a failing physical-only product instead of hammering it forever", () => {
+    const fn = source.statements.find(
+      node =>
+        ts.isFunctionDeclaration(node) &&
+        node.name?.text === "reconcilePhysicalOnlyCatalogBatch",
+    );
+    const body = fn?.getText(source) ?? "";
+    const catchIndex = body.indexOf("catch (error)");
+    expect(catchIndex).toBeGreaterThan(0);
+    expect(body.slice(catchIndex)).toContain(
+      '.update({ updated_at: new Date().toISOString() })',
     );
   });
 });

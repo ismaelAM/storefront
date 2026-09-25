@@ -2402,16 +2402,23 @@ async function reconcilePhysicalOnlyCatalogBatch(
 ): Promise<{ products: number; reconciled: number; failed: number }> {
   const { data: variants, error: variantsError } = await supabase
     .from("catalog_variants")
-    .select("product_id,updated_at")
+    .select("product_id,spree_variant_id,updated_at")
     .eq("fulfillment_mode", "physical_only")
     .not("spree_variant_id", "is", null)
     .order("updated_at", { ascending: true })
     .limit(limit);
   if (variantsError) throw variantsError;
 
-  const productIds = Array.from(
-    new Set((variants ?? []).map((row) => String(row.product_id)).filter(Boolean)),
-  );
+  const variantsByProduct = new Map<string, string[]>();
+  for (const row of variants ?? []) {
+    const productId = String(row.product_id ?? "");
+    const variantId = String(row.spree_variant_id ?? "");
+    if (!productId || !variantId) continue;
+    const ids = variantsByProduct.get(productId) ?? [];
+    ids.push(variantId);
+    variantsByProduct.set(productId, ids);
+  }
+  const productIds = Array.from(variantsByProduct.keys());
   if (productIds.length === 0) {
     return { products: 0, reconciled: 0, failed: 0 };
   }
@@ -2429,8 +2436,18 @@ async function reconcilePhysicalOnlyCatalogBatch(
     const spreeProductId = String(product.spree_product_id ?? "");
     if (!spreeProductId) continue;
     try {
-      await markCatalogProductDirty(spreeProductId);
-      await preparePublishBatch(config, 0, 1, spreeProductId);
+      for (const variantId of variantsByProduct.get(String(product.id)) ?? []) {
+        // physical_only means supplier availability must never leak into Spree.
+        // Turning flags off is safe even when the hosted backend has no stock
+        // item yet; never synthesize, replay or zero physical quantities here.
+        await enforceVariantFulfillmentFlags(
+          config,
+          spreeProductId,
+          variantId,
+          "unavailable",
+          "physical_only",
+        );
+      }
       const { error: checkpointError } = await supabase
         .from("catalog_variants")
         .update({ updated_at: new Date().toISOString() })
@@ -2440,6 +2457,14 @@ async function reconcilePhysicalOnlyCatalogBatch(
       reconciled += 1;
     } catch (error) {
       failed += 1;
+      // Rotate a failing product instead of hammering the same oldest row on
+      // every maintenance tick. The fulfillment helper above never changes
+      // physical quantities, so a retry can safely happen on the next rotation.
+      await supabase
+        .from("catalog_variants")
+        .update({ updated_at: new Date().toISOString() })
+        .eq("product_id", product.id)
+        .eq("fulfillment_mode", "physical_only");
       console.error("No se pudo reconciliar stock físico protegido", {
         spreeProductId,
         error: error instanceof Error ? error.message : String(error),
@@ -9684,6 +9709,21 @@ async function reconcileUnavailableTcgFactoryProduct(
   }
 }
 
+type TcgFactoryItemFailureDisposition = "retry" | "skip" | "fail";
+
+function tcgFactoryItemFailureDisposition(
+  error: unknown,
+): TcgFactoryItemFailureDisposition {
+  const message = error instanceof Error ? error.message : String(error);
+  if (message.includes("está siendo sincronizado por otro worker")) {
+    return "retry";
+  }
+  if (/TcgFactory HTTP 404\b/i.test(message)) {
+    return "skip";
+  }
+  return "fail";
+}
+
 async function tcgFactoryTick(
   config: ConfigRow,
   force = false,
@@ -9784,8 +9824,13 @@ async function tcgFactoryTick(
   let discovered = 0;
   let processed = 0;
   let failed = 0;
+  let skipped = 0;
+  let consumed = 0;
+  let retryBlocked = false;
 
   for (const url of urls) {
+    let discoveredThisItem = false;
+    let consumeThisItem = true;
     try {
       const publicDetail = await tcgFactoryTextFetch(url);
       const publicProduct = parseTcgFactoryPublicProduct(
@@ -9793,7 +9838,7 @@ async function tcgFactoryTick(
         url,
       );
       await upsertTcgFactoryDiscovery(supplier.id, publicProduct, state.run_id);
-      discovered += 1;
+      discoveredThisItem = true;
 
       if (!credentialsAvailable) continue;
       if (
@@ -9848,18 +9893,39 @@ async function tcgFactoryTick(
         },
       );
     } catch (error) {
-      failed += 1;
       const message = error instanceof Error ? error.message : String(error);
-      console.error("TcgFactory sync failed", url, message);
+      const disposition = tcgFactoryItemFailureDisposition(error);
+      if (disposition === "retry") {
+        // A product lock is transient. Do not poison the full supplier run and
+        // do not advance over this URL; retry it after the other worker exits.
+        consumeThisItem = false;
+        retryBlocked = true;
+        console.warn("TcgFactory sync deferred by product lock", url, message);
+      } else if (disposition === "skip") {
+        // Distributor listings occasionally retain a dead product link. A 404
+        // cannot be validated, but it must not make every crawl restart forever.
+        skipped += 1;
+        console.warn("TcgFactory stale listing skipped", url, message);
+      } else {
+        failed += 1;
+        console.error("TcgFactory sync failed", url, message);
+      }
+    } finally {
+      if (consumeThisItem) {
+        consumed += 1;
+        if (discoveredThisItem) discovered += 1;
+      }
     }
+    if (retryBlocked) break;
   }
 
   const cumulativeFailed = state.failed_items + failed;
   const cumulativeDiscovered = state.discovered_items + discovered;
   const cumulativeProcessed = state.processed_items + processed;
-  const pageDone = offset + urls.length >= parsed.productUrls.length;
+  const pageDone =
+    !retryBlocked && offset + consumed >= parsed.productUrls.length;
   const nextPage = pageDone ? page + 1 : page;
-  const nextOffset = pageDone ? 0 : offset + urls.length;
+  const nextOffset = pageDone ? 0 : offset + consumed;
   const fullDone =
     pageDone && parsed.productUrls.length > 0 && page >= parsed.totalPages;
 
@@ -9989,6 +10055,8 @@ async function tcgFactoryTick(
     discovered,
     processed,
     failed,
+    skipped,
+    retryBlocked,
   };
 }
 
