@@ -61,11 +61,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid event" }, { status: 400 });
   }
 
-  const relevantPaymentIntentEvent = [
-    "payment_intent.amount_capturable_updated",
-    "payment_intent.succeeded",
-    "payment_intent.canceled",
-  ].includes(event.type);
+  const relevantPaymentIntentEvent =
+    typeof event.type === "string" &&
+    [
+      "payment_intent.amount_capturable_updated",
+      "payment_intent.succeeded",
+      "payment_intent.canceled",
+    ].includes(event.type);
 
   if (relevantPaymentIntentEvent) {
     const paymentIntentId = event.data?.object?.id;
