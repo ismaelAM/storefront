@@ -10,7 +10,7 @@ import { supplierPackChildVariantIds } from "../../supabase/functions/_shared/mt
 // Run the real function bodies without starting Deno.serve or reading secrets.
 const rawSource = readFileSync("supabase/functions/devir-sync/index.ts", "utf8");
 const source = ts.createSourceFile("index.ts", rawSource, ts.ScriptTarget.Latest, true);
-const names = ["operatorAction", "operatorAuthorized", "validateSpreeAdminKey", "stockItemsForVariant", "setVariantBackorderability", "spreeList", "spreeListAll", "syncSpecialPriceRows", "patchVariantInventory", "initializeVerifiedEmptyBackorderStock", "definitions", "retireReplacementSource", "reconcileUnavailableTcgFactoryProduct", "recoverExpiredCycleJobs", "finishCycle", "retireMissingDevirOffers", "normalizeGroupKey", "safeMangaEditionSuffix", "groupingInfo", "tcgFactoryItemFailureDisposition"];
+const names = ["decodeHtml", "stripHtml", "parseAvailability", "operatorAction", "operatorAuthorized", "validateSpreeAdminKey", "stockItemsForVariant", "setVariantBackorderability", "spreeList", "spreeListAll", "syncSpecialPriceRows", "patchVariantInventory", "initializeVerifiedEmptyBackorderStock", "definitions", "retireReplacementSource", "reconcileUnavailableTcgFactoryProduct", "recoverExpiredCycleJobs", "finishCycle", "retireMissingDevirOffers", "normalizeGroupKey", "safeMangaEditionSuffix", "groupingInfo", "tcgFactoryItemFailureDisposition"];
 const bodies = source.statements.filter(node => ts.isFunctionDeclaration(node) && names.includes(node.name?.text ?? "")).map(node => node.getText(source)).join("\n");
 const code = ts.transpileModule(bodies, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 
@@ -19,7 +19,7 @@ function fixture(overrides: Record<string, unknown> = {}) {
   const fetch = vi.fn(async () => Response.json({ data: [] }));
   const devirFetch = vi.fn(async () => "authenticated fixture");
   const spreeRequest = vi.fn();
-  const api = runInNewContext(`${code}; ({ operatorAction, validateSpreeAdminKey, stockItemsForVariant, setVariantBackorderability, syncSpecialPriceRows, patchVariantInventory, initializeVerifiedEmptyBackorderStock, definitions, retireReplacementSource, reconcileUnavailableTcgFactoryProduct, recoverExpiredCycleJobs, finishCycle, groupingInfo, tcgFactoryItemFailureDisposition })`, {
+  const api = runInNewContext(`${code}; ({ parseAvailability, operatorAction, validateSpreeAdminKey, stockItemsForVariant, setVariantBackorderability, syncSpecialPriceRows, patchVariantInventory, initializeVerifiedEmptyBackorderStock, definitions, retireReplacementSource, reconcileUnavailableTcgFactoryProduct, recoverExpiredCycleJobs, finishCycle, groupingInfo, tcgFactoryItemFailureDisposition })`, {
     Request, Response, URL, fetch, devirFetch, spreeRequest,
     json: (body: unknown, status = 200) => Response.json(body, { status }),
     sha256: async (value: string) => createHash("sha256").update(value).digest("hex"),
@@ -52,6 +52,10 @@ function fixture(overrides: Record<string, unknown> = {}) {
       confidence: "none" | "high" | "ambiguous";
     };
     tcgFactoryItemFailureDisposition: (error: unknown) => "retry" | "skip" | "fail";
+    parseAvailability: (html: string) => {
+      availability: "available" | "preorder" | "unavailable" | "unknown";
+      label: string | null;
+    };
   };
   return { api, fetch, devirFetch, spreeRequest, update };
 }
@@ -484,6 +488,42 @@ describe("Catalog safety boundaries", () => {
     expect(calls).toContainEqual(["status", "processing"]);
     expect(calls.some(([key]) => key === "lt:updated_at")).toBe(true);
     expect(calls[0][1]).toEqual(expect.objectContaining({ status: "pending", error: null }));
+  });
+});
+
+describe("Devir availability parsing", () => {
+  it.each([
+    "En reposición",
+    "Reposición",
+    "Agotado",
+    "Sin stock",
+    "No disponible",
+    "No está disponible",
+  ])("treats %s as unavailable even when Magento marks the stock node available", (label) => {
+    const f = fixture();
+    expect(
+      f.api.parseAvailability(
+        `<div class="stock available"><span>Disponibilidad:</span> ${label}</div>`,
+      ),
+    ).toEqual(expect.objectContaining({ availability: "unavailable" }));
+  });
+
+  it("keeps explicit Devir preorder sellable as preorder", () => {
+    const f = fixture();
+    expect(
+      f.api.parseAvailability(
+        '<div class="stock available"><span>Disponibilidad:</span> Pre reserva</div>',
+      ),
+    ).toEqual(expect.objectContaining({ availability: "preorder" }));
+  });
+
+  it("keeps genuinely available Devir stock available", () => {
+    const f = fixture();
+    expect(
+      f.api.parseAvailability(
+        '<div class="stock available"><span>Disponibilidad:</span> Disponible</div>',
+      ),
+    ).toEqual(expect.objectContaining({ availability: "available" }));
   });
 });
 
