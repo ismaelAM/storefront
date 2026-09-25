@@ -6,8 +6,14 @@ const EXTERNAL_PAYMENT_METHOD_ID =
 
 export const MANUAL_CAPTURE_THRESHOLD_MINOR_UNITS = 50_000;
 
-export function requiresManualStripeCapture(amount: number): boolean {
-  return amount > MANUAL_CAPTURE_THRESHOLD_MINOR_UNITS;
+export function requiresManualStripeCapture(
+  amount: number,
+  currency: string,
+): boolean {
+  return (
+    currency.toLowerCase() === "eur" &&
+    amount > MANUAL_CAPTURE_THRESHOLD_MINOR_UNITS
+  );
 }
 
 interface StripePaymentIntent {
@@ -88,7 +94,10 @@ export async function createOrUpdateStripePaymentIntent(params: {
   paymentIntentId?: string | null;
 }): Promise<StripePaymentIntent> {
   const body = new URLSearchParams();
-  const manualReview = requiresManualStripeCapture(params.amount);
+  const manualReview = requiresManualStripeCapture(
+    params.amount,
+    params.currency,
+  );
 
   body.set("amount", String(params.amount));
   body.set("currency", params.currency.toLowerCase());
@@ -117,7 +126,7 @@ export async function createOrUpdateStripePaymentIntent(params: {
   // Keep the idempotent create request limited to stable parameters. The
   // checkout email can appear/change after the first render; including it in
   // this request made Stripe reject a replay of the same key with different
-  // parameters. v2 also avoids collisions with keys already cached by Stripe
+  // parameters. v3 also avoids collisions with keys already cached by Stripe
   // under the previous request shape.
   const created = await stripeRequest<StripePaymentIntent>(
     "POST",
@@ -303,7 +312,7 @@ async function getOrCreateSpreePaymentForStripe(
 }
 
 /**
- * Places an order after Stripe has authorized a >500 EUR-equivalent charge.
+ * Places an order after Stripe has authorized a >500 EUR charge.
  * The authorization is not captured yet: the order is placed with payment
  * pending so stock is reserved while the merchant reviews it in Stripe.
  */
