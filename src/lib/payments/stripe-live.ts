@@ -23,6 +23,7 @@ interface StripePaymentIntent {
   amount: number;
   currency: string;
   metadata: Record<string, string>;
+  capture_method?: string;
 }
 
 function stripeSecret(): string {
@@ -102,7 +103,7 @@ export async function createOrUpdateStripePaymentIntent(params: {
   body.set("amount", String(params.amount));
   body.set("currency", params.currency.toLowerCase());
   body.set("automatic_payment_methods[enabled]", "true");
-  body.set("capture_method", manualReview ? "manual" : "automatic");
+  if (manualReview) body.set("capture_method", "manual");
   body.set("metadata[spree_cart_id]", params.cartId);
   body.set("metadata[source]", "bisontcg-storefront");
   body.set("metadata[manual_review]", manualReview ? "true" : "false");
@@ -114,6 +115,11 @@ export async function createOrUpdateStripePaymentIntent(params: {
     }
     if (["succeeded", "canceled", "requires_capture"].includes(existing.status)) {
       return existing;
+    }
+    // Preserve Stripe's normal automatic_async behavior below the threshold.
+    // Only switch modes when the cart crosses the 500 EUR boundary.
+    if (!manualReview && existing.capture_method === "manual") {
+      body.set("capture_method", "automatic_async");
     }
     if (params.email) body.set("receipt_email", params.email);
     return stripeRequest<StripePaymentIntent>(
