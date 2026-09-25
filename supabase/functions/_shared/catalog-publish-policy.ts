@@ -72,6 +72,13 @@ export function shouldAllowSupplierBackorder(input: {
     supplierAvailabilityIsSellable(input.availability);
 }
 
+export function shouldListCatalogProduct(input: {
+  review: boolean;
+  fulfillmentMode?: CatalogFulfillmentMode | null;
+}): boolean {
+  return !input.review && (input.fulfillmentMode ?? "supplier_or_physical") !== "disabled";
+}
+
 export function shouldAutoPublishCatalogProduct(input: {
   review: boolean;
   availability: CatalogAvailability;
