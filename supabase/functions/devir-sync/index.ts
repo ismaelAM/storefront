@@ -1727,14 +1727,98 @@ async function stockItemsForVariant(
   throw lastError ?? new Error("No se pudo verificar el inventario de la variante");
 }
 
+async function initializeVerifiedEmptyBackorderStock(
+  config: ConfigRow,
+  productId: string,
+  variantId: string,
+): Promise<number> {
+  const variant = await spreeRequest<SpreeVariant>(
+    config,
+    "GET",
+    "/products/" +
+      encodeURIComponent(productId) +
+      "/variants/" +
+      encodeURIComponent(variantId),
+  );
+  const totalOnHand = Number(variant.total_on_hand);
+  if (!Number.isFinite(totalOnHand) || totalOnHand !== 0) {
+    throw new Error(
+      "Inventario ausente con total_on_hand no verificablemente cero: " +
+        variantId,
+    );
+  }
+
+  const inventory = [
+    {
+      stock_location_id: await defaultStockLocationId(config),
+      count_on_hand: 0,
+      backorderable: true,
+    },
+  ];
+  let updated = await spreeRequest<SpreeVariant>(
+    config,
+    "PATCH",
+    "/products/" +
+      encodeURIComponent(productId) +
+      "/variants/" +
+      encodeURIComponent(variantId),
+    {
+      track_inventory: true,
+      stock_levels: inventory,
+    },
+  );
+  if (updated.backorderable !== true) {
+    updated = await spreeRequest<SpreeVariant>(
+      config,
+      "PATCH",
+      "/products/" +
+        encodeURIComponent(productId) +
+        "/variants/" +
+        encodeURIComponent(variantId),
+      {
+        track_inventory: true,
+        stock_items: inventory,
+      },
+    );
+  }
+
+  const verified = await stockItemsForVariant(config, variantId);
+  if (
+    !verified.length ||
+    verified.some(
+      (item) =>
+        item.backorderable !== true ||
+        Number(item.count_on_hand ?? 0) !== 0,
+    )
+  ) {
+    throw new Error(
+      "Spree no confirmó la inicialización segura a stock cero: " + variantId,
+    );
+  }
+  return verified.length;
+}
+
 async function setVariantBackorderability(
   config: ConfigRow,
-  _productId: string | null,
+  productId: string | null,
   variantId: string,
   desired: boolean,
 ): Promise<number> {
   const items = await stockItemsForVariant(config, variantId);
-  if (!items.length) throw new Error("Variante sin inventario verificable: " + variantId);
+  if (!items.length) {
+    // No row plus no supplier backorder is already a safe non-sellable state.
+    if (!desired) return 0;
+    if (!productId) {
+      throw new Error("Variante sin producto para inicializar stock cero: " + variantId);
+    }
+    // Enabling supplier backorder on an existing empty variant is safe only
+    // after Spree itself confirms aggregate physical stock is exactly zero.
+    return await initializeVerifiedEmptyBackorderStock(
+      config,
+      productId,
+      variantId,
+    );
+  }
   const mismatched = items.filter((item) => item.backorderable !== desired);
   if (!mismatched.length) return 0;
 
