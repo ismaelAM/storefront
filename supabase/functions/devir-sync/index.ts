@@ -3,6 +3,7 @@ import {
   canWriteManagedCatalogPrice,
   catalogReviewFingerprint,
   effectiveCatalogFulfillmentMode,
+  isCatalogReviewApproved,
   type CatalogFulfillmentMode,
   type CatalogReviewDecision,
   shouldAllowSupplierBackorder,
@@ -26,7 +27,10 @@ import {
   normalizeDevirCatalogTitle,
   normalizeDevirRetailUnit,
 } from "../_shared/devir-catalog-policy.ts";
-import { requiresManualPackSplitReview } from "../_shared/mtg-precon-policy.ts";
+import {
+  requiresManualPackSplitReview,
+  supplierPackChildVariantIds,
+} from "../_shared/mtg-precon-policy.ts";
 import {
   commercialPricingProfile,
   deterministicOfferScore,
@@ -1920,6 +1924,78 @@ async function enforceVariantFulfillmentFlags(
   return changed;
 }
 
+interface SupplierPackChildSyncContext {
+  catalogProductId: string;
+  reviewDecision: CatalogReviewDecision;
+  approvedReviewFingerprint: string | null;
+}
+
+function supplierPackSplitApproved(
+  context: SupplierPackChildSyncContext,
+): boolean {
+  return isCatalogReviewApproved({
+    reasons: ["pack_requires_operator_split"],
+    decision: context.reviewDecision,
+    approvedFingerprint: context.approvedReviewFingerprint,
+  });
+}
+
+async function syncApprovedSupplierPackChildren(
+  config: ConfigRow,
+  context: SupplierPackChildSyncContext,
+  spreeProductId: string | null,
+  availability: DevirProduct["availability"],
+  releaseDate: string | null = null,
+): Promise<number> {
+  if (!spreeProductId || !supplierPackSplitApproved(context)) return 0;
+
+  const { data: managedRows, error: managedError } = await supabase
+    .from("catalog_variants")
+    .select("spree_variant_id")
+    .eq("product_id", context.catalogProductId)
+    .not("spree_variant_id", "is", null);
+  if (managedError) throw managedError;
+
+  const variants = await spreeList<SpreeVariant>(
+    config,
+    "/products/" + encodeURIComponent(spreeProductId) + "/variants",
+  );
+  const childVariantIds = supplierPackChildVariantIds(
+    variants.map((variant) => variant.id),
+    (managedRows ?? []).map((row) => row.spree_variant_id),
+  );
+  if (!childVariantIds.length) return 0;
+
+  const supplierSellable =
+    availability === "available" || availability === "preorder";
+  const preorderable = availability === "preorder";
+  let changed = 0;
+
+  for (const childVariantId of childVariantIds) {
+    changed += await setVariantBackorderability(
+      config,
+      spreeProductId,
+      childVariantId,
+      supplierSellable,
+    );
+    await spreeRequest(
+      config,
+      "PATCH",
+      "/products/" +
+        encodeURIComponent(spreeProductId) +
+        "/variants/" +
+        encodeURIComponent(childVariantId),
+      {
+        track_inventory: true,
+        preorderable,
+        preorder_ships_at: preorderable ? releaseDate : null,
+      },
+    );
+  }
+
+  return changed;
+}
+
 async function syncImages(
   config: ConfigRow,
   productId: string,
@@ -2852,15 +2928,29 @@ async function reconcileCatalogVariantUnlocked(
   );
 
   if (!selection.selected || !selection.selectedSupplier) {
+    const mappedProductId =
+      mapping.product?.id ?? resolution.product.spree_product_id;
     if (resolution.variant.spree_variant_id) {
       await enforceVariantFulfillmentFlags(
         config,
-        mapping.product?.id ?? resolution.product.spree_product_id,
+        mappedProductId,
         resolution.variant.spree_variant_id,
         "unavailable",
         resolution.variant.fulfillment_mode ?? "supplier_or_physical",
       );
     }
+    await syncApprovedSupplierPackChildren(
+      config,
+      {
+        catalogProductId: resolution.product.id,
+        reviewDecision: resolution.product.review_decision ?? "pending",
+        approvedReviewFingerprint:
+          resolution.product.approved_review_fingerprint ?? null,
+      },
+      mappedProductId,
+      "unavailable",
+      null,
+    );
     if (mapping.product && resolution.variant.spree_variant_id) {
       await upsertVariantProvenance(
         config,
@@ -3395,6 +3485,19 @@ async function syncProductToSpree(
     product.availability,
     fulfillmentMode,
   );
+  if (catalogContext && packRequiresSplit) {
+    backorderItems += await syncApprovedSupplierPackChildren(
+      config,
+      {
+        catalogProductId: catalogContext.catalogProductId,
+        reviewDecision: catalogContext.reviewDecision,
+        approvedReviewFingerprint: catalogContext.approvedReviewFingerprint,
+      },
+      productId,
+      product.availability,
+      product.releaseDate,
+    );
+  }
   if (
     sourceCode === TCGFACTORY_SUPPLIER_CODE &&
     variantId &&

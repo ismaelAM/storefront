@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { requiresManualPackSplitReview, requiresMtgPreconSplitReview } from "../../supabase/functions/_shared/mtg-precon-policy";
+import { requiresManualPackSplitReview, requiresMtgPreconSplitReview, supplierPackChildVariantIds } from "../../supabase/functions/_shared/mtg-precon-policy";
 
 describe("MTG precon split policy", () => {
   it("holds heterogeneous commander cartons for manual split", () => {
@@ -127,5 +127,35 @@ describe("additional distributor display safeguards", () => {
       name: "Star Realms: Alerta Máxima (display)",
       purchasePrice: 74.38,
     })).toBe(true);
+  });
+});
+
+
+describe("supplier pack child availability mapping", () => {
+  it("treats manually-created variants as children of one managed pack source", () => {
+    expect(
+      supplierPackChildVariantIds(
+        ["variant_pack", "variant_deck_a", "variant_deck_b", "variant_deck_c"],
+        ["variant_pack"],
+      ),
+    ).toEqual(["variant_deck_a", "variant_deck_b", "variant_deck_c"]);
+  });
+
+  it("does not guess child ownership when a product has multiple managed pack sources", () => {
+    expect(
+      supplierPackChildVariantIds(
+        ["variant_pack_es", "variant_pack_en", "variant_deck_a"],
+        ["variant_pack_es", "variant_pack_en"],
+      ),
+    ).toEqual([]);
+  });
+
+  it("ignores duplicate and empty ids without ever returning the managed pack variant", () => {
+    expect(
+      supplierPackChildVariantIds(
+        ["variant_pack", "variant_child", "variant_child", "", null],
+        ["variant_pack", "variant_pack", undefined],
+      ),
+    ).toEqual(["variant_child"]);
   });
 });
