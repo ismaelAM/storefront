@@ -40,6 +40,7 @@ describe("publishing in Spree approves the recorded review", () => {
     const run = runInNewContext(`${compiled}; refreshHumanReviewMarkersBatch`, {
       supabase: { from: () => query }, HUMAN_REVIEW_MARKER_VERSION: "review_test",
       reviewReasonsFromLastError: () => ["product_image_missing"], definitions: async () => new Map(),
+      currentCatalogReviewReasonsForSpreeProduct: async () => new Set(["product_image_missing"]),
       spreeRequest: async () => ({ id: "prod_1", status: "active" }),
       adoptPublishedCatalogReview: async () => ({ review_decision: "approved", approved_review_fingerprint: "product_image_missing" }),
       shouldRequireCatalogReview,
