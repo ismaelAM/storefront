@@ -7,6 +7,7 @@ import {
   type CatalogReviewDecision,
   shouldAllowSupplierBackorder,
   shouldAutoPublishCatalogProduct,
+  shouldListCatalogProduct,
   shouldRequireCatalogReview,
 } from "../_shared/catalog-publish-policy.ts";
 import {
@@ -1363,10 +1364,19 @@ async function categoryMargin(
 async function definitions(
   config: ConfigRow,
 ): Promise<Map<string, SpreeFieldDefinition>> {
-  let defs = await spreeList<SpreeFieldDefinition>(
-    config,
-    "/custom_field_definitions",
-  );
+  let defs: SpreeFieldDefinition[];
+  try {
+    defs = await spreeList<SpreeFieldDefinition>(
+      config,
+      "/custom_field_definitions",
+    );
+  } catch (error) {
+    console.error(
+      "Spree custom-field definitions unavailable; continuing without metadata",
+      error instanceof Error ? error.message : String(error),
+    );
+    return new Map();
+  }
   let result = new Map(
     defs
       .filter((d) => d.resource_type === "Spree::Product")
@@ -1418,21 +1428,35 @@ async function definitions(
       });
       createdAny = true;
     } catch (error) {
-      // Another worker may have created it between the list and the POST.
-      if (!String(error).includes("422")) throw error;
+      // Custom metadata is auxiliary. A Spree definitions outage must not stop
+      // supplier freshness, stock safety or the catalog crawl.
+      if (!String(error).includes("422")) {
+        console.error(
+          "Could not create optional Spree custom-field definition",
+          fullKey,
+          error instanceof Error ? error.message : String(error),
+        );
+      }
     }
   }
 
   if (createdAny) {
-    defs = await spreeList<SpreeFieldDefinition>(
-      config,
-      "/custom_field_definitions",
-    );
-    result = new Map(
-      defs
-        .filter((d) => d.resource_type === "Spree::Product")
-        .map((d) => [d.namespace + "." + d.key, d]),
-    );
+    try {
+      defs = await spreeList<SpreeFieldDefinition>(
+        config,
+        "/custom_field_definitions",
+      );
+      result = new Map(
+        defs
+          .filter((d) => d.resource_type === "Spree::Product")
+          .map((d) => [d.namespace + "." + d.key, d]),
+      );
+    } catch (error) {
+      console.error(
+        "Spree custom-field definitions could not be refreshed; using known definitions",
+        error instanceof Error ? error.message : String(error),
+      );
+    }
   }
   return result;
 }
@@ -3305,7 +3329,11 @@ async function syncProductToSpree(
     physicalStockOnHand,
     fulfillmentMode,
   });
-  if (autoPublish) {
+  const shouldList =
+    catalogContext
+      ? shouldListCatalogProduct({ review, fulfillmentMode })
+      : autoPublish;
+  if (shouldList) {
     await spreeRequest(
       config,
       "PATCH",
@@ -3315,7 +3343,7 @@ async function syncProductToSpree(
       },
     );
     await ensureProductsInDefaultChannel(config, [productId]);
-  } else if (review) {
+  } else if (review || fulfillmentMode === "disabled") {
     await spreeRequest(
       config,
       "PATCH",
@@ -3538,14 +3566,6 @@ async function retireReplacementSource(
       "GET",
       "/products/" + encodeURIComponent(productId),
     );
-    if (old.status === "draft" && (old.tags ?? []).includes("devir-group")) {
-      await spreeRequest(
-        config,
-        "DELETE",
-        "/products/" + encodeURIComponent(productId),
-      );
-      return;
-    }
     const tags = Array.from(new Set([...(old.tags ?? []), "devir-merged"]));
     await spreeRequest(
       config,
@@ -6027,6 +6047,11 @@ async function preparePublishBatch(
     );
     const productReasons = new Set<string>();
     const categoryKeys = new Set<string>();
+    const hasAnyEnabledVariant = variants.some((variant) => {
+      const mode =
+        fulfillmentModeByVariant.get(variant.id) ?? "supplier_or_physical";
+      return mode !== "disabled";
+    });
     const hasAnyPhysicalRetailStock = variants.some((variant) => {
       const mode =
         fulfillmentModeByVariant.get(variant.id) ?? "supplier_or_physical";
@@ -6220,6 +6245,12 @@ async function preparePublishBatch(
     });
     const publish = !human && anySellable;
     const waiting = !human && !anySellable && anyWaiting;
+    const visible = shouldListCatalogProduct({
+      review: human,
+      fulfillmentMode: hasAnyEnabledVariant
+        ? "supplier_or_physical"
+        : "disabled",
+    });
     const catalogState = human
       ? "review"
       : waiting
@@ -6296,21 +6327,22 @@ async function preparePublishBatch(
       "PATCH",
       "/products/" + encodeURIComponent(productId),
       {
-        status: publish ? "active" : "draft",
+        status: visible ? "active" : "draft",
         tags,
         ...(resolvedCategory ? { category_ids: [resolvedCategory.id] } : {}),
       },
     );
     if (human && preparedProduct.status !== "draft") throw new Error("Spree no confirmó el borrador de revisión");
 
-    if (publish) {
+    if (visible) {
       await spreeRequest(
         config,
         "POST",
         "/channels/" + encodeURIComponent(channel.id) + "/add_products",
         { product_ids: [productId] },
       );
-      published += 1;
+      if (publish) published += 1;
+      else if (waiting) waitingSupplier += 1;
     } else {
       try {
         await spreeRequest(
@@ -6320,11 +6352,11 @@ async function preparePublishBatch(
           { product_ids: [productId] },
         );
       } catch {
-        // Keeping a draft is the primary safety control if channel removal is
+        // Draft status is the primary visibility control if channel removal is
         // unavailable on a particular Spree patch level.
       }
       if (human) humanReview += 1;
-      else waitingSupplier += 1;
+      else if (waiting) waitingSupplier += 1;
     }
 
     await upsertProductFields(config, productId, defs, {
@@ -7009,7 +7041,7 @@ function reviewReasonsFromLastError(value: unknown): string[] {
   const text = String(value ?? "")
     .replace(/^REVIEW:\s*/i, "")
     .trim();
-  if (!text) return ["manual_review_required"];
+  if (!text) return [];
   return text
     .split(", ")
     .map((item) => item.trim())
@@ -7102,6 +7134,19 @@ async function refreshHumanReviewMarkersBatch(
   const defs = await definitions(config);
   let processed = 0;
   for (const [productId, reasons] of groups) {
+    if (reasons.size === 0) {
+      const { error: markerError } = await supabase
+        .from("devir_sync_catalog")
+        .update({
+          review_marker_version: HUMAN_REVIEW_MARKER_VERSION,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("spree_product_id", productId)
+        .eq("catalog_state", "review");
+      if (markerError) throw markerError;
+      processed += 1;
+      continue;
+    }
     const product = await spreeRequest<SpreeProduct>(
       config,
       "GET",
@@ -11176,11 +11221,15 @@ async function processProducts(
       images += synced.images;
       if (synced.review) reviews += 1;
     } catch (err) {
+      const message = String(err);
+      const lockContention =
+        message.includes("está siendo sincronizado por otro worker");
+      const canRetryLock = lockContention && job.attempts + 1 < 5;
       await supabase
         .from("devir_sync_jobs")
         .update({
-          status: "error",
-          error: String(err),
+          status: canRetryLock ? "pending" : "error",
+          error: canRetryLock ? null : message,
           updated_at: new Date().toISOString(),
         })
         .eq("id", job.id);
@@ -11265,7 +11314,23 @@ async function retireMissingDevirOffers(config: ConfigRow, cycleId: string): Pro
 
 }
 
+async function recoverExpiredCycleJobs(cycleId: string): Promise<void> {
+  const cutoff = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  const { error } = await supabase
+    .from("devir_sync_jobs")
+    .update({
+      status: "pending",
+      error: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("cycle_id", cycleId)
+    .eq("status", "processing")
+    .lt("updated_at", cutoff);
+  if (error) throw error;
+}
+
 async function finishCycle(config: ConfigRow, cycleId: string): Promise<boolean> {
+  await recoverExpiredCycleJobs(cycleId);
   const { count: inProgress, error: jobsError } = await supabase
     .from("devir_sync_jobs")
     .select("id", { head: true, count: "exact" })
@@ -11377,9 +11442,10 @@ Deno.serve(async (req) => {
     return json({ error: "unauthorized" }, 401);
   }
 
+  const lockToken = crypto.randomUUID();
   const { data: lock, error: lockError } = await supabase.rpc(
     "devir_sync_acquire_lock",
-    { p_seconds: 120 },
+    { p_token: lockToken, p_seconds: 240 },
   );
   if (lockError) return json({ error: "lock", detail: lockError.message }, 500);
   if (!lock) return json({ ok: true, skipped: "locked" });
@@ -11550,6 +11616,6 @@ Deno.serve(async (req) => {
     }
     return json({ ok: false, error: message }, 500);
   } finally {
-    await supabase.rpc("devir_sync_release_lock");
+    await supabase.rpc("devir_sync_release_lock", { p_token: lockToken });
   }
 });
