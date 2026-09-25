@@ -112,3 +112,33 @@ export function requiresManualPackSplitReview(
     devirSceneOrThemePack ||
     requiresMtgPreconSplitReview(candidate);
 }
+
+
+/**
+ * Returns manually-created Spree variants that can safely inherit availability
+ * from one supplier pack source.
+ *
+ * We only infer the relationship when exactly one catalog-managed Spree variant
+ * exists on the product. With multiple managed source variants (for example one
+ * pack per language), automatic fan-out would be ambiguous and is deliberately
+ * disabled until there is an explicit mapping.
+ */
+export function supplierPackChildVariantIds(
+  spreeVariantIds: Iterable<string | null | undefined>,
+  catalogManagedVariantIds: Iterable<string | null | undefined>,
+): string[] {
+  const managed = new Set(
+    Array.from(catalogManagedVariantIds)
+      .map((value) => String(value ?? "").trim())
+      .filter(Boolean),
+  );
+  if (managed.size !== 1) return [];
+
+  return Array.from(
+    new Set(
+      Array.from(spreeVariantIds)
+        .map((value) => String(value ?? "").trim())
+        .filter(Boolean),
+    ),
+  ).filter((id) => !managed.has(id));
+}
