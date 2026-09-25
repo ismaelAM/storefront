@@ -57,7 +57,7 @@ describe("TcgFactory restock transition", () => {
     expect(f.reconcile).toHaveBeenCalledOnce();
     expect(f.ingest).not.toHaveBeenCalled();
   });
-  it("invalidates the existing offer and hides a product without any valid source", async () => {
+  it("invalidates the existing offer without hiding the catalog page", async () => {
     const f = fixture();
     const result = await f.tick({});
     expect(result.failed).toBe(0);
@@ -66,7 +66,7 @@ describe("TcgFactory restock transition", () => {
     expect(offerWrite?.filters).toContainEqual(["supplier_id", "supplier_tcg"]);
     expect(offerWrite?.filters).toContainEqual(["source_url", "https://tcgfactory.com/es/distribucion/fundas.html"]);
     expect(f.reconcile).toHaveBeenCalledOnce();
-    expect(f.spreeRequest).toHaveBeenCalledWith({}, "PATCH", "/products/prod_1", { status: "draft" });
+    expect(f.spreeRequest).not.toHaveBeenCalled();
     expect(f.ingest).not.toHaveBeenCalled();
   });
   it.each([[1, false], [0, true]] as const)("preserves publication with physical stock %s or another supplier %s", async (physical, other) => {

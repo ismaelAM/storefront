@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 
 // Run the real function bodies without starting Deno.serve or reading secrets.
 const source = ts.createSourceFile("index.ts", readFileSync("supabase/functions/devir-sync/index.ts", "utf8"), ts.ScriptTarget.Latest, true);
-const names = ["operatorAction", "operatorAuthorized", "validateSpreeAdminKey", "stockItemsForVariant", "setVariantBackorderability", "spreeList", "spreeListAll", "syncSpecialPriceRows", "patchVariantInventory", "definitions", "retireReplacementSource", "recoverExpiredCycleJobs", "finishCycle", "retireMissingDevirOffers"];
+const names = ["operatorAction", "operatorAuthorized", "validateSpreeAdminKey", "stockItemsForVariant", "setVariantBackorderability", "spreeList", "spreeListAll", "syncSpecialPriceRows", "patchVariantInventory", "definitions", "retireReplacementSource", "reconcileUnavailableTcgFactoryProduct", "recoverExpiredCycleJobs", "finishCycle", "retireMissingDevirOffers"];
 const bodies = source.statements.filter(node => ts.isFunctionDeclaration(node) && names.includes(node.name?.text ?? "")).map(node => node.getText(source)).join("\n");
 const code = ts.transpileModule(bodies, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 
@@ -16,7 +16,7 @@ function fixture(overrides: Record<string, unknown> = {}) {
   const fetch = vi.fn(async () => Response.json({ data: [] }));
   const devirFetch = vi.fn(async () => "authenticated fixture");
   const spreeRequest = vi.fn();
-  const api = runInNewContext(`${code}; ({ operatorAction, validateSpreeAdminKey, stockItemsForVariant, setVariantBackorderability, syncSpecialPriceRows, patchVariantInventory, definitions, retireReplacementSource, recoverExpiredCycleJobs, finishCycle })`, {
+  const api = runInNewContext(`${code}; ({ operatorAction, validateSpreeAdminKey, stockItemsForVariant, setVariantBackorderability, syncSpecialPriceRows, patchVariantInventory, definitions, retireReplacementSource, reconcileUnavailableTcgFactoryProduct, recoverExpiredCycleJobs, finishCycle })`, {
     Request, Response, URL, fetch, devirFetch, spreeRequest,
     json: (body: unknown, status = 200) => Response.json(body, { status }),
     sha256: async (value: string) => createHash("sha256").update(value).digest("hex"),
@@ -32,6 +32,7 @@ function fixture(overrides: Record<string, unknown> = {}) {
     patchVariantInventory: (config: object, productId: string, variantId: string, quantity: number, backorder: boolean, preorder: boolean, date: string | null, initialize?: boolean) => Promise<unknown>;
     definitions: (config: object) => Promise<Map<string, unknown>>;
     retireReplacementSource: (config: object, productId: string, replacementId: string) => Promise<void>;
+    reconcileUnavailableTcgFactoryProduct: (config: object, supplierId: string, product: object, runId: string | null, categories: unknown[], defs: Map<string, unknown>) => Promise<void>;
     recoverExpiredCycleJobs: (cycleId: string) => Promise<void>;
     finishCycle: (config: object, cycleId: string) => Promise<boolean>;
   };
@@ -136,6 +137,28 @@ describe("Catalog safety boundaries", () => {
       "/products/prod_old",
       expect.objectContaining({ status: "archived" }),
     );
+  });
+
+  it("does not draft a product merely because TcgFactory reports unavailable", async () => {
+    const query = {
+      update: () => query,
+      eq: () => query,
+      select: async () => ({ data: [{ variant_id: "variant_fixture" }], error: null }),
+    };
+    const f = fixture({
+      supabase: { from: () => query },
+      loadCatalogVariant: async () => ({ product: {}, variant: {} }),
+      reconcileCatalogVariant: async () => ({ productId: "prod_fixture" }),
+    });
+    await f.api.reconcileUnavailableTcgFactoryProduct(
+      {},
+      "supplier_fixture",
+      { availability: "unavailable", sourceUrl: "https://tcgfactory.com/product-fixture" },
+      "run_fixture",
+      [],
+      new Map(),
+    );
+    expect(f.spreeRequest).not.toHaveBeenCalled();
   });
 
   it("requeues only expired processing jobs", async () => {
