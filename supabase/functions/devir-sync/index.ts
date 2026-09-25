@@ -793,6 +793,17 @@ function normalizeGroupKey(value: string): string {
     .slice(0, 120);
 }
 
+function safeMangaEditionSuffix(value: string): boolean {
+  const normalized = value
+    .trim()
+    .replace(/^[\s(\[]+|[\s)\].,;:]+$/g, "")
+    .trim();
+  if (!normalized) return true;
+  return /^(?:ed(?:ici[oó]n)?\.?\s*)?(?:especial|aniversario|limitada|deluxe|coleccionista|de coleccionista)$/i.test(
+    normalized,
+  );
+}
+
 function groupingInfo(product: DevirProduct): GroupingInfo {
   const raw = product.name.replace(/\s+/g, " ").trim();
   // Strong signal for manga/serial publishing. We deliberately do not group
@@ -816,19 +827,23 @@ function groupingInfo(product: DevirProduct): GroupingInfo {
     }
     const groupName = tome[1].replace(/[\s:;,.-]+$/g, "").trim();
     const position = Number(tome[2]);
+    const suffix = tome[3]?.trim() ?? "";
+    const manga = categoryKey(product) === "manga-comic";
     return {
       itemKind: "variant_candidate",
       groupKey: normalizeGroupKey(groupName),
       groupName,
-      variantLabel: `Tomo ${String(position).padStart(2, "0")}${tome[3] ? " · " + tome[3].trim() : ""}`,
+      variantLabel: `Tomo ${String(position).padStart(2, "0")}${suffix ? " · " + suffix : ""}`,
       variantPosition: position,
-      confidence: "ambiguous",
+      confidence:
+        manga && safeMangaEditionSuffix(suffix) ? "high" : "ambiguous",
     };
   }
 
   const groupName = match[1].replace(/[\s:;,.-]+$/g, "").trim();
   const position = Number(match[2]);
   const suffix = match[3]?.trim() ?? "";
+  const manga = categoryKey(product) === "manga-comic";
   const specialEdition =
     /ed(?:ici[oó]n)?\.?\s*(?:especial|aniversario|limitada)|especial|aniversario/i.test(
       suffix,
@@ -839,7 +854,13 @@ function groupingInfo(product: DevirProduct): GroupingInfo {
     groupName,
     variantLabel: `Tomo ${String(position).padStart(2, "0")}${suffix ? " · " + suffix : ""}`,
     variantPosition: position,
-    confidence: specialEdition ? "ambiguous" : "high",
+    confidence: manga
+      ? safeMangaEditionSuffix(suffix)
+        ? "high"
+        : "ambiguous"
+      : specialEdition
+        ? "ambiguous"
+        : "high",
   };
 }
 
@@ -6168,7 +6189,7 @@ async function preparePublishBatch(
       if (isCatalanCatalogProduct(legacyProduct)) {
         productReasons.add("catalan_requires_operator_review");
       }
-      if (row.grouping_confidence === "ambiguous") {
+      if (groupingInfo(legacyProduct).confidence === "ambiguous") {
         productReasons.add("grouping_requires_operator_review");
       }
 
@@ -7146,22 +7167,29 @@ async function currentCatalogReviewReasonsForSpreeProduct(
 
   const reasons = new Set<string>();
   for (const row of (data ?? []) as CatalogAuditRow[]) {
+    const product = productFromCatalogRow(row);
+    const grouping = groupingInfo(product);
     if (
       row.catalog_state === "review" ||
       /^REVIEW:/i.test(String(row.last_error ?? ""))
     ) {
       for (const reason of reviewReasonsFromLastError(row.last_error)) {
+        if (
+          reason === "grouping_requires_operator_review" &&
+          grouping.confidence !== "ambiguous"
+        ) {
+          continue;
+        }
         reasons.add(reason);
       }
     }
 
-    const product = productFromCatalogRow(row);
     if (!product.imageUrls.length) reasons.add("product_image_missing");
     if (isPack(product)) reasons.add("pack_requires_operator_split");
     if (isCatalanCatalogProduct(product)) {
       reasons.add("catalan_requires_operator_review");
     }
-    if (row.grouping_confidence === "ambiguous") {
+    if (grouping.confidence === "ambiguous") {
       reasons.add("grouping_requires_operator_review");
     }
   }
@@ -7184,7 +7212,7 @@ async function markCatalogProductDirty(spreeProductId: string): Promise<void> {
 
 async function refreshHumanReviewMarkersBatch(
   config: ConfigRow,
-  limit = 40,
+  limit = 5,
 ): Promise<{ processed: number; remaining: number }> {
   const { data, error, count } = await supabase
     .from("devir_sync_catalog")
@@ -7201,32 +7229,30 @@ async function refreshHumanReviewMarkersBatch(
     .limit(limit * 10);
   if (error) throw error;
 
-  const groups = new Map<string, Set<string>>();
+  const productIds: string[] = [];
   for (const row of data ?? []) {
     const productId = String(row.spree_product_id ?? "");
-    if (!productId) continue;
-    if (!groups.has(productId) && groups.size >= limit) continue;
-    const reasons = groups.get(productId) ?? new Set<string>();
-    for (const reason of reviewReasonsFromLastError(row.last_error)) {
-      reasons.add(reason);
-    }
-    groups.set(productId, reasons);
+    if (!productId || productIds.includes(productId)) continue;
+    if (productIds.length >= limit) continue;
+    productIds.push(productId);
   }
 
-  if (groups.size === 0) return { processed: 0, remaining: 0 };
+  if (productIds.length === 0) return { processed: 0, remaining: 0 };
 
   const defs = await definitions(config);
   let processed = 0;
-  for (const [productId, reasons] of groups) {
+  for (const productId of productIds) {
+    const reasons = await currentCatalogReviewReasonsForSpreeProduct(productId);
     if (reasons.size === 0) {
+      await markCatalogProductDirty(productId);
+      await preparePublishBatch(config, 0, 1, productId);
       const { error: markerError } = await supabase
         .from("devir_sync_catalog")
         .update({
           review_marker_version: HUMAN_REVIEW_MARKER_VERSION,
           updated_at: new Date().toISOString(),
         })
-        .eq("spree_product_id", productId)
-        .eq("catalog_state", "review");
+        .eq("spree_product_id", productId);
       if (markerError) throw markerError;
       processed += 1;
       continue;
