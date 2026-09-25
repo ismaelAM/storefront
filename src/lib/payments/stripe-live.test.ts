@@ -25,6 +25,7 @@ describe("Stripe reconciliation", () => {
   let writes: Array<{ url: string; options: RequestInit }>;
 
   beforeEach(() => {
+    fetchMock.mockReset();
     vi.stubEnv("SPREE_ADMIN_API_KEY", "sk_test_admin");
     vi.stubEnv("DEVIR_B2B_SPREE_ADMIN_API_KEY", "");
     vi.stubGlobal("fetch", fetchMock);
