@@ -1,9 +1,16 @@
 import { createHmac } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ intent: vi.fn(), reconcile: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  intent: vi.fn(),
+  authorize: vi.fn(),
+  cancel: vi.fn(),
+  reconcile: vi.fn(),
+}));
 vi.mock("@/lib/payments/stripe-live", () => ({
   getStripePaymentIntent: mocks.intent,
+  placeAuthorizedStripePaymentInSpree: mocks.authorize,
+  reconcileStripeCancellationToSpree: mocks.cancel,
   reconcileStripePaymentToSpree: mocks.reconcile,
 }));
 import { POST } from "./route";
@@ -57,9 +64,67 @@ describe("Stripe webhook boundary", () => {
     expect((await POST(signedRequest())).status).toBe(500);
   });
 
+  it("places an authorized payment when Stripe says it is capturable", async () => {
+    mocks.intent.mockResolvedValueOnce({
+      id: "pi_test",
+      status: "requires_capture",
+      metadata: { spree_cart_id: "cart-1", manual_review: "true" },
+    });
+    const body = JSON.stringify({
+      type: "payment_intent.amount_capturable_updated",
+      data: { object: { id: "pi_test" } },
+    });
+
+    expect((await POST(signedRequest(body))).status).toBe(200);
+    expect(mocks.authorize).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "requires_capture" }),
+    );
+    expect(mocks.reconcile).not.toHaveBeenCalled();
+  });
+
+  it("reconciles a delayed capturable event against Stripe's latest succeeded state", async () => {
+    mocks.intent.mockResolvedValueOnce({
+      id: "pi_test",
+      status: "succeeded",
+      metadata: { spree_cart_id: "cart-1", manual_review: "true" },
+    });
+    const body = JSON.stringify({
+      type: "payment_intent.amount_capturable_updated",
+      data: { object: { id: "pi_test" } },
+    });
+
+    expect((await POST(signedRequest(body))).status).toBe(200);
+    expect(mocks.reconcile).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "succeeded" }),
+    );
+    expect(mocks.authorize).not.toHaveBeenCalled();
+  });
+
+  it("cancels the pending Spree order when the Stripe authorization is canceled", async () => {
+    mocks.intent.mockResolvedValueOnce({
+      id: "pi_test",
+      status: "canceled",
+      metadata: { spree_cart_id: "cart-1", manual_review: "true" },
+    });
+    const body = JSON.stringify({
+      type: "payment_intent.canceled",
+      data: { object: { id: "pi_test" } },
+    });
+
+    expect((await POST(signedRequest(body))).status).toBe(200);
+    expect(mocks.cancel).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "canceled" }),
+    );
+  });
+
   it("acknowledges unrelated signed events without a payment mutation", async () => {
-    const response = await POST(signedRequest(JSON.stringify({ type: "account.updated" })));
+    const response = await POST(
+      signedRequest(JSON.stringify({ type: "account.updated" })),
+    );
     expect(response.status).toBe(200);
+    expect(mocks.intent).not.toHaveBeenCalled();
+    expect(mocks.authorize).not.toHaveBeenCalled();
+    expect(mocks.cancel).not.toHaveBeenCalled();
     expect(mocks.reconcile).not.toHaveBeenCalled();
   });
 
