@@ -65,11 +65,22 @@ describe("TcgFactory adapter", () => {
     ).toThrow(/entero positivo/);
   });
 
-  it("normalizes the observed Spanish availability labels", () => {
+  it("normalizes the observed Spanish availability labels conservatively", () => {
     expect(mapTcgFactoryAvailability("Disponible")).toBe("available");
     expect(mapTcgFactoryAvailability("Preventa")).toBe("preorder");
-    expect(mapTcgFactoryAvailability("Sin stock")).toBe("unavailable");
+    for (const status of [
+      "En reposición",
+      "Agotado",
+      "Sin stock",
+      "No disponible",
+      "Descatalogado",
+      "Restock",
+    ]) {
+      expect(mapTcgFactoryAvailability(status)).toBe("unavailable");
+    }
     expect(mapTcgFactoryAvailability("Pendiente de confirmar")).toBe("unknown");
+    expect(mapTcgFactoryAvailability("Oferta")).toBe("unknown");
+    expect(mapTcgFactoryAvailability("Saldo")).toBe("unknown");
   });
 
   it("does not sell an explicitly empty available offer", () => {
