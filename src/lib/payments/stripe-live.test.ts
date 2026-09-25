@@ -102,7 +102,7 @@ describe("Stripe reconciliation", () => {
 
     const request = fetchMock.mock.calls[0];
     const body = new URLSearchParams(String(request[1].body));
-    expect(body.get("capture_method")).toBe("automatic");
+    expect(body.get("capture_method")).toBeNull();
     expect(body.get("metadata[manual_review]")).toBe("false");
     expect(new Headers(request[1].headers).get("Idempotency-Key")).toContain(
       "bisontcg:v3:",
@@ -157,7 +157,7 @@ describe("Stripe reconciliation", () => {
     const body = new URLSearchParams(
       String(fetchMock.mock.calls[0][1].body),
     );
-    expect(body.get("capture_method")).toBe("automatic");
+    expect(body.get("capture_method")).toBeNull();
   });
 
   it("places >500 EUR authorizations as payment-pending and settles Spree after capture", async () => {
