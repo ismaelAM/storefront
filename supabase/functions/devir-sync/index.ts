@@ -11009,6 +11009,7 @@ async function processCategories(
   config: ConfigRow,
   cycleId: string,
 ): Promise<{ done: boolean; processed: number }> {
+  await recoverExpiredCycleJobs(cycleId);
   const { data: jobs, error } = await supabase
     .from("devir_sync_jobs")
     .select("id,cycle_id,kind,url,page,attempts")
@@ -11092,6 +11093,7 @@ async function processProducts(
   images: number;
   reviews: number;
 }> {
+  await recoverExpiredCycleJobs(cycleId);
   const { data: jobs, error } = await supabase
     .from("devir_sync_jobs")
     .select("id,cycle_id,kind,url,page,attempts")
@@ -11330,7 +11332,6 @@ async function recoverExpiredCycleJobs(cycleId: string): Promise<void> {
 }
 
 async function finishCycle(config: ConfigRow, cycleId: string): Promise<boolean> {
-  await recoverExpiredCycleJobs(cycleId);
   const { count: inProgress, error: jobsError } = await supabase
     .from("devir_sync_jobs")
     .select("id", { head: true, count: "exact" })
