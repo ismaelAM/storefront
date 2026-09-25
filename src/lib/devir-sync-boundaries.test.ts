@@ -6,7 +6,8 @@ import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
 
 // Run the real function bodies without starting Deno.serve or reading secrets.
-const source = ts.createSourceFile("index.ts", readFileSync("supabase/functions/devir-sync/index.ts", "utf8"), ts.ScriptTarget.Latest, true);
+const rawSource = readFileSync("supabase/functions/devir-sync/index.ts", "utf8");
+const source = ts.createSourceFile("index.ts", rawSource, ts.ScriptTarget.Latest, true);
 const names = ["operatorAction", "operatorAuthorized", "validateSpreeAdminKey", "stockItemsForVariant", "setVariantBackorderability", "spreeList", "spreeListAll", "syncSpecialPriceRows", "patchVariantInventory", "definitions", "retireReplacementSource", "reconcileUnavailableTcgFactoryProduct", "recoverExpiredCycleJobs", "finishCycle", "retireMissingDevirOffers"];
 const bodies = source.statements.filter(node => ts.isFunctionDeclaration(node) && names.includes(node.name?.text ?? "")).map(node => node.getText(source)).join("\n");
 const code = ts.transpileModule(bodies, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
@@ -116,6 +117,17 @@ describe("BISON3 catalog coverage", () => {
 });
 
 describe("Catalog safety boundaries", () => {
+  it("runs a due Devir cycle before optional maintenance", () => {
+    const cyclePriority = rawSource.indexOf(
+      "return await processDevirCycleTick(config);",
+    );
+    const maintenance = rawSource.indexOf(
+      "const reviewMarkers = await refreshHumanReviewMarkersBatch(config);",
+    );
+    expect(cyclePriority).toBeGreaterThan(0);
+    expect(maintenance).toBeGreaterThan(cyclePriority);
+  });
+
   it("continues without optional custom-field metadata when Spree definitions fail", async () => {
     const f = fixture();
     f.spreeRequest.mockRejectedValue(new Error("Spree 500 custom fields"));

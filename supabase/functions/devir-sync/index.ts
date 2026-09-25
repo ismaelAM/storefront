@@ -11388,6 +11388,91 @@ async function finishCycle(config: ConfigRow, cycleId: string): Promise<boolean>
   return true;
 }
 
+async function processDevirCycleTick(config: ConfigRow): Promise<Response> {
+  let cycleId = config.active_cycle_id;
+  let phase = config.phase;
+
+  if (!cycleId) {
+    cycleId = await startCycle(config);
+    phase = "categories";
+  }
+
+  if (phase === "categories") {
+    const categoryResult = await processCategories(config, cycleId);
+    const productResult = await processProducts(config, cycleId);
+
+    if (categoryResult.done && productResult.done) {
+      if (!(await finishCycle(config, cycleId))) {
+        return json({
+          ok: true,
+          cycle_id: cycleId,
+          phase,
+          waiting: "unfinished_jobs",
+        });
+      }
+      return json({
+        ok: true,
+        cycle_id: cycleId,
+        phase: "complete",
+        categories_processed: categoryResult.processed,
+        products_processed: productResult.processed,
+        images: productResult.images,
+        reviews: productResult.reviews,
+      });
+    }
+
+    if (categoryResult.done) {
+      await supabase
+        .from("devir_sync_config")
+        .update({ phase: "products", updated_at: new Date().toISOString() })
+        .eq("id", "primary");
+    }
+
+    return json({
+      ok: true,
+      cycle_id: cycleId,
+      phase: categoryResult.done ? "products" : "categories",
+      categories_processed: categoryResult.processed,
+      products_processed: productResult.processed,
+      images: productResult.images,
+      reviews: productResult.reviews,
+    });
+  }
+
+  if (phase === "products") {
+    const result = await processProducts(config, cycleId);
+    if (result.done) {
+      if (!(await finishCycle(config, cycleId))) {
+        return json({
+          ok: true,
+          cycle_id: cycleId,
+          phase,
+          waiting: "unfinished_jobs",
+        });
+      }
+      return json({ ok: true, cycle_id: cycleId, phase: "complete" });
+    }
+    return json({
+      ok: true,
+      cycle_id: cycleId,
+      phase: "products",
+      processed: result.processed,
+      images: result.images,
+      reviews: result.reviews,
+    });
+  }
+
+  return json(
+    {
+      ok: false,
+      cycle_id: cycleId,
+      phase,
+      error: "cycle_not_runnable",
+    },
+    409,
+  );
+}
+
 Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
 
@@ -11443,6 +11528,24 @@ Deno.serve(async (req) => {
     if (!config.spree_admin_api_key) {
       return json({ ok: false, skipped: "bootstrap_required" }, 409);
     }
+
+    const runnableActiveCycle =
+      Boolean(config.active_cycle_id) &&
+      (config.phase === "categories" || config.phase === "products");
+    const newCycleDue =
+      !config.active_cycle_id &&
+      new Date(config.next_due_at).getTime() <= Date.now();
+    if (
+      config.enabled &&
+      Boolean(config.session_state) &&
+      (runnableActiveCycle || newCycleDue)
+    ) {
+      // Supplier crawling is the primary job of this worker. Run it before
+      // optional catalog maintenance so a slow repair task cannot starve the
+      // active crawl and leave supplier freshness permanently stale.
+      return await processDevirCycleTick(config);
+    }
+
     const reviewMarkers = await refreshHumanReviewMarkersBatch(config);
     const staleReconciliation = await reconcileStaleCatalogBatch(config);
     const physicalOnlyReconciliation =
@@ -11499,90 +11602,28 @@ Deno.serve(async (req) => {
       return json({ ok: false, skipped: "bootstrap_required" }, 409);
     }
 
-    let cycleId = config.active_cycle_id;
-    let phase = config.phase;
-    if (!cycleId) {
-      if (new Date(config.next_due_at).getTime() > Date.now()) {
-        return json({
-          ok: true,
-          skipped: "not_due",
-          next_due_at: config.next_due_at,
-          daily_offers: dailyOffersResult,
-          physical_only_reconciliation: physicalOnlyReconciliation,
-        });
-      }
-      cycleId = await startCycle(config);
-      phase = "categories";
+    if (config.active_cycle_id) {
+      return json(
+        {
+          ok: false,
+          cycle_id: config.active_cycle_id,
+          phase: config.phase,
+          error: configData.last_error ?? "cycle_not_runnable",
+        },
+        409,
+      );
     }
 
-    if (phase === "categories") {
-      const categoryResult = await processCategories(config, cycleId);
-      const productResult = await processProducts(config, cycleId);
-
-      if (categoryResult.done && productResult.done) {
-        if (!(await finishCycle(config, cycleId))) {
-          return json({ ok: true, cycle_id: cycleId, phase, waiting: "unfinished_jobs" });
-        }
-        return json({
-          ok: true,
-          cycle_id: cycleId,
-          phase: "complete",
-          categories_processed: categoryResult.processed,
-          products_processed: productResult.processed,
-          images: productResult.images,
-          reviews: productResult.reviews,
-          review_markers: reviewMarkers,
-          tcgfactory: tcgFactoryResult,
-        });
-      }
-
-      if (categoryResult.done) {
-        await supabase
-          .from("devir_sync_config")
-          .update({ phase: "products", updated_at: new Date().toISOString() })
-          .eq("id", "primary");
-      }
-
-      return json({
-        ok: true,
-        cycle_id: cycleId,
-        phase: categoryResult.done ? "products" : "categories",
-        categories_processed: categoryResult.processed,
-        products_processed: productResult.processed,
-        images: productResult.images,
-        reviews: productResult.reviews,
-        tcgfactory: tcgFactoryResult,
-      });
-    }
-
-    if (phase === "products") {
-      const result = await processProducts(config, cycleId);
-      if (result.done) {
-        if (!(await finishCycle(config, cycleId))) {
-          return json({ ok: true, cycle_id: cycleId, phase, waiting: "unfinished_jobs" });
-        }
-        return json({
-          ok: true,
-          cycle_id: cycleId,
-          phase: "complete",
-          tcgfactory: tcgFactoryResult,
-        });
-      }
-      return json({
-        ok: true,
-        cycle_id: cycleId,
-        phase: "products",
-        processed: result.processed,
-        images: result.images,
-        reviews: result.reviews,
-        tcgfactory: tcgFactoryResult,
-      });
-    }
-
-    return json(
-      { ok: false, cycle_id: cycleId, phase, error: configData.last_error },
-      409,
-    );
+    return json({
+      ok: true,
+      skipped: "not_due",
+      next_due_at: config.next_due_at,
+      review_markers: reviewMarkers,
+      catalog_reconciliation: staleReconciliation,
+      physical_only_reconciliation: physicalOnlyReconciliation,
+      tcgfactory: tcgFactoryResult,
+      daily_offers: dailyOffersResult,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await supabase
