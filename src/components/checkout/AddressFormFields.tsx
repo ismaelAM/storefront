@@ -74,16 +74,6 @@ export function AddressFormFields({
         />
       </div>
 
-      {/* Company */}
-      <Input
-        type="text"
-        id={`${idPrefix}-company`}
-        aria-label={t("company")}
-        value={address.company}
-        onChange={(e) => onChange("company", e.target.value)}
-        placeholder={t("company")}
-      />
-
       {/* Address */}
       <Input
         type="text"
