@@ -5,6 +5,7 @@ import { actionResult } from "@/lib/data/utils";
 import {
   createOrUpdateStripePaymentIntent,
   getStripePaymentIntent,
+  placeAuthorizedStripePaymentInSpree,
   reconcileStripePaymentToSpree,
 } from "@/lib/payments/stripe-live";
 
@@ -63,7 +64,10 @@ export async function finalizeStripeLivePayment(
 
     // Reconciliation validates the authoritative Admin order and its recorded
     // payments. The storefront balance may already be zero after a webhook.
-    const order = await reconcileStripePaymentToSpree(intent);
+    const order =
+      intent.status === "requires_capture"
+        ? await placeAuthorizedStripePaymentInSpree(intent)
+        : await reconcileStripePaymentToSpree(intent);
     return { order };
   }, "No se pudo reconciliar el pago con Spree");
 }
