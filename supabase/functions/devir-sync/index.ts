@@ -2335,6 +2335,7 @@ async function reconcileSpreeVariantFromCatalog(
 async function reconcileStaleCatalogBatch(
   config: ConfigRow,
   limit = 20,
+  refreshPublishState = true,
 ): Promise<{ checked: number; reconciled: number; failed: number }> {
   const { data, error } = await supabase
     .from("catalog_selected_supply")
@@ -2377,7 +2378,7 @@ async function reconcileStaleCatalogBatch(
         categories,
         defs,
       );
-      if (synced.productId) {
+      if (synced.productId && refreshPublishState) {
         await markCatalogProductDirty(synced.productId);
         await preparePublishBatch(config, 0, 1, synced.productId);
       }
@@ -11821,9 +11822,19 @@ Deno.serve(async (req) => {
       Boolean(config.session_state) &&
       (runnableActiveCycle || newCycleDue)
     ) {
-      // Supplier crawling is the primary job of this worker. Run it before
-      // optional catalog maintenance so a slow repair task cannot starve the
-      // active crawl and leave supplier freshness permanently stale.
+      // Availability safety is allowed to preempt a long Devir crawl. Keep the
+      // batch small and skip publish-state recomputation: reconcileCatalogVariant
+      // is enough to deselect stale supplier offers and turn supplier
+      // backorder/preorder off without touching physical quantities or hiding
+      // the product page.
+      try {
+        await reconcileStaleCatalogBatch(config, 10, false);
+      } catch (error) {
+        console.error(
+          "Critical stale supplier reconciliation failed",
+          error instanceof Error ? error.message : String(error),
+        );
+      }
       return await processDevirCycleTick(config);
     }
 
