@@ -6,6 +6,7 @@ import {
   isCatalogReviewApproved,
   shouldAllowSupplierBackorder,
   shouldAutoPublishCatalogProduct,
+  shouldListCatalogProduct,
   shouldRequireCatalogReview,
 } from "../../supabase/functions/_shared/catalog-publish-policy";
 
@@ -39,6 +40,27 @@ describe("catalog publish policy", () => {
       shouldAutoPublishCatalogProduct({
         review: false,
         availability: "unavailable",
+      }),
+    ).toBe(false);
+  });
+
+  it("keeps unavailable catalog entries visible without making supplier stock sellable", () => {
+    expect(
+      shouldListCatalogProduct({
+        review: false,
+        fulfillmentMode: "supplier_or_physical",
+      }),
+    ).toBe(true);
+    expect(
+      shouldListCatalogProduct({
+        review: true,
+        fulfillmentMode: "supplier_or_physical",
+      }),
+    ).toBe(false);
+    expect(
+      shouldListCatalogProduct({
+        review: false,
+        fulfillmentMode: "disabled",
       }),
     ).toBe(false);
   });
