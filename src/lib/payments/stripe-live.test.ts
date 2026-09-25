@@ -2,7 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-import { reconcileStripePaymentToSpree } from "./stripe-live";
+import {
+  createOrUpdateStripePaymentIntent,
+  placeAuthorizedStripePaymentInSpree,
+  reconcileStripePaymentToSpree,
+} from "./stripe-live";
 
 const intent = {
   id: "pi_paid",
@@ -28,18 +32,46 @@ describe("Stripe reconciliation", () => {
     writes = [];
     fetchMock.mockImplementation(async (url: string, options: RequestInit) => {
       if (options.method === "GET") {
-        return Response.json(url.includes("/payments?") ? { data: payments } : order);
+        return Response.json(
+          url.includes("/payments?") ? { data: payments } : order,
+        );
       }
+
       writes.push({ url, options });
-      const body = JSON.parse(String(options.body));
+      const body = options.body ? JSON.parse(String(options.body)) : undefined;
+
       if (url.endsWith("/payments")) {
         const payment = { id: "py_paid", ...body, status: "checkout" };
         payments.push(payment);
         return Response.json(payment);
       }
+
+      if (url.endsWith("/capture")) {
+        const payment = payments.find((candidate) =>
+          url.includes(`/payments/${candidate.id}/capture`),
+        );
+        if (payment) payment.status = "completed";
+        order = { ...order, amount_due: "0.00" };
+        return Response.json(payment ?? {});
+      }
+
       if (url.endsWith("/complete")) {
-        order = { ...order, status: "complete", amount_due: "0.00" };
-        payments.forEach(payment => { if (payment.status === "checkout") payment.status = "completed"; });
+        const paymentPending = body?.payment_pending === true;
+        order = {
+          ...order,
+          status: "complete",
+          amount_due: paymentPending ? order.amount_due : "0.00",
+        };
+        if (!paymentPending) {
+          payments.forEach((payment) => {
+            if (payment.status === "checkout") payment.status = "completed";
+          });
+        }
+      } else if (url.endsWith("/cancel")) {
+        order = { ...order, status: "canceled" };
+        payments.forEach((payment) => {
+          if (payment.status !== "completed") payment.status = "void";
+        });
       } else {
         order = { ...order, ...body };
       }
@@ -48,6 +80,131 @@ describe("Stripe reconciliation", () => {
   });
 
   afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
+
+  it("keeps capture automatic at exactly 500 EUR", async () => {
+    vi.stubEnv("STRIPE_SECRET_KEY", "sk_live_test");
+    fetchMock.mockResolvedValueOnce(
+      Response.json({
+        id: "pi_500",
+        client_secret: "secret",
+        status: "requires_payment_method",
+        amount: 50000,
+        currency: "eur",
+        metadata: { spree_cart_id: "cart-1", manual_review: "false" },
+      }),
+    );
+
+    await createOrUpdateStripePaymentIntent({
+      cartId: "cart-1",
+      amount: 50000,
+      currency: "EUR",
+    });
+
+    const request = fetchMock.mock.calls[0];
+    const body = new URLSearchParams(String(request[1].body));
+    expect(body.get("capture_method")).toBe("automatic");
+    expect(body.get("metadata[manual_review]")).toBe("false");
+    expect(new Headers(request[1].headers).get("Idempotency-Key")).toContain(
+      "bisontcg:v3:",
+    );
+  });
+
+  it("uses manual capture above 500 EUR", async () => {
+    vi.stubEnv("STRIPE_SECRET_KEY", "sk_live_test");
+    fetchMock.mockResolvedValueOnce(
+      Response.json({
+        id: "pi_501",
+        client_secret: "secret",
+        status: "requires_payment_method",
+        amount: 50001,
+        currency: "eur",
+        metadata: { spree_cart_id: "cart-1", manual_review: "true" },
+      }),
+    );
+
+    await createOrUpdateStripePaymentIntent({
+      cartId: "cart-1",
+      amount: 50001,
+      currency: "EUR",
+    });
+
+    const body = new URLSearchParams(
+      String(fetchMock.mock.calls[0][1].body),
+    );
+    expect(body.get("capture_method")).toBe("manual");
+    expect(body.get("metadata[manual_review]")).toBe("true");
+  });
+
+  it("does not apply the EUR threshold to another currency", async () => {
+    vi.stubEnv("STRIPE_SECRET_KEY", "sk_live_test");
+    fetchMock.mockResolvedValueOnce(
+      Response.json({
+        id: "pi_usd",
+        client_secret: "secret",
+        status: "requires_payment_method",
+        amount: 70000,
+        currency: "usd",
+        metadata: { spree_cart_id: "cart-1", manual_review: "false" },
+      }),
+    );
+
+    await createOrUpdateStripePaymentIntent({
+      cartId: "cart-1",
+      amount: 70000,
+      currency: "USD",
+    });
+
+    const body = new URLSearchParams(
+      String(fetchMock.mock.calls[0][1].body),
+    );
+    expect(body.get("capture_method")).toBe("automatic");
+  });
+
+  it("places >500 EUR authorizations as payment-pending and settles Spree after capture", async () => {
+    order = {
+      id: "cart-1",
+      status: "cart",
+      total: "600.00",
+      amount_due: "600.00",
+      currency: "EUR",
+      metadata: {},
+    };
+    const authorizedIntent = {
+      id: "pi_authorized",
+      client_secret: null,
+      status: "requires_capture",
+      amount: 60000,
+      currency: "eur",
+      metadata: {
+        spree_cart_id: "cart-1",
+        manual_review: "true",
+      },
+    };
+
+    await expect(
+      placeAuthorizedStripePaymentInSpree(authorizedIntent),
+    ).resolves.toMatchObject({ status: "complete" });
+
+    const pendingCompletion = writes.find((write) =>
+      write.url.endsWith("/complete"),
+    );
+    expect(JSON.parse(String(pendingCompletion?.options.body))).toMatchObject({
+      payment_pending: true,
+    });
+    expect(payments[0]).toMatchObject({ status: "checkout" });
+
+    await expect(
+      reconcileStripePaymentToSpree({
+        ...authorizedIntent,
+        status: "succeeded",
+      }),
+    ).resolves.toMatchObject({ status: "complete" });
+
+    expect(
+      writes.some((write) => write.url.endsWith("/payments/py_paid/capture")),
+    ).toBe(true);
+    expect(payments[0]).toMatchObject({ status: "completed" });
+  });
 
   it("uses the order API configuration instead of a catalog-only Devir key", async () => {
     vi.stubEnv("DEVIR_B2B_SPREE_ADMIN_API_KEY", "sk_catalog_only");
