@@ -400,15 +400,28 @@ describe("Manga grouping review policy", () => {
 });
 
 describe("Catalog safety boundaries", () => {
-  it("runs a due Devir cycle before optional maintenance", () => {
+  it("runs the lightweight stale-supply guard before an active Devir cycle", () => {
+    const staleGuard = rawSource.indexOf(
+      "await reconcileStaleCatalogBatch(config, 10, false);",
+    );
     const cyclePriority = rawSource.indexOf(
       "return await processDevirCycleTick(config);",
     );
-    const maintenance = rawSource.indexOf(
+    const optionalMaintenance = rawSource.indexOf(
       "const reviewMarkers = await refreshHumanReviewMarkersBatch(config);",
     );
-    expect(cyclePriority).toBeGreaterThan(0);
-    expect(maintenance).toBeGreaterThan(cyclePriority);
+    expect(staleGuard).toBeGreaterThan(0);
+    expect(cyclePriority).toBeGreaterThan(staleGuard);
+    expect(optionalMaintenance).toBeGreaterThan(cyclePriority);
+  });
+
+  it("keeps the active-crawl stale guard sellability-only", () => {
+    expect(rawSource).toContain(
+      "async function reconcileStaleCatalogBatch(\n  config: ConfigRow,\n  limit = 20,\n  refreshPublishState = true,",
+    );
+    expect(rawSource).toContain(
+      "if (synced.productId && refreshPublishState)",
+    );
   });
 
   it("continues without optional custom-field metadata when Spree definitions fail", async () => {

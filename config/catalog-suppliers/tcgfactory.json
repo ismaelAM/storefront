@@ -5,7 +5,7 @@
   "enabled": false,
   "priority": 100,
   "defaultCurrency": "EUR",
-  "staleAfterHours": 18,
+  "staleAfterHours": 8,
   "syncIntervalHours": 6,
   "config": {
     "feedContract": "tcgfactory_b2b_bridge_v1",
