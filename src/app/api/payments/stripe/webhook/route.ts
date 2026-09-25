@@ -2,6 +2,8 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import {
   getStripePaymentIntent,
+  placeAuthorizedStripePaymentInSpree,
+  reconcileStripeCancellationToSpree,
   reconcileStripePaymentToSpree,
 } from "@/lib/payments/stripe-live";
 
@@ -59,14 +61,28 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid event" }, { status: 400 });
   }
 
-  if (event.type === "payment_intent.succeeded") {
+  const relevantPaymentIntentEvent = [
+    "payment_intent.amount_capturable_updated",
+    "payment_intent.succeeded",
+    "payment_intent.canceled",
+  ].includes(event.type);
+
+  if (relevantPaymentIntentEvent) {
     const paymentIntentId = event.data?.object?.id;
     if (typeof paymentIntentId !== "string" || !paymentIntentId) {
       return NextResponse.json({ error: "Missing payment intent" }, { status: 400 });
     }
     try {
+      // Always branch on Stripe's current authoritative state rather than the
+      // event name. This makes delayed/out-of-order webhook delivery harmless.
       const intent = await getStripePaymentIntent(paymentIntentId);
-      await reconcileStripePaymentToSpree(intent);
+      if (intent.status === "requires_capture") {
+        await placeAuthorizedStripePaymentInSpree(intent);
+      } else if (intent.status === "succeeded") {
+        await reconcileStripePaymentToSpree(intent);
+      } else if (intent.status === "canceled") {
+        await reconcileStripeCancellationToSpree(intent);
+      }
     } catch (error) {
       console.error("Stripe webhook reconciliation failed", error);
       return NextResponse.json({ error: "Reconciliation failed" }, { status: 500 });
