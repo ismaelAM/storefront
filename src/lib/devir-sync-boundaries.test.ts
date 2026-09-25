@@ -181,7 +181,7 @@ describe("Supplier pack child stock propagation", () => {
       config: object,
       context: object,
       productId: string,
-      availability: typeof availability,
+      availability: "available" | "preorder" | "unavailable",
       releaseDate: string | null,
     ) => Promise<number>;
 
