@@ -8,7 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 // Run the real function bodies without starting Deno.serve or reading secrets.
 const rawSource = readFileSync("supabase/functions/devir-sync/index.ts", "utf8");
 const source = ts.createSourceFile("index.ts", rawSource, ts.ScriptTarget.Latest, true);
-const names = ["operatorAction", "operatorAuthorized", "validateSpreeAdminKey", "stockItemsForVariant", "setVariantBackorderability", "spreeList", "spreeListAll", "syncSpecialPriceRows", "patchVariantInventory", "initializeVerifiedEmptyBackorderStock", "definitions", "retireReplacementSource", "reconcileUnavailableTcgFactoryProduct", "recoverExpiredCycleJobs", "finishCycle", "retireMissingDevirOffers"];
+const names = ["operatorAction", "operatorAuthorized", "validateSpreeAdminKey", "stockItemsForVariant", "setVariantBackorderability", "spreeList", "spreeListAll", "syncSpecialPriceRows", "patchVariantInventory", "initializeVerifiedEmptyBackorderStock", "definitions", "retireReplacementSource", "reconcileUnavailableTcgFactoryProduct", "recoverExpiredCycleJobs", "finishCycle", "retireMissingDevirOffers", "normalizeGroupKey", "safeMangaEditionSuffix", "groupingInfo"];
 const bodies = source.statements.filter(node => ts.isFunctionDeclaration(node) && names.includes(node.name?.text ?? "")).map(node => node.getText(source)).join("\n");
 const code = ts.transpileModule(bodies, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 
@@ -17,12 +17,16 @@ function fixture(overrides: Record<string, unknown> = {}) {
   const fetch = vi.fn(async () => Response.json({ data: [] }));
   const devirFetch = vi.fn(async () => "authenticated fixture");
   const spreeRequest = vi.fn();
-  const api = runInNewContext(`${code}; ({ operatorAction, validateSpreeAdminKey, stockItemsForVariant, setVariantBackorderability, syncSpecialPriceRows, patchVariantInventory, initializeVerifiedEmptyBackorderStock, definitions, retireReplacementSource, reconcileUnavailableTcgFactoryProduct, recoverExpiredCycleJobs, finishCycle })`, {
+  const api = runInNewContext(`${code}; ({ operatorAction, validateSpreeAdminKey, stockItemsForVariant, setVariantBackorderability, syncSpecialPriceRows, patchVariantInventory, initializeVerifiedEmptyBackorderStock, definitions, retireReplacementSource, reconcileUnavailableTcgFactoryProduct, recoverExpiredCycleJobs, finishCycle, groupingInfo })`, {
     Request, Response, URL, fetch, devirFetch, spreeRequest,
     json: (body: unknown, status = 200) => Response.json(body, { status }),
     sha256: async (value: string) => createHash("sha256").update(value).digest("hex"),
     supabase: { from: () => ({ update }) },
     defaultStockLocationId: async () => "sl_1",
+    categoryKey: (product: { name?: string }) =>
+      /Pathfinder/i.test(String(product.name ?? ""))
+        ? "rol/pathfinder"
+        : "manga-comic",
     ...overrides,
   }) as {
     operatorAction: (action: string, req: Request, config: Record<string, unknown>, body: Record<string, unknown>) => Promise<Response>;
@@ -37,6 +41,14 @@ function fixture(overrides: Record<string, unknown> = {}) {
     reconcileUnavailableTcgFactoryProduct: (config: object, supplierId: string, product: object, runId: string | null, categories: unknown[], defs: Map<string, unknown>) => Promise<void>;
     recoverExpiredCycleJobs: (cycleId: string) => Promise<void>;
     finishCycle: (config: object, cycleId: string) => Promise<boolean>;
+    groupingInfo: (product: { name: string }) => {
+      itemKind: "standalone" | "variant_candidate";
+      groupKey: string | null;
+      groupName: string | null;
+      variantLabel: string | null;
+      variantPosition: number | null;
+      confidence: "none" | "high" | "ambiguous";
+    };
   };
   return { api, fetch, devirFetch, spreeRequest, update };
 }
@@ -114,6 +126,64 @@ describe("BISON3 catalog coverage", () => {
     const written = f.spreeRequest.mock.calls.flatMap(call => call[3].prices);
     expect(written).toHaveLength(1250);
     expect(new Set(written.map(row => row.variant_id)).size).toBe(1250);
+  });
+});
+
+describe("Manga grouping review policy", () => {
+  it.each([
+    [
+      "Los diarios de la boticaria núm. 01. Edición aniversario.",
+      "Tomo 01 · Edición aniversario.",
+    ],
+    [
+      "Los diarios de la boticaria núm. 15 (Ed. Especial)",
+      "Tomo 15 · (Ed. Especial)",
+    ],
+    ["Serie manga - Tomo 03", "Tomo 03"],
+  ])("treats recognized manga editions as high-confidence variants: %s", (name, label) => {
+    const f = fixture();
+    expect(f.api.groupingInfo({ name })).toEqual(
+      expect.objectContaining({
+        itemKind: "variant_candidate",
+        variantLabel: label,
+        confidence: "high",
+      }),
+    );
+  });
+
+  it("keeps an unknown manga suffix in human review", () => {
+    const f = fixture();
+    expect(
+      f.api.groupingInfo({ name: "Serie manga vol. 02 - Cofre sorpresa" }),
+    ).toEqual(
+      expect.objectContaining({
+        itemKind: "variant_candidate",
+        confidence: "ambiguous",
+      }),
+    );
+  });
+
+  it("does not auto-approve Tome grouping outside the manga category", () => {
+    const f = fixture();
+    expect(
+      f.api.groupingInfo({
+        name: "Pathfinder 2ª ed. - Forjador de reyes - Tomo 1",
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        itemKind: "variant_candidate",
+        confidence: "ambiguous",
+      }),
+    );
+  });
+
+  it("recomputes grouping review instead of trusting stale legacy confidence", () => {
+    expect(rawSource).toContain(
+      'groupingInfo(legacyProduct).confidence === "ambiguous"',
+    );
+    expect(rawSource).toContain(
+      "const reasons = await currentCatalogReviewReasonsForSpreeProduct(productId);",
+    );
   });
 });
 
