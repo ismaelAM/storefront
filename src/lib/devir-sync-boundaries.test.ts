@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 
 // Run the real function bodies without starting Deno.serve or reading secrets.
 const source = ts.createSourceFile("index.ts", readFileSync("supabase/functions/devir-sync/index.ts", "utf8"), ts.ScriptTarget.Latest, true);
-const names = ["operatorAction", "operatorAuthorized", "validateSpreeAdminKey", "stockItemsForVariant", "setVariantBackorderability", "spreeList", "spreeListAll", "syncSpecialPriceRows", "patchVariantInventory", "finishCycle", "retireMissingDevirOffers"];
+const names = ["operatorAction", "operatorAuthorized", "validateSpreeAdminKey", "stockItemsForVariant", "setVariantBackorderability", "spreeList", "spreeListAll", "syncSpecialPriceRows", "patchVariantInventory", "definitions", "retireReplacementSource", "recoverExpiredCycleJobs", "finishCycle", "retireMissingDevirOffers"];
 const bodies = source.statements.filter(node => ts.isFunctionDeclaration(node) && names.includes(node.name?.text ?? "")).map(node => node.getText(source)).join("\n");
 const code = ts.transpileModule(bodies, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 
@@ -16,7 +16,7 @@ function fixture(overrides: Record<string, unknown> = {}) {
   const fetch = vi.fn(async () => Response.json({ data: [] }));
   const devirFetch = vi.fn(async () => "authenticated fixture");
   const spreeRequest = vi.fn();
-  const api = runInNewContext(`${code}; ({ operatorAction, validateSpreeAdminKey, stockItemsForVariant, setVariantBackorderability, syncSpecialPriceRows, patchVariantInventory, finishCycle })`, {
+  const api = runInNewContext(`${code}; ({ operatorAction, validateSpreeAdminKey, stockItemsForVariant, setVariantBackorderability, syncSpecialPriceRows, patchVariantInventory, definitions, retireReplacementSource, recoverExpiredCycleJobs, finishCycle })`, {
     Request, Response, URL, fetch, devirFetch, spreeRequest,
     json: (body: unknown, status = 200) => Response.json(body, { status }),
     sha256: async (value: string) => createHash("sha256").update(value).digest("hex"),
@@ -30,6 +30,9 @@ function fixture(overrides: Record<string, unknown> = {}) {
     setVariantBackorderability: (config: object, productId: string, variantId: string, desired: boolean) => Promise<number>;
     syncSpecialPriceRows: (config: object, program: object, priceList: object) => Promise<number>;
     patchVariantInventory: (config: object, productId: string, variantId: string, quantity: number, backorder: boolean, preorder: boolean, date: string | null, initialize?: boolean) => Promise<unknown>;
+    definitions: (config: object) => Promise<Map<string, unknown>>;
+    retireReplacementSource: (config: object, productId: string, replacementId: string) => Promise<void>;
+    recoverExpiredCycleJobs: (cycleId: string) => Promise<void>;
     finishCycle: (config: object, cycleId: string) => Promise<boolean>;
   };
   return { api, fetch, devirFetch, spreeRequest, update };
@@ -108,6 +111,48 @@ describe("BISON3 catalog coverage", () => {
     const written = f.spreeRequest.mock.calls.flatMap(call => call[3].prices);
     expect(written).toHaveLength(1250);
     expect(new Set(written.map(row => row.variant_id)).size).toBe(1250);
+  });
+});
+
+describe("Catalog safety boundaries", () => {
+  it("continues without optional custom-field metadata when Spree definitions fail", async () => {
+    const f = fixture();
+    f.spreeRequest.mockRejectedValue(new Error("Spree 500 custom fields"));
+    const defs = await f.api.definitions({});
+    expect(defs.size).toBe(0);
+  });
+
+  it("archives merged draft products instead of deleting them", async () => {
+    const f = fixture();
+    f.spreeRequest.mockImplementation(async (_config, method) =>
+      method === "GET"
+        ? { id: "prod_old", status: "draft", tags: ["devir-group"] }
+        : { id: "prod_old", status: "archived" });
+    await f.api.retireReplacementSource({}, "prod_old", "prod_new");
+    expect(f.spreeRequest.mock.calls.some(call => call[1] === "DELETE")).toBe(false);
+    expect(f.spreeRequest).toHaveBeenCalledWith(
+      {},
+      "PATCH",
+      "/products/prod_old",
+      expect.objectContaining({ status: "archived" }),
+    );
+  });
+
+  it("requeues only expired processing jobs", async () => {
+    const calls: Array<[string, unknown]> = [];
+    const query = {
+      update: (value: unknown) => { calls.push(["update", value]); return query; },
+      eq: (key: string, value: unknown) => { calls.push([key, value]); return query; },
+      lt: (key: string, value: unknown) => { calls.push([`lt:${key}`, value]); return query; },
+      // biome-ignore lint/suspicious/noThenProperty: Models a PostgREST update query.
+      then: (resolve: (value: unknown) => void) => resolve({ error: null }),
+    };
+    const f = fixture({ supabase: { from: () => query } });
+    await f.api.recoverExpiredCycleJobs("cycle_fixture");
+    expect(calls).toContainEqual(["cycle_id", "cycle_fixture"]);
+    expect(calls).toContainEqual(["status", "processing"]);
+    expect(calls.some(([key]) => key === "lt:updated_at")).toBe(true);
+    expect(calls[0][1]).toEqual(expect.objectContaining({ status: "pending", error: null }));
   });
 });
 
