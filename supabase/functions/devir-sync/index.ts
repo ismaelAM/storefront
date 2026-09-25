@@ -2459,7 +2459,7 @@ async function reconcilePhysicalOnlyCatalogBatch(
       failed += 1;
       // Rotate a failing product instead of hammering the same oldest row on
       // every maintenance tick. The fulfillment helper above never changes
-      // count_on_hand, so a retry can safely happen on the next rotation.
+      // physical quantities, so a retry can safely happen on the next rotation.
       await supabase
         .from("catalog_variants")
         .update({ updated_at: new Date().toISOString() })
@@ -9718,7 +9718,7 @@ function tcgFactoryItemFailureDisposition(
   if (message.includes("está siendo sincronizado por otro worker")) {
     return "retry";
   }
-  if (/^TcgFactory HTTP 404\b/i.test(message)) {
+  if (/TcgFactory HTTP 404\b/i.test(message)) {
     return "skip";
   }
   return "fail";
