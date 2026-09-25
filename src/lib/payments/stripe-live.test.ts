@@ -5,6 +5,7 @@ vi.mock("server-only", () => ({}));
 import {
   createOrUpdateStripePaymentIntent,
   placeAuthorizedStripePaymentInSpree,
+  reconcileStripeCancellationToSpree,
   reconcileStripePaymentToSpree,
 } from "./stripe-live";
 
@@ -204,6 +205,42 @@ describe("Stripe reconciliation", () => {
       writes.some((write) => write.url.endsWith("/payments/py_paid/capture")),
     ).toBe(true);
     expect(payments[0]).toMatchObject({ status: "completed" });
+  });
+
+  it("cancels a placed pending order when Stripe releases the authorization", async () => {
+    order = {
+      id: "cart-1",
+      status: "cart",
+      total: "600.00",
+      amount_due: "600.00",
+      currency: "EUR",
+      metadata: {},
+    };
+    const authorizedIntent = {
+      id: "pi_authorized",
+      client_secret: null,
+      status: "requires_capture",
+      amount: 60000,
+      currency: "eur",
+      metadata: {
+        spree_cart_id: "cart-1",
+        manual_review: "true",
+      },
+    };
+
+    await placeAuthorizedStripePaymentInSpree(authorizedIntent);
+    await expect(
+      reconcileStripeCancellationToSpree({
+        ...authorizedIntent,
+        status: "canceled",
+      }),
+    ).resolves.toMatchObject({ status: "canceled" });
+
+    expect(payments[0]).toMatchObject({ status: "void" });
+    const cancellation = writes.find((write) => write.url.endsWith("/cancel"));
+    expect(JSON.parse(String(cancellation?.options.body))).toMatchObject({
+      refund_payments: false,
+    });
   });
 
   it("uses the order API configuration instead of a catalog-only Devir key", async () => {
