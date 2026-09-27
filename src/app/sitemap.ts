@@ -39,7 +39,7 @@ interface PageCaches {
  * Store API pages and avoids long-running sitemap responses on large catalogs.
  */
 const URLS_PER_SITEMAP = 10_000;
-const STATIC_PAGES_PER_LOCALE = 3;
+const STATIC_PAGES_PER_LOCALE = 1;
 const ITEMS_PER_PAGE = 100;
 const MAX_PAGES = 1000;
 const MAX_CONCURRENT_PAGE_REQUESTS = 8;
@@ -264,12 +264,6 @@ function appendStaticEntries(
 ): void {
   const staticEntries: MetadataRoute.Sitemap = [
     { url: basePath, changeFrequency: "daily", priority: 1 },
-    {
-      url: `${basePath}/products`,
-      changeFrequency: "daily",
-      priority: 0.8,
-    },
-    { url: `${basePath}/c`, changeFrequency: "weekly", priority: 0.7 },
   ];
 
   for (const [offset, entry] of staticEntries.entries()) {
