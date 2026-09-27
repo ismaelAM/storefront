@@ -107,6 +107,19 @@ export function isAutoManagedPrice(input: {
     Math.abs(input.currentPrice - input.lastAutoPrice) < 0.005;
 }
 
+export function isLegacyHundredfoldPriceArtifact(input: {
+  currentPrice: number | null;
+  lastAutoPrice: number | null;
+}): boolean {
+  return input.currentPrice !== null &&
+    input.lastAutoPrice !== null &&
+    Number.isFinite(input.currentPrice) &&
+    Number.isFinite(input.lastAutoPrice) &&
+    input.currentPrice > 0 &&
+    input.lastAutoPrice > 0 &&
+    Math.abs(input.currentPrice - input.lastAutoPrice * 100) < 0.01;
+}
+
 export function canWriteManagedCatalogPrice(input: {
   createdVariant: boolean;
   managed: boolean;
@@ -118,6 +131,10 @@ export function canWriteManagedCatalogPrice(input: {
   if (!input.managed) return false;
   return input.forceDraftForSplit ||
     isAutoManagedPrice({
+      currentPrice: input.currentPrice,
+      lastAutoPrice: input.lastAutoPrice,
+    }) ||
+    isLegacyHundredfoldPriceArtifact({
       currentPrice: input.currentPrice,
       lastAutoPrice: input.lastAutoPrice,
     });
