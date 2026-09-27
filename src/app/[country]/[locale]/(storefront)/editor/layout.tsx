@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { authenticatePuckEditor, isPuckEditorAuthenticated } from "@/lib/puck/editor-auth";
 
 async function login(formData: FormData): Promise<void> {
@@ -49,3 +50,11 @@ export default async function EditorLayout({
 
   return children;
 }
+
+
+export const metadata: Metadata = {
+  robots: {
+    index: false,
+    follow: false,
+  },
+};
