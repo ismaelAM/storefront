@@ -108,7 +108,7 @@ describe("localized sitemap generation", () => {
 
     const entries = await sitemap({ id: Promise.resolve("0") });
 
-    expect(entries).toHaveLength(4);
+    expect(entries).toHaveLength(8);
     expect(entries.map((entry) => entry.url)).toEqual(
       expect.arrayContaining([
         "https://store.example/us/en/products/p-0",
@@ -209,7 +209,7 @@ describe("localized sitemap generation", () => {
     expect(urls).not.toContain(
       "https://store.example/as/en/products/us-product-0",
     );
-    expect(entries).toHaveLength(8);
+    expect(entries).toHaveLength(4);
     expect(
       api.productsList.mock.calls.filter(([params]) => params.limit === 1),
     ).toHaveLength(2);
