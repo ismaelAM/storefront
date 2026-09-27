@@ -193,6 +193,18 @@ describe("catalog publish policy", () => {
     ).toBe(false);
   });
 
+  it("repairs the legacy Spanish-locale hundredfold price artifact", () => {
+    expect(
+      canWriteManagedCatalogPrice({
+        createdVariant: false,
+        managed: true,
+        forceDraftForSplit: false,
+        currentPrice: 950,
+        lastAutoPrice: 9.5,
+      }),
+    ).toBe(true);
+  });
+
   it("can still rewrite price while forcing a supplier pack to draft", () => {
     expect(
       canWriteManagedCatalogPrice({
