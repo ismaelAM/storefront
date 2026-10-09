@@ -54,15 +54,17 @@ import {
   parseTcgFactoryListing,
   parseTcgFactoryMinimumOrderQuantity,
   parseTcgFactoryPublicProduct,
-  TCGFACTORY_ACCESSORIES_URL,
   TCGFACTORY_ACCESSORY_CATEGORY_SPECS,
   TCGFACTORY_BASE_URL,
+  TCGFACTORY_CATALOG_SECTIONS,
+  TCGFACTORY_TCG_CATEGORY_SPECS,
   type TcgFactoryPublicProduct,
 } from "../_shared/tcgfactory-web.ts";
 
 type Json = Record<string, unknown>;
 
 interface ConfigRow {
+  last_supplier_tick?: string | null;
   id: string;
   enabled: boolean;
   base_url: string;
@@ -5188,6 +5190,8 @@ async function setupCatalogCategoriesAndMargins(config: ConfigRow): Promise<
     "Accesorios",
     "accesorios",
   );
+  await ensureCategory(config, categories, "Merchandising", "merchandising");
+  await ensureCategory(config, categories, "Pinturas", "pinturas");
 
   const specs: Array<{
     key: string;
@@ -5245,14 +5249,11 @@ async function setupCatalogCategoriesAndMargins(config: ConfigRow): Promise<
       parent: rol,
       position: 3,
     },
-    { key: "tcg/mtg", name: "MTG", slug: "mtg", parent: tcg, position: 0 },
-    {
-      key: "tcg/yugioh",
-      name: "Yugioh",
-      slug: "yugioh",
-      parent: tcg,
-      position: 1,
-    },
+    ...TCGFACTORY_TCG_CATEGORY_SPECS.map((spec, position) => ({
+      ...spec, parent: tcg, position,
+    })),
+    { key: "merchandising", name: "Merchandising", slug: "merchandising", parent: null, position: 0 },
+    { key: "pinturas", name: "Pinturas", slug: "pinturas", parent: null, position: 0 },
     {
       key: "manga-comic",
       name: "Manga y cómic",
@@ -5300,8 +5301,9 @@ async function setupCatalogCategoriesAndMargins(config: ConfigRow): Promise<
   for (const spec of specs) {
     const category = categoryForKey(categories, spec.key);
     if (!category) continue;
-    const margin = DEFAULT_CATEGORY_MARGINS[spec.key] ?? 0.05;
-    await setCategoryMargin(config, category, margin);
+    const configuredMargin = await categoryMargin(config, category);
+    const margin = configuredMargin ?? DEFAULT_CATEGORY_MARGINS[spec.key] ?? 0.05;
+    if (configuredMargin === null) await setCategoryMargin(config, category, margin);
     output.push({
       id: category.id,
       name: category.name,
@@ -9188,6 +9190,8 @@ async function completeCatalogSupplierRun(
 type TcgFactorySessionState = ConfigRow["session_state"];
 
 interface TcgFactoryCrawlState {
+  refresh_turn: number;
+  refresh_after_id: string | null;
   supplier_id: string;
   run_id: string | null;
   section: string;
@@ -9427,6 +9431,7 @@ async function tcgFactoryDiscoverPublicBatch(
   offset: number,
   limit: number,
   runId: string | null = null,
+  section = "accessories",
 ): Promise<{
   page: number;
   offset: number;
@@ -9438,8 +9443,10 @@ async function tcgFactoryDiscoverPublicBatch(
   urls: string[];
 }> {
   const supplier = await tcgFactorySupplierRow();
+  const sectionSpec = TCGFACTORY_CATALOG_SECTIONS.find(spec => spec.key === section);
+  if (!sectionSpec) throw new Error("TCGFACTORY_UNKNOWN_SECTION: " + section);
   const pageUrl =
-    TCGFACTORY_ACCESSORIES_URL + (page > 1 ? "?page=" + page : "");
+    sectionSpec.url + (page > 1 ? "?page=" + page : "");
   const listing = await tcgFactoryTextFetch(pageUrl);
   const parsed = parseTcgFactoryListing(listing.html, pageUrl);
   const selected = parsed.productUrls.slice(offset, offset + limit);
@@ -9449,7 +9456,7 @@ async function tcgFactoryDiscoverPublicBatch(
   for (const url of selected) {
     try {
       const detail = await tcgFactoryTextFetch(url);
-      const product = parseTcgFactoryPublicProduct(detail.html, url);
+      const product = parseTcgFactoryPublicProduct(detail.html, url, section);
       await upsertTcgFactoryDiscovery(supplier.id, product, runId);
       discovered += 1;
     } catch (error) {
@@ -9729,8 +9736,15 @@ async function tcgFactoryTick(
   config: ConfigRow,
   force = false,
 ): Promise<Record<string, unknown>> {
+  const tickStartedAt = Date.now();
   const supplier = await tcgFactorySupplierRow();
   if (!supplier.enabled && !force) return { skipped: "supplier_disabled" };
+  const sectionKeys = Array.isArray(supplier.config?.sections)
+    ? Array.from(new Set(supplier.config.sections.map(String)))
+    : TCGFACTORY_CATALOG_SECTIONS.map(spec => spec.key);
+  if (!sectionKeys.length || sectionKeys.some(key => !TCGFACTORY_CATALOG_SECTIONS.some(spec => spec.key === key))) {
+    throw new Error("TCGFACTORY_INVALID_SECTIONS");
+  }
 
   const { data: currentState, error: stateError } = await supabase
     .from("catalog_supplier_crawl_state")
@@ -9744,12 +9758,38 @@ async function tcgFactoryTick(
   const credentialsError =
     "credentials_missing: TCGFACTORY_B2B_EMAIL/TCGFACTORY_B2B_PASSWORD";
 
-  if (
-    !force &&
-    !running &&
-    supplier.next_sync_at &&
-    new Date(supplier.next_sync_at).getTime() > Date.now()
-  ) {
+  const crawlDue = force || running || !supplier.next_sync_at ||
+    new Date(supplier.next_sync_at).getTime() <= Date.now();
+  const refreshHours = Math.max(1, Math.min(6, Number(supplier.stale_after_hours) * 0.25));
+  const refreshCutoff = new Date(Date.now() - refreshHours * 60 * 60 * 1000).toISOString();
+  const refreshBatchSize = Math.min(48, Math.max(6, Number(supplier.config?.refreshBatchSize) || 48));
+  const refreshTurn = state?.refresh_turn ?? 0;
+  if (!force) {
+    const { error } = await supabase.from("catalog_supplier_crawl_state").upsert({
+      supplier_id: supplier.id, refresh_turn: (refreshTurn + 1) % 3,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "supplier_id" });
+    if (error) throw error;
+  }
+  let refreshOffers: Array<{ id: string; source_url: string }> = [];
+  if (credentialsAvailable && !force && (!crawlDue || refreshTurn !== 0)) {
+    const readDueOffers = async (afterId: string | null) => {
+      let query = supabase.from("catalog_supplier_offers")
+        .select("id,source_url")
+        .eq("supplier_id", supplier.id).eq("active", true)
+        .in("availability", ["available", "preorder"])
+        .lt("last_seen_at", refreshCutoff).not("source_url", "is", null)
+        .order("id").limit(refreshBatchSize);
+      if (afterId) query = query.gt("id", afterId);
+      const { data, error } = await query;
+      if (error) throw error;
+      return data ?? [];
+    };
+    refreshOffers = await readDueOffers(state?.refresh_after_id ?? null);
+    if (!refreshOffers.length && state?.refresh_after_id) refreshOffers = await readDueOffers(null);
+  }
+  const refreshingOffers = refreshOffers.length > 0;
+  if (!crawlDue && !refreshingOffers) {
     return { skipped: "not_due", nextSyncAt: supplier.next_sync_at };
   }
 
@@ -9764,6 +9804,7 @@ async function tcgFactoryTick(
       .from("catalog_supplier_crawl_state")
       .update({
         page: 1,
+        section: sectionKeys[0],
         item_offset: 0,
         total_pages: null,
         discovered_items: 0,
@@ -9780,7 +9821,7 @@ async function tcgFactoryTick(
     state = restarted as TcgFactoryCrawlState;
   }
 
-  if (!state || state.status !== "running") {
+  if (!refreshingOffers && (!state || state.status !== "running")) {
     const now = new Date().toISOString();
     const runId = "tcgfactory-" + String(Date.now());
     const { data: started, error } = await supabase
@@ -9789,7 +9830,7 @@ async function tcgFactoryTick(
         {
           supplier_id: supplier.id,
           run_id: runId,
-          section: "accessories",
+          section: sectionKeys[0],
           page: 1,
           item_offset: 0,
           total_pages: null,
@@ -9810,14 +9851,32 @@ async function tcgFactoryTick(
     await setupCatalogCategoriesAndMargins(config);
   }
 
+  if (!state) state = {
+    supplier_id: supplier.id, run_id: null, refresh_turn: 0, refresh_after_id: null,
+    section: sectionKeys[0], page: 1, item_offset: 0, total_pages: null,
+    discovered_items: 0, processed_items: 0, failed_items: 0,
+    status: "idle", last_error: null, started_at: null, updated_at: new Date().toISOString(),
+  };
+  const itemRunId = state.status === "running" ? state.run_id : null;
   const session = credentialsAvailable ? await tcgFactoryLogin() : null;
   const page = state.page;
   const offset = state.item_offset;
+  const sectionIndex = sectionKeys.indexOf(state.section);
+  const sectionSpec = TCGFACTORY_CATALOG_SECTIONS.find(spec => spec.key === state.section);
+  if (sectionIndex < 0 || !sectionSpec) throw new Error("TCGFACTORY_CRAWL_CONFIGURATION_CHANGED: reset crawl before changing sections");
   const pageUrl =
-    TCGFACTORY_ACCESSORIES_URL + (page > 1 ? "?page=" + page : "");
-  const listing = await tcgFactoryTextFetch(pageUrl);
-  const parsed = parseTcgFactoryListing(listing.html, pageUrl);
-  const urls = parsed.productUrls.slice(offset, offset + 6);
+    sectionSpec.url + (page > 1 ? "?page=" + page : "");
+  // Discovery and refresh share ingestion. Refresh uses a durable ID cursor,
+  // so dead URLs cannot monopolize the queue or falsely become fresh.
+  const refreshUrls = refreshOffers.map(offer => offer.source_url);
+  const listing = refreshingOffers ? null : await tcgFactoryTextFetch(pageUrl);
+  const parsed = listing ? parseTcgFactoryListing(listing.html, pageUrl) : {
+    productUrls: refreshUrls, totalPages: 1, totalItems: refreshUrls.length,
+  };
+  if (!refreshingOffers && !parsed.productUrls.length && parsed.totalItems !== 0) {
+    throw new Error("TCGFACTORY_EMPTY_LISTING: " + state.section + "/" + page);
+  }
+  const urls = refreshingOffers ? refreshUrls : parsed.productUrls.slice(offset, offset + 6);
   const categories = credentialsAvailable ? await spreeCategories(config) : [];
   const defs = credentialsAvailable
     ? await definitions(config)
@@ -9829,7 +9888,7 @@ async function tcgFactoryTick(
   let consumed = 0;
   let retryBlocked = false;
 
-  for (const url of urls) {
+  const processUrl = async (url: string) => {
     let discoveredThisItem = false;
     let consumeThisItem = true;
     try {
@@ -9837,17 +9896,18 @@ async function tcgFactoryTick(
       const publicProduct = parseTcgFactoryPublicProduct(
         publicDetail.html,
         url,
+        refreshingOffers ? undefined : state.section,
       );
-      await upsertTcgFactoryDiscovery(supplier.id, publicProduct, state.run_id);
+      await upsertTcgFactoryDiscovery(supplier.id, publicProduct, itemRunId);
       discoveredThisItem = true;
 
-      if (!credentialsAvailable) continue;
+      if (!credentialsAvailable) return;
       if (
         publicProduct.availability !== "available" &&
         publicProduct.availability !== "preorder"
       ) {
-        await reconcileUnavailableTcgFactoryProduct(config, supplier.id, publicProduct, state.run_id, categories, defs);
-        continue;
+        await reconcileUnavailableTcgFactoryProduct(config, supplier.id, publicProduct, itemRunId, categories, defs);
+        return;
       }
 
       const authenticatedDetail = await tcgFactoryTextFetch(
@@ -9857,10 +9917,11 @@ async function tcgFactoryTick(
       const authenticatedProduct = parseTcgFactoryPublicProduct(
         authenticatedDetail.html,
         url,
+        refreshingOffers ? undefined : state.section,
       );
       if (authenticatedProduct.availability !== "available" && authenticatedProduct.availability !== "preorder") {
-        await reconcileUnavailableTcgFactoryProduct(config, supplier.id, authenticatedProduct, state.run_id, categories, defs);
-        continue;
+        await reconcileUnavailableTcgFactoryProduct(config, supplier.id, authenticatedProduct, itemRunId, categories, defs);
+        return;
       }
       const price = safeTcgFactoryB2bPrice(
         authenticatedDetail.html,
@@ -9882,12 +9943,13 @@ async function tcgFactoryTick(
         price,
         minimumOrderQuantity,
       );
-      await ingestCatalogItem(config, rawItem, state.run_id, categories, defs);
+      rawItem.metadata = { ...rawItem.metadata, purchasePricePolicy: "highest_unit_price_no_volume_discount" };
+      await ingestCatalogItem(config, rawItem, itemRunId, categories, defs);
       processed += 1;
       await upsertTcgFactoryDiscovery(
         supplier.id,
         publicProduct,
-        state.run_id,
+        itemRunId,
         {
           b2bPriceValidated: true,
           ...(minimumOrderQuantity ? { minimumOrderQuantity } : {}),
@@ -9917,6 +9979,30 @@ async function tcgFactoryTick(
         if (discoveredThisItem) discovered += 1;
       }
     }
+  };
+
+  if (refreshingOffers) {
+    let attempted = 0;
+    // Bound concurrency and stop starting chunks after the elapsed-time budget.
+    for (let index = 0; index < urls.length && Date.now() - tickStartedAt < 100_000; index += 3) {
+      const chunk = urls.slice(index, index + 3);
+      await Promise.all(chunk.map(processUrl));
+      attempted += chunk.length;
+      if (retryBlocked) break;
+    }
+    if (attempted) {
+      const { error } = await supabase.from("catalog_supplier_crawl_state").upsert({
+        supplier_id: supplier.id,
+        refresh_after_id: refreshOffers[attempted - 1].id,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "supplier_id" });
+      if (error) throw error;
+    }
+    return { status: "refreshing_offers", refreshed: consumed - failed, processed, failed, skipped, retryBlocked };
+  }
+  for (const url of urls) {
+    if (Date.now() - tickStartedAt >= 100_000) break;
+    await processUrl(url);
     if (retryBlocked) break;
   }
 
@@ -9925,10 +10011,12 @@ async function tcgFactoryTick(
   const cumulativeProcessed = state.processed_items + processed;
   const pageDone =
     !retryBlocked && offset + consumed >= parsed.productUrls.length;
-  const nextPage = pageDone ? page + 1 : page;
+  const sectionDone = pageDone && page >= parsed.totalPages;
+  const nextSection = sectionDone && sectionIndex + 1 < sectionKeys.length ? sectionKeys[sectionIndex + 1] : state.section;
+  const nextPage = nextSection !== state.section ? 1 : pageDone ? page + 1 : page;
   const nextOffset = pageDone ? 0 : offset + consumed;
   const fullDone =
-    pageDone && parsed.productUrls.length > 0 && page >= parsed.totalPages;
+    sectionDone && sectionIndex === sectionKeys.length - 1;
 
   if (fullDone) {
     if (cumulativeFailed > 0) {
@@ -10006,6 +10094,7 @@ async function tcgFactoryTick(
       .from("catalog_supplier_crawl_state")
       .update({
         run_id: null,
+        section: sectionKeys[0],
         page: 1,
         item_offset: 0,
         total_pages: parsed.totalPages,
@@ -10028,6 +10117,7 @@ async function tcgFactoryTick(
     .from("catalog_supplier_crawl_state")
     .update({
       page: nextPage,
+      section: nextSection,
       item_offset: nextOffset,
       total_pages: parsed.totalPages,
       discovered_items: cumulativeDiscovered,
@@ -10050,6 +10140,8 @@ async function tcgFactoryTick(
     status: "running",
     credentialsConfigured: credentialsAvailable,
     page,
+    section: state.section,
+    nextSection,
     nextPage,
     nextOffset,
     totalPages: parsed.totalPages,
@@ -10306,6 +10398,30 @@ async function operatorAction(
 
   if (action === "run-now") {
     if (config.active_cycle_id) {
+      if (config.phase === "error") {
+        // Probe the dependency that stopped the cycle before resuming the same
+        // jobs. Completed jobs and supplier offers remain intact.
+        await spreeCategories(config);
+        const { count: unfinishedCategories, error: categoriesError } = await supabase
+          .from("devir_sync_jobs")
+          .select("id", { head: true, count: "exact" })
+          .eq("cycle_id", config.active_cycle_id)
+          .eq("kind", "category")
+          .in("status", ["pending", "processing"]);
+        if (categoriesError) throw categoriesError;
+        if (unfinishedCategories === null) throw new Error("No se pudo comprobar el ciclo");
+        const phase = unfinishedCategories > 0 ? "categories" : "products";
+        const now = new Date().toISOString();
+        const { error: cycleError } = await supabase.from("devir_sync_cycles")
+          .update({ status: "running", error: null, finished_at: null })
+          .eq("id", config.active_cycle_id);
+        if (cycleError) throw cycleError;
+        const { error: resumeError } = await supabase.from("devir_sync_config")
+          .update({ enabled: true, phase, last_error: null, updated_at: now })
+          .eq("id", "primary");
+        if (resumeError) throw resumeError;
+        return json({ ok: true, resumed: config.active_cycle_id, phase });
+      }
       return json({ ok: true, already_running: config.active_cycle_id });
     }
     const { error } = await supabase
@@ -10853,7 +10969,7 @@ async function operatorAction(
     const limit = Math.min(12, Math.max(1, Number(body.limit ?? 6) || 6));
     return json({
       ok: true,
-      ...(await tcgFactoryDiscoverPublicBatch(page, offset, limit)),
+      ...(await tcgFactoryDiscoverPublicBatch(page, offset, limit, null, String(body.section ?? "accessories"))),
     });
   }
 
@@ -11755,6 +11871,24 @@ async function processDevirCycleTick(config: ConfigRow): Promise<Response> {
   );
 }
 
+async function scheduledTcgFactoryTick(config: ConfigRow): Promise<Record<string, unknown>> {
+  try {
+    return await tcgFactoryTick(config);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("TcgFactory scheduled sync failed", message);
+    try {
+      const supplier = await tcgFactorySupplierRow();
+      await supabase.from("catalog_suppliers")
+        .update({ last_error: message, updated_at: new Date().toISOString() })
+        .eq("id", supplier.id);
+    } catch {
+      // Supplier registration/migration may still be in progress.
+    }
+    return { status: "error", error: message };
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
 
@@ -11835,6 +11969,21 @@ Deno.serve(async (req) => {
           error instanceof Error ? error.message : String(error),
         );
       }
+      // Persist the turn before work: a long request or timeout must still
+      // leave the other distributor the next unlocked invocation.
+      const recordSupplierTurn = async (code: string) => {
+        const { error } = await supabase.from("devir_sync_config")
+          .update({ last_supplier_tick: code }).eq("id", "primary");
+        if (error) throw error;
+      };
+      if (config.last_supplier_tick !== "tcgfactory") {
+        await recordSupplierTurn("tcgfactory");
+        const tcgFactoryResult = await scheduledTcgFactoryTick(config);
+        if (!tcgFactoryResult.skipped && tcgFactoryResult.status !== "error") {
+          return json({ ok: true, tcgfactory: tcgFactoryResult });
+        }
+      }
+      await recordSupplierTurn("devir");
       return await processDevirCycleTick(config);
     }
 
@@ -11842,23 +11991,7 @@ Deno.serve(async (req) => {
     const staleReconciliation = await reconcileStaleCatalogBatch(config);
     const physicalOnlyReconciliation =
       await reconcilePhysicalOnlyCatalogBatch(config);
-    let tcgFactoryResult: Record<string, unknown>;
-    try {
-      tcgFactoryResult = await tcgFactoryTick(config);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error("TcgFactory scheduled sync failed", message);
-      try {
-        const supplier = await tcgFactorySupplierRow();
-        await supabase
-          .from("catalog_suppliers")
-          .update({ last_error: message, updated_at: new Date().toISOString() })
-          .eq("id", supplier.id);
-      } catch {
-        // Supplier registration/migration may still be in progress.
-      }
-      tcgFactoryResult = { status: "error", error: message };
-    }
+    const tcgFactoryResult = await scheduledTcgFactoryTick(config);
 
     let dailyOffersResult: Record<string, unknown>;
     try {

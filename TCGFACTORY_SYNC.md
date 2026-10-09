@@ -11,7 +11,8 @@ repositorio. Es la referencia antes de modificar su adaptador.
   `supabase/functions/_shared/tcgfactory-adapter.ts`.
 - El registro versionado está en
   `config/catalog-suppliers/tcgfactory.json` y permanece deshabilitado hasta
-  validar un feed B2B real.
+  validar un feed B2B real. Este valor es del ejemplo versionado; no representa
+  el estado del proveedor ya habilitado en producción.
 - La cuenta y la contraseña se leen exclusivamente de los secretos
   `TCGFACTORY_B2B_EMAIL` y `TCGFACTORY_B2B_PASSWORD`.
 - La autenticación web profesional está implementada en el worker y valida que
@@ -23,6 +24,46 @@ repositorio. Es la referencia antes de modificar su adaptador.
 
 No habilitar el proveedor sólo porque el parser compile. Primero hay que validar
 precio, IVA, stock, paginación y variantes con datos reales de la cuenta.
+
+## Rastreo de todo el catálogo y precio unitario
+
+El transporte web recorre las secciones configuradas en
+`catalog_suppliers.config.sections`: `tcg`, `board_games`, `accessories`,
+`merchandising` y `paints`. El cursor conserva sección, página y posición;
+terminar una sección no completa el run. Sólo se retiran ofertas ausentes tras
+runs completos validados, nunca al cerrar un lote o un crawl con errores.
+Al ampliar o reordenar secciones hay que reiniciar el cursor de descubrimiento.
+
+Las fichas se clasifican con el breadcrumb y los atributos del producto, usando
+la sección como respaldo. Los TCG conservan juego, idioma y edición; las otras
+familias no se convierten en accesorios. Las nuevas categorías se crean con la
+rutina existente y sólo reciben un margen inicial si aún no tienen uno.
+
+Para TcgFactory se toma el mayor precio unitario entre el precio profesional
+base y los tramos profesionales de cantidad de la misma ficha. No se utiliza el
+tramo más barato ni el PVP público. El precio se valida con sesión autenticada y
+contra la referencia pública. Ese coste pasa al selector multidistribuidor
+existente, que elige la menor oferta comparable válida; el PVP sigue calculándose
+con los márgenes, impuestos y protecciones manuales existentes. El MOQ se trata
+por separado: un descuento por cantidad no cambia el mínimo de compra.
+
+Durante el rastreo y entre crawls, otro cursor (`refresh_after_id`) repasa las
+ofertas disponibles o en preventa antes de que caduquen. Usa la misma ingesta y
+reconciliación; un error avanza este cursor de mantenimiento sin marcar el coste
+como validado. Los lotes tienen concurrencia limitada y presupuesto temporal;
+`config.refreshBatchSize` permite ajustar la capacidad (48 por defecto y como máximo). La caducidad de las ofertas sigue aplicándose aunque falle el proveedor.
+Un turno de cada tres se reserva para descubrimiento cuando hay ambos trabajos.
+
+El scheduler persiste el turno antes del trabajo y alterna con un ciclo activo
+de Devir, incluso si un tick largo hace que el siguiente cron encuentre el lock
+ocupado. La reserva de descubrimiento también usa un contador persistente. Si Devir queda en
+`error`, `run-now` comprueba primero la API de Spree y reanuda el mismo ciclo y
+sus tareas pendientes, conservando las tareas completadas.
+
+Verificado con las rutas oficiales y la cuenta profesional el 9 de octubre de
+2026: paginación, EAN, clasificación de las cinco familias y precio B2B distinto
+de la referencia pública. Las tablas de descuento siguen siendo un transporte
+HTML que requiere pruebas al cambiar el proveedor.
 
 ## Hechos verificados
 

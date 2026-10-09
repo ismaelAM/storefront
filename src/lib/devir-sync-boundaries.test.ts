@@ -10,7 +10,7 @@ import { supplierPackChildVariantIds } from "../../supabase/functions/_shared/mt
 // Run the real function bodies without starting Deno.serve or reading secrets.
 const rawSource = readFileSync("supabase/functions/devir-sync/index.ts", "utf8");
 const source = ts.createSourceFile("index.ts", rawSource, ts.ScriptTarget.Latest, true);
-const names = ["decodeHtml", "stripHtml", "parseAvailability", "operatorAction", "operatorAuthorized", "validateSpreeAdminKey", "stockItemsForVariant", "setVariantBackorderability", "spreeList", "spreeListAll", "syncSpecialPriceRows", "patchVariantInventory", "initializeVerifiedEmptyBackorderStock", "definitions", "retireReplacementSource", "reconcileUnavailableTcgFactoryProduct", "recoverExpiredCycleJobs", "finishCycle", "retireMissingDevirOffers", "normalizeGroupKey", "safeMangaEditionSuffix", "groupingInfo", "tcgFactoryItemFailureDisposition"];
+const names = ["decodeHtml", "stripHtml", "parseAvailability", "operatorAction", "operatorAuthorized", "validateSpreeAdminKey", "stockItemsForVariant", "setVariantBackorderability", "spreeList", "spreeListAll", "syncSpecialPriceRows", "patchVariantInventory", "initializeVerifiedEmptyBackorderStock", "definitions", "retireReplacementSource", "reconcileUnavailableTcgFactoryProduct", "recoverExpiredCycleJobs", "finishCycle", "retireMissingDevirOffers", "normalizeGroupKey", "safeMangaEditionSuffix", "groupingInfo", "tcgFactoryItemFailureDisposition", "setupCatalogCategoriesAndMargins"];
 const bodies = source.statements.filter(node => ts.isFunctionDeclaration(node) && names.includes(node.name?.text ?? "")).map(node => node.getText(source)).join("\n");
 const code = ts.transpileModule(bodies, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 
@@ -19,7 +19,7 @@ function fixture(overrides: Record<string, unknown> = {}) {
   const fetch = vi.fn(async () => Response.json({ data: [] }));
   const devirFetch = vi.fn(async () => "authenticated fixture");
   const spreeRequest = vi.fn();
-  const api = runInNewContext(`${code}; ({ parseAvailability, operatorAction, validateSpreeAdminKey, stockItemsForVariant, setVariantBackorderability, syncSpecialPriceRows, patchVariantInventory, initializeVerifiedEmptyBackorderStock, definitions, retireReplacementSource, reconcileUnavailableTcgFactoryProduct, recoverExpiredCycleJobs, finishCycle, groupingInfo, tcgFactoryItemFailureDisposition })`, {
+  const api = runInNewContext(`${code}; ({ setupCatalogCategoriesAndMargins, parseAvailability, operatorAction, validateSpreeAdminKey, stockItemsForVariant, setVariantBackorderability, syncSpecialPriceRows, patchVariantInventory, initializeVerifiedEmptyBackorderStock, definitions, retireReplacementSource, reconcileUnavailableTcgFactoryProduct, recoverExpiredCycleJobs, finishCycle, groupingInfo, tcgFactoryItemFailureDisposition })`, {
     Request, Response, URL, fetch, devirFetch, spreeRequest,
     json: (body: unknown, status = 200) => Response.json(body, { status }),
     sha256: async (value: string) => createHash("sha256").update(value).digest("hex"),
@@ -31,6 +31,7 @@ function fixture(overrides: Record<string, unknown> = {}) {
         : "manga-comic",
     ...overrides,
   }) as {
+    setupCatalogCategoriesAndMargins: (config: object) => Promise<unknown>;
     operatorAction: (action: string, req: Request, config: Record<string, unknown>, body: Record<string, unknown>) => Promise<Response>;
     validateSpreeAdminKey: (url: string, key: string) => Promise<void>;
     stockItemsForVariant: (config: object, id: string) => Promise<Array<typeof stock>>;
@@ -64,6 +65,26 @@ const stock = { id: "si_target", variant_id: "variant_target", count_on_hand: -2
 const req = (key = config.spree_admin_api_key) => new Request("https://worker.invalid", { headers: { "x-spree-admin-key": key } });
 
 describe("Devir bootstrap authorization", () => {
+  it("resumes an errored active cycle after Spree recovers, preserving completed jobs", async () => {
+    const writes: Array<{ table: string; value: Record<string, unknown> }> = [];
+    const f = fixture({
+      spreeCategories: async () => [],
+      recoverExpiredCycleJobs: async () => {},
+      supabase: { from: (table: string) => {
+        const query = {
+          select: () => query, eq: () => query, in: () => query,
+          update: (value: Record<string, unknown>) => { writes.push({ table, value }); return query; },
+          // biome-ignore lint/suspicious/noThenProperty: Models no unfinished category jobs.
+          then: (resolve: (value: unknown) => void) => resolve({ error: null, count: 0 }),
+        };
+        return query;
+      } },
+    });
+    const response = await f.api.operatorAction("run-now", req(), { ...config, phase: "error", active_cycle_id: "cycle_existing" }, {});
+    expect(await response.json()).toMatchObject({ ok: true, resumed: "cycle_existing", phase: "products" });
+    expect(writes).toContainEqual({ table: "devir_sync_config", value: expect.objectContaining({ phase: "products", last_error: null }) });
+    expect(writes.some(write => write.table === "devir_sync_jobs")).toBe(false);
+  });
   it("rejects a different key before any network or configuration write", async () => {
     const f = fixture();
     const response = await f.api.operatorAction("bootstrap", req("sk_wrong"), config, { sessionState: {} });
@@ -751,5 +772,20 @@ describe("Devir complete-crawl requirement", () => {
     const f = fixture({ supabase: { from: () => ({ ...query, update: writes }) } });
     await expect(f.api.finishCycle({}, "cycle_fixture")).rejects.toThrow("database unavailable");
     expect(writes).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("catalog category setup", () => {
+  it("preserves existing commercial margins while adding supplier categories", async () => {
+    const setMargin = vi.fn();
+    const f = fixture({
+      spreeCategories: async () => [], ensureCategory: async () => ({ id: "category_existing" }),
+      categoryForKey: () => ({ id: "category_existing", name: "Existing" }),
+      categoryMargin: async () => 0.22, setCategoryMargin: setMargin,
+      DEFAULT_CATEGORY_MARGINS: {}, TCGFACTORY_TCG_CATEGORY_SPECS: [], TCGFACTORY_ACCESSORY_CATEGORY_SPECS: [],
+    });
+    await f.api.setupCatalogCategoriesAndMargins(config);
+    expect(setMargin).not.toHaveBeenCalled();
   });
 });
