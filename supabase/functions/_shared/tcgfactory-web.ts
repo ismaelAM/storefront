@@ -249,7 +249,7 @@ export function parseTcgFactoryAuthenticatedPrice(html: string): number | null {
   html = html.replace(/<article\b[^>]*class=["'][^"']*product-miniature[^"']*["'][\s\S]*?<\/article>/gi, "");
   const tiers: number[] = [];
   for (const table of html.matchAll(/<table\b[^>]*class=["'][^"']*table-product-discounts[^"']*["'][\s\S]*?<\/table>/gi)) {
-    for (const cell of table[0].matchAll(/<td\b[^>]*rel=["']\d+["'][^>]*>([\s\S]*?)<\/td>/gi)) {
+    for (const cell of table[0].matchAll(/<td\b[^>]*rel=["']\d+(?:[.,]\d+)?["'][^>]*>([\s\S]*?)<\/td>/gi)) {
       const price = decimal(stripHtml(cell[1]));
       if (price !== null) tiers.push(price);
     }

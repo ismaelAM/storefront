@@ -10,6 +10,10 @@ import {
 } from "../../supabase/functions/_shared/tcgfactory-web";
 
 describe("TcgFactory public web parser", () => {
+  it("reads quantity tiers with decimal PrestaShop quantity attributes", () => {
+    const html = `<span class="current-price-value" content="7.00"></span><table class="table-product-discounts"><tr><td rel="4.000000">8,50€</td><td rel="12.000000">7,25€</td></tr></table>`;
+    expect(parseTcgFactoryAuthenticatedPrice(html)).toBe(8.5);
+  });
   it.each([
     ["accessories", "Fundas Magic", "accesorios/fundas-standard"],
     ["board_games", "Magic Innistrad juego de mesa", "juegos-de-mesa/general"],
