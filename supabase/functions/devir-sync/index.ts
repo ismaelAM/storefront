@@ -9762,7 +9762,7 @@ async function tcgFactoryTick(
     new Date(supplier.next_sync_at).getTime() <= Date.now();
   const refreshHours = Math.max(1, Math.min(6, Number(supplier.stale_after_hours) * 0.25));
   const refreshCutoff = new Date(Date.now() - refreshHours * 60 * 60 * 1000).toISOString();
-  const refreshBatchSize = Math.min(48, Math.max(6, Number(supplier.config?.refreshBatchSize) || 48));
+  const refreshBatchSize = Math.min(24, Math.max(6, Math.floor(Number(supplier.config?.refreshBatchSize) || 24)));
   const refreshTurn = state?.refresh_turn ?? 0;
   if (!force) {
     const { error } = await supabase.from("catalog_supplier_crawl_state").upsert({
@@ -9984,19 +9984,19 @@ async function tcgFactoryTick(
   if (refreshingOffers) {
     let attempted = 0;
     // Bound concurrency and stop starting chunks after the elapsed-time budget.
-    for (let index = 0; index < urls.length && Date.now() - tickStartedAt < 100_000; index += 3) {
+    for (let index = 0; index < urls.length && Date.now() - tickStartedAt < 60_000; index += 3) {
       const chunk = urls.slice(index, index + 3);
       await Promise.all(chunk.map(processUrl));
       attempted += chunk.length;
-      if (retryBlocked) break;
-    }
-    if (attempted) {
+      // Checkpoint each completed group before attempting more work. A hard
+      // runtime limit must not lose the fair cursor for validated groups.
       const { error } = await supabase.from("catalog_supplier_crawl_state").upsert({
         supplier_id: supplier.id,
         refresh_after_id: refreshOffers[attempted - 1].id,
         updated_at: new Date().toISOString(),
       }, { onConflict: "supplier_id" });
       if (error) throw error;
+      if (retryBlocked) break;
     }
     return { status: "refreshing_offers", refreshed: consumed - failed, processed, failed, skipped, retryBlocked };
   }

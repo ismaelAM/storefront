@@ -50,8 +50,9 @@ por separado: un descuento por cantidad no cambia el mínimo de compra.
 Durante el rastreo y entre crawls, otro cursor (`refresh_after_id`) repasa las
 ofertas disponibles o en preventa antes de que caduquen. Usa la misma ingesta y
 reconciliación; un error avanza este cursor de mantenimiento sin marcar el coste
-como validado. Los lotes tienen concurrencia limitada y presupuesto temporal;
-`config.refreshBatchSize` permite ajustar la capacidad (48 por defecto y como máximo). La caducidad de las ofertas sigue aplicándose aunque falle el proveedor.
+como validado. Cada grupo de tres guarda su avance antes del siguiente. Los lotes tienen
+concurrencia limitada y un presupuesto de 60 segundos para iniciar grupos;
+`config.refreshBatchSize` permite ajustar la capacidad (24 por defecto y como máximo). La caducidad de las ofertas sigue aplicándose aunque falle el proveedor.
 Un turno de cada tres se reserva para descubrimiento cuando hay ambos trabajos.
 
 El scheduler persiste el turno antes del trabajo y alterna con un ciclo activo

@@ -83,7 +83,8 @@ describe("TcgFactory restock transition", () => {
     const f = fixture(0, false, false, "tcg", 2, true, { refreshCount: 24 });
     expect((await f.tick({})).refreshed).toBe(24);
     expect(f.maxInflight()).toBe(3);
-    expect(f.writes.find(write => write.table === "catalog_supplier_crawl_state" && "refresh_after_id" in write.body)?.body).toMatchObject({ refresh_after_id: "offer_23" });
+    expect(f.writes.filter(write => "refresh_after_id" in write.body).map(write => write.body.refresh_after_id)).toEqual(["offer_2", "offer_5", "offer_8", "offer_11", "offer_14", "offer_17", "offer_20", "offer_23"]);
+    expect(f.writes.findLast(write => write.table === "catalog_supplier_crawl_state" && "refresh_after_id" in write.body)?.body).toMatchObject({ refresh_after_id: "offer_23" });
     expect(f.complete).not.toHaveBeenCalled();
   });
   it("wraps the maintenance cursor when no more due offers follow it", async () => {
