@@ -11979,7 +11979,7 @@ Deno.serve(async (req) => {
       if (config.last_supplier_tick !== "tcgfactory") {
         await recordSupplierTurn("tcgfactory");
         const tcgFactoryResult = await scheduledTcgFactoryTick(config);
-        if (!tcgFactoryResult.skipped && tcgFactoryResult.status !== "error") {
+        if (typeof tcgFactoryResult.skipped !== "string" && tcgFactoryResult.status !== "error") {
           return json({ ok: true, tcgfactory: tcgFactoryResult });
         }
       }

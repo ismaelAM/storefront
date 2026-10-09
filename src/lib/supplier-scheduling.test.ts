@@ -11,11 +11,11 @@ const bodies = source.statements.filter(node =>
 ).map(node => node.getText(source)).join("\n");
 const code = ts.transpileModule(bodies, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 
-function fixture(minute: number, tcgError = false, lastSupplier = "devir") {
+function fixture(minute: number, tcgError = false, lastSupplier = "devir", skippedItems = 0) {
   let handler!: (req: Request) => Promise<Response>;
   const turns: string[] = [];
   const writes: object[] = [];
-  const tcg = vi.fn(async () => { turns.push("tcg"); if (tcgError) throw new Error("Supplier unavailable"); return { status: "running" }; });
+  const tcg = vi.fn(async () => { turns.push("tcg"); if (tcgError) throw new Error("Supplier unavailable"); return { status: "running", skipped: skippedItems }; });
   const devir = vi.fn(async () => { turns.push("devir"); return Response.json({ ok: true, phase: "products" }); });
   const guard = vi.fn(async () => { turns.push("guard"); });
   const config = { last_supplier_tick: lastSupplier, enabled: true, active_cycle_id: "cycle_1", phase: "products", session_state: {}, worker_token_hash: "fixture_hash", spree_admin_api_key: "fixture_key" };
@@ -46,6 +46,11 @@ describe("scheduled supplier fairness", () => {
     expect(response.status).toBe(200);
     expect(f.turns).toEqual(["guard", "tcg"]);
     expect(f.writes).toContainEqual(expect.objectContaining({ last_supplier_tick: "tcgfactory" }));
+  });
+  it("keeps the TCG turn when individual dead links were skipped successfully", async () => {
+    const f = fixture(0, false, "devir", 2);
+    await f.handler(new Request("https://worker.invalid", { method: "POST", headers: { "x-devir-worker-token": "fixture_token" }, body: "{}" }));
+    expect(f.turns).toEqual(["guard", "tcg"]);
   });
   it("gives Devir the next unlocked turn even when a long TCG tick skipped an odd cron minute", async () => {
     const f = fixture(0, false, "tcgfactory");
