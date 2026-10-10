@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import {
   canWriteManagedCatalogPrice,
@@ -64,6 +65,9 @@ import {
 type Json = Record<string, unknown>;
 
 interface ConfigRow {
+  // Transient, owned by this invocation. Never persisted with configuration.
+  request_budget?: { deadline_at: number };
+  maintenance_turn?: number;
   last_supplier_tick?: string | null;
   id: string;
   enabled: boolean;
@@ -181,6 +185,7 @@ interface CatalogSupplierRow {
   stale_after_hours: number;
   sync_interval_hours?: number;
   last_completed_run_id?: string | null;
+  pending_reconciliation_variant_ids?: string[];
   config?: Record<string, unknown> | null;
 }
 
@@ -298,8 +303,12 @@ interface CatalogSpreeContext {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+// Async context is local to one HTTP invocation, including concurrent groups.
+// Database checkpoints/releases have a separate reserve after external work.
+const syncRuntime = new AsyncLocalStorage<{ database_budget: { deadline_at: number } }>();
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE, {
   auth: { persistSession: false, autoRefreshToken: false },
+  global: { fetch: syncDatabaseFetch },
 });
 
 function json(body: unknown, status = 200): Response {
@@ -315,6 +324,66 @@ async function sha256(value: string): Promise<string> {
   return Array.from(new Uint8Array(digest), (b) =>
     b.toString(16).padStart(2, "0"),
   ).join("");
+}
+
+function syncDeferred(): Error {
+  const error = new Error("Synchronization work deferred until the next tick");
+  error.name = "SyncDeferred";
+  return error;
+}
+
+function isSyncDeferred(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && (
+    ("name" in error && error.name === "SyncDeferred") ||
+    ("message" in error && String(error.message).startsWith("SyncDeferred:"))
+  ));
+}
+
+function canStartSyncWork(config: Pick<ConfigRow, "request_budget">, minimumMs = 5_000): boolean {
+  return !config.request_budget || config.request_budget.deadline_at - Date.now() > minimumMs;
+}
+
+async function fetchSyncText(
+  url: RequestInfo | URL,
+  init: RequestInit,
+  budget?: ConfigRow["request_budget"],
+): Promise<{ response: Response; text: string }> {
+  const remaining = budget ? budget.deadline_at - Date.now() : 30_000;
+  if (remaining <= 0) throw syncDeferred();
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    // Race the entire body read as well as headers. Abort the transport, and
+    // bound even a body implementation that does not react to cancellation.
+    return await Promise.race([
+      (async () => {
+        const response = await fetch(url, { ...init, signal: controller.signal });
+        const text = await response.text();
+        return { response, text };
+      })(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(syncDeferred());
+          controller.abort();
+        }, Math.min(30_000, remaining));
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function syncDatabaseFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const { response, text } = await fetchSyncText(input, init ?? {}, syncRuntime.getStore()?.database_budget);
+  // Supabase reads the body after fetch returns; return an already bounded body.
+  return new Response([204, 205, 304].includes(response.status) ? null : text, {
+    status: response.status, statusText: response.statusText, headers: response.headers,
+  });
+}
+
+async function waitSyncRetry(config: ConfigRow, waitMs: number): Promise<void> {
+  if (waitMs > 30_000 || (config.request_budget && !canStartSyncWork(config, waitMs + 1_000))) throw syncDeferred();
+  await new Promise(resolve => setTimeout(resolve, Math.max(0, waitMs)));
 }
 
 function decodeHtml(value: string): string {
@@ -450,15 +519,14 @@ async function automaticDevirLogin(
 
   const loginUrl =
     config.base_url.replace(/\/$/, "") + "/customer/account/login/";
-  const loginPage = await fetch(loginUrl, {
+  const { response: loginPage, text: loginHtml } = await fetchSyncText(loginUrl, {
     redirect: "follow",
     headers: {
       accept: "text/html,application/xhtml+xml",
       "accept-language": "es-ES,es;q=0.9",
       "user-agent": "BisonTCG catalog sync/1.0",
     },
-  });
-  const loginHtml = await loginPage.text();
+  }, config.request_budget);
   if (!loginPage.ok)
     throw new Error("LOGIN_FAILED: Devir devolvió HTTP " + loginPage.status);
 
@@ -486,7 +554,7 @@ async function automaticDevirLogin(
   body.set("login[username]", username);
   body.set("login[password]", password);
 
-  const loginResponse = await fetch(action, {
+  const { response: loginResponse } = await fetchSyncText(action, {
     method: "POST",
     redirect: "manual",
     headers: {
@@ -497,7 +565,7 @@ async function automaticDevirLogin(
       referer: loginUrl,
     },
     body,
-  });
+  }, config.request_budget);
   state = mergeSessionCookies(
     state,
     parseSetCookies(loginResponse.headers),
@@ -505,15 +573,14 @@ async function automaticDevirLogin(
   );
 
   const accountUrl = config.base_url.replace(/\/$/, "") + "/customer/account/";
-  const probe = await fetch(accountUrl, {
+  const { response: probe, text: probeHtml } = await fetchSyncText(accountUrl, {
     redirect: "follow",
     headers: {
       accept: "text/html,application/xhtml+xml",
       "user-agent": "BisonTCG catalog sync/1.0",
       cookie: cookiesFor({ ...config, session_state: state }, accountUrl),
     },
-  });
-  const probeHtml = await probe.text();
+  }, config.request_budget);
   if (
     !probe.ok ||
     /customer\/account\/login|form-login|customer-login/i.test(
@@ -559,7 +626,7 @@ async function devirFetch(
   url: string,
   retryLogin = true,
 ): Promise<string> {
-  const response = await fetch(url, {
+  const { response, text: html } = await fetchSyncText(url, {
     redirect: "follow",
     headers: {
       accept: "text/html,application/xhtml+xml",
@@ -567,8 +634,7 @@ async function devirFetch(
       "user-agent": "BisonTCG catalog sync/1.0",
       cookie: cookiesFor(config, url),
     },
-  });
-  const html = await response.text();
+  }, config.request_budget);
   if (!response.ok)
     throw new Error("Devir HTTP " + response.status + " en " + url);
   if (
@@ -1065,7 +1131,7 @@ async function spreeRequest<T>(
     throw new Error(
       "Falta la Secret API Key de Spree en la configuración cloud.",
     );
-  const response = await fetch(
+  const { response, text } = await fetchSyncText(
     config.spree_api_url.replace(/\/$/, "") + "/api/v3/admin" + path,
     {
       method,
@@ -1075,21 +1141,24 @@ async function spreeRequest<T>(
         "x-spree-api-key": config.spree_admin_api_key,
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    },
+    }, config.request_budget,
   );
-  const text = await response.text();
 
   if (
     (response.status === 429 ||
       [500, 502, 503, 504].includes(response.status)) &&
     attempt < 4
   ) {
-    const retryAfter = Number(response.headers.get("retry-after"));
+    const retryHeader = response.headers.get("retry-after");
+    const retrySeconds = Number(retryHeader);
+    const retryAfterMs = Number.isFinite(retrySeconds)
+      ? retrySeconds * 1000
+      : Date.parse(retryHeader ?? "") - Date.now();
     const waitMs =
-      Number.isFinite(retryAfter) && retryAfter > 0
-        ? retryAfter * 1000
+      Number.isFinite(retryAfterMs) && retryAfterMs > 0
+        ? retryAfterMs
         : Math.min(6000, 750 * 2 ** attempt);
-    await new Promise((resolve) => setTimeout(resolve, waitMs));
+    await waitSyncRetry(config, waitMs);
     return await spreeRequest<T>(config, method, path, body, attempt + 1);
   }
 
@@ -1383,7 +1452,8 @@ async function categoryMargin(
     const raw = fields.find((f) => f.key === "pricing.target_margin")?.value;
     const value = Number(raw);
     return Number.isFinite(value) && value >= 0 && value < 0.95 ? value : null;
-  } catch {
+  } catch (deferredError) {
+    if (isSyncDeferred(deferredError)) throw deferredError;
     return null;
   }
 }
@@ -1398,6 +1468,7 @@ async function definitions(
       "/custom_field_definitions",
     );
   } catch (error) {
+    if (isSyncDeferred(error)) throw error;
     console.error(
       "Spree custom-field definitions unavailable; continuing without metadata",
       error instanceof Error ? error.message : String(error),
@@ -1455,6 +1526,7 @@ async function definitions(
       });
       createdAny = true;
     } catch (error) {
+      if (isSyncDeferred(error)) throw error;
       // Custom metadata is auxiliary. A Spree definitions outage must not stop
       // supplier freshness, stock safety or the catalog crawl.
       if (!String(error).includes("422")) {
@@ -1479,6 +1551,7 @@ async function definitions(
           .map((d) => [d.namespace + "." + d.key, d]),
       );
     } catch (error) {
+      if (isSyncDeferred(error)) throw error;
       console.error(
         "Spree custom-field definitions could not be refreshed; using known definitions",
         error instanceof Error ? error.message : String(error),
@@ -1747,6 +1820,7 @@ async function stockItemsForVariant(
         if (page === 25) throw new Error("Inventario incompleto: límite de paginación alcanzado");
       }
     } catch (error) {
+      if (isSyncDeferred(error)) throw error;
       lastError = error;
       // Retry the alternative filter, then the unfiltered paginated listing.
     }
@@ -2019,6 +2093,7 @@ async function syncImages(
       });
       uploaded += 1;
     } catch (error) {
+      if (isSyncDeferred(error)) throw error;
       console.error("Imagen", url, error);
     }
   }
@@ -2054,7 +2129,8 @@ async function appendToExistingGroupedProduct(
         "GET",
         "/products/" + encodeURIComponent(productId),
       );
-    } catch {
+    } catch (deferredError) {
+      if (isSyncDeferred(deferredError)) throw deferredError;
       continue;
     }
 
@@ -2149,7 +2225,8 @@ async function appendToExistingLanguageProduct(
         "GET",
         "/products/" + encodeURIComponent(productId),
       );
-    } catch {
+    } catch (deferredError) {
+      if (isSyncDeferred(deferredError)) throw deferredError;
       continue;
     }
     if (!(parent.tags ?? []).includes("devir-language-group")) continue;
@@ -2215,7 +2292,7 @@ async function configuredCatalogSupplier(
   const { data, error } = await supabase
     .from("catalog_suppliers")
     .select(
-      "id,code,name,adapter_key,enabled,priority,default_currency,stale_after_hours,sync_interval_hours,last_completed_run_id,config",
+      "id,code,name,adapter_key,enabled,priority,default_currency,stale_after_hours,sync_interval_hours,last_completed_run_id,pending_reconciliation_variant_ids,config",
     )
     .eq("code", normalizedCode)
     .maybeSingle();
@@ -2386,6 +2463,7 @@ async function reconcileStaleCatalogBatch(
       }
       reconciled += 1;
     } catch (reconcileError) {
+      if (isSyncDeferred(reconcileError)) throw reconcileError;
       failed += 1;
       console.error("No se pudo reconciliar una oferta caducada", {
         variantId,
@@ -2459,6 +2537,7 @@ async function reconcilePhysicalOnlyCatalogBatch(
       if (checkpointError) throw checkpointError;
       reconciled += 1;
     } catch (error) {
+      if (isSyncDeferred(error)) throw error;
       failed += 1;
       // Rotate a failing product instead of hammering the same oldest row on
       // every maintenance tick. The fulfillment helper above never changes
@@ -3052,7 +3131,7 @@ async function reconcileCatalogVariant(
       claimed = true;
       break;
     }
-    await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+    await waitSyncRetry(config, 250 * (attempt + 1));
   }
   if (!claimed) {
     throw new Error(
@@ -3812,7 +3891,8 @@ async function retireReplacementSource(
         tags,
       },
     );
-  } catch {
+  } catch (deferredError) {
+    if (isSyncDeferred(deferredError)) throw deferredError;
     // It may already have been removed during an earlier repair.
   }
 }
@@ -4456,6 +4536,7 @@ async function normalizeMangaGroupProductMetadata(
         released_legacy_products: released,
       });
     } catch (error) {
+      if (isSyncDeferred(error)) throw error;
       results.push({
         group_key: groupKey,
         ok: false,
@@ -5357,7 +5438,8 @@ async function categorizeDraftBatch(
               "/products/" + encodeURIComponent(productId),
             ),
           );
-        } catch {
+        } catch (deferredError) {
+          if (isSyncDeferred(deferredError)) throw deferredError;
           products.set(productId, null);
         }
       }),
@@ -5453,6 +5535,7 @@ async function categorizeDraftBatch(
       try {
         await patch();
       } catch (patchError) {
+        if (isSyncDeferred(patchError)) throw patchError;
         const message =
           patchError instanceof Error ? patchError.message : String(patchError);
         if (!/variant_not_found|Variant no encontrado/i.test(message))
@@ -5501,6 +5584,7 @@ async function categorizeDraftBatch(
       updated += 1;
       repriced += 1;
     } catch (rowError) {
+      if (isSyncDeferred(rowError)) throw rowError;
       failed += 1;
       await supabase
         .from("devir_sync_catalog")
@@ -5632,7 +5716,8 @@ async function repriceCommercialBooksBatch(
             "/products/" + encodeURIComponent(productId) + "/variants",
           );
           variantsByProduct.set(productId, productVariants);
-        } catch {
+        } catch (deferredError) {
+          if (isSyncDeferred(deferredError)) throw deferredError;
           productVariants = [];
         }
       }
@@ -5689,6 +5774,7 @@ async function repriceCommercialBooksBatch(
         retail: pricing.retail,
       });
     } catch (rowError) {
+      if (isSyncDeferred(rowError)) throw rowError;
       failed += 1;
       await supabase
         .from("devir_sync_catalog")
@@ -5730,6 +5816,7 @@ async function repriceCommercialBooksBatch(
               .eq("id", row.catalogVariantId);
             if (canonicalUpdateError) throw canonicalUpdateError;
           } catch (priceError) {
+            if (isSyncDeferred(priceError)) throw priceError;
             failed += 1;
             await supabase
               .from("devir_sync_catalog")
@@ -5904,6 +5991,7 @@ async function verifyDevirBatch(
       if (updateError) throw updateError;
       confirmed += 1;
     } catch (sourceError) {
+      if (isSyncDeferred(sourceError)) throw sourceError;
       failed += 1;
       const message =
         sourceError instanceof Error
@@ -6066,6 +6154,7 @@ async function repairCategoryTreeAndMembership(
         })
         .eq("spree_product_id", productId);
     } catch (error) {
+      if (isSyncDeferred(error)) throw error;
       failed += 1;
       await supabase
         .from("devir_sync_catalog")
@@ -6204,6 +6293,7 @@ async function preparePublishBatch(
         "/products/" + encodeURIComponent(productId),
       );
     } catch (productError) {
+      if (isSyncDeferred(productError)) throw productError;
       await supabase
         .from("devir_sync_catalog")
         .update({
@@ -6587,7 +6677,8 @@ async function preparePublishBatch(
           "/channels/" + encodeURIComponent(channel.id) + "/remove_products",
           { product_ids: [productId] },
         );
-      } catch {
+      } catch (deferredError) {
+        if (isSyncDeferred(deferredError)) throw deferredError;
         // Draft status is the primary visibility control if channel removal is
         // unavailable on a particular Spree patch level.
       }
@@ -6740,6 +6831,7 @@ async function repairSellabilityBatch(
       if (updateError) throw updateError;
       repaired += 1;
     } catch (err) {
+      if (isSyncDeferred(err)) throw err;
       failed += 1;
       await supabase
         .from("devir_sync_catalog")
@@ -6836,6 +6928,7 @@ async function repairTcgFactorySellabilityBatch(
       repaired += 1;
       results.push({ variant_id: variantId, ok: true });
     } catch (repairError) {
+      if (isSyncDeferred(repairError)) throw repairError;
       failed += 1;
       results.push({
         variant_id: variantId,
@@ -7080,6 +7173,7 @@ async function repairTcgFactoryImagesBatch(
         dryRun,
       });
     } catch (repairError) {
+      if (isSyncDeferred(repairError)) throw repairError;
       failed += 1;
       results.push({
         productId: product.productId,
@@ -7556,7 +7650,8 @@ async function hideCatalogPolicyViolations(
           "/channels/" + encodeURIComponent(channel.id) + "/remove_products",
           { product_ids: [productId] },
         );
-      } catch {
+      } catch (deferredError) {
+        if (isSyncDeferred(deferredError)) throw deferredError;
         // Draft status is the primary visibility control.
       }
     }
@@ -7780,7 +7875,8 @@ async function ensureSpecialPriceList(
         "GET",
         "/price_lists/" + encodeURIComponent(program.spree_price_list_id),
       );
-    } catch {
+    } catch (deferredError) {
+      if (isSyncDeferred(deferredError)) throw deferredError;
       // Recreate if the stored list was removed manually.
     }
   }
@@ -7862,7 +7958,8 @@ async function syncSpecialPriceListRules(
         "PATCH",
         "/price_lists/" + encodeURIComponent(priceList.id) + "/deactivate",
       );
-    } catch {
+    } catch (deferredError) {
+      if (isSyncDeferred(deferredError)) throw deferredError;
       // A fresh draft list is already inactive.
     }
   }
@@ -8031,6 +8128,9 @@ interface DailyOfferStateRow {
     productId: string;
     hadSale: boolean;
     hadFeatured: boolean;
+    profile?: string;
+    tagged?: boolean;
+    restored?: boolean;
   }> | null;
   last_rotated_at: string | null;
   last_error: string | null;
@@ -8053,6 +8153,8 @@ async function restoreDailyOfferTags(
   state: DailyOfferStateRow | null,
 ): Promise<void> {
   for (const item of state?.active_products ?? []) {
+    if (item.restored) continue;
+    if (!canStartSyncWork(config)) throw syncDeferred();
     try {
       const product = await spreeRequest<SpreeProduct>(
         config,
@@ -8076,7 +8178,14 @@ async function restoreDailyOfferTags(
         "/products/" + encodeURIComponent(item.productId),
         { tags: Array.from(new Set(tags)) },
       );
+      if (state?.active_products) {
+        state.active_products = state.active_products.map(row => row.productId === item.productId ? { ...row, restored: true } : row);
+        const { error } = await supabase.from("catalog_daily_offer_state")
+          .update({ active_products: state.active_products, updated_at: new Date().toISOString() }).eq("id", "primary");
+        if (error) throw error;
+      }
     } catch (error) {
+      if (isSyncDeferred(error)) throw error;
       console.error("No se pudieron restaurar tags de oferta", {
         productId: item.productId,
         error: error instanceof Error ? error.message : String(error),
@@ -8144,12 +8253,41 @@ async function releaseDailyOfferRotationLock(token: string): Promise<void> {
   }
 }
 
+async function resumeDailyOfferRotation(config: ConfigRow, state: DailyOfferStateRow): Promise<Record<string, unknown>> {
+  const products = state.active_products ?? [];
+  if (products.length > 0) {
+    await spreeRequest(config, "PATCH", "/price_lists/" + encodeURIComponent(state.spree_price_list_id!) + "/activate");
+  }
+  for (const offer of products) {
+    if (offer.tagged) continue;
+    if (!canStartSyncWork(config)) throw syncDeferred();
+    const product = await spreeRequest<SpreeProduct>(config, "GET", "/products/" + encodeURIComponent(offer.productId));
+    const tags = Array.from(new Set([
+      ...(product.tags ?? []), "sale", "featured", state.special ? "saturday-special" : "daily-offer",
+      "offer-date:" + state.day_key, "offer-profile:" + (offer.profile ?? ""),
+    ]));
+    await spreeRequest(config, "PATCH", "/products/" + encodeURIComponent(offer.productId), { tags });
+    offer.tagged = true;
+    const { error } = await supabase.from("catalog_daily_offer_state")
+      .update({ active_products: products, updated_at: new Date().toISOString() }).eq("id", "primary");
+    if (error) throw error;
+  }
+  const now = new Date().toISOString();
+  const { error } = await supabase.from("catalog_daily_offer_state")
+    .update({ last_rotated_at: now, last_error: null, updated_at: now }).eq("id", "primary");
+  if (error) throw error;
+  return { status: "rotated", dayKey: state.day_key, saturday: state.special, priceListId: state.spree_price_list_id, products: products.length };
+}
+
 async function rotateDailyOffersUnlocked(
   config: ConfigRow,
   force = false,
 ): Promise<Record<string, unknown>> {
   const calendar = madridCommercialDay();
   const currentState = await dailyOfferState();
+  if (currentState?.day_key && currentState.spree_price_list_id && !currentState.last_rotated_at) {
+    return await resumeDailyOfferRotation(config, currentState);
+  }
   if (!force && currentState?.day_key === calendar.dayKey) {
     return {
       status: "current",
@@ -8394,6 +8532,7 @@ async function rotateDailyOffersUnlocked(
       profileCounts.set(candidate.profile.code, used + 1);
       seenProducts.add(productId);
     } catch (error) {
+      if (isSyncDeferred(error)) throw error;
       console.error("Candidato de oferta descartado", {
         variantId: String(row.variant_id ?? ""),
         error: error instanceof Error ? error.message : String(error),
@@ -8438,65 +8577,26 @@ async function rotateDailyOffersUnlocked(
           encodeURIComponent(currentState.spree_price_list_id) +
           "/deactivate",
       );
-    } catch {
+    } catch (deferredError) {
+      if (isSyncDeferred(deferredError)) throw deferredError;
       // An already-expired or manually removed list is harmless.
     }
   }
   await restoreDailyOfferTags(config, currentState);
 
-  if (selected.length > 0) {
-    await spreeRequest(
-      config,
-      "PATCH",
-      "/price_lists/" + encodeURIComponent(priceList.id) + "/activate",
-    );
-  }
-
-  for (const offer of selected) {
-    const product = await spreeRequest<SpreeProduct>(
-      config,
-      "GET",
-      "/products/" + encodeURIComponent(offer.productId),
-    );
-    const tags = Array.from(
-      new Set([
-        ...(product.tags ?? []),
-        "sale",
-        "featured",
-        calendar.saturday ? "saturday-special" : "daily-offer",
-        "offer-date:" + calendar.dayKey,
-        "offer-profile:" + offer.profile,
-      ]),
-    );
-    await spreeRequest(
-      config,
-      "PATCH",
-      "/products/" + encodeURIComponent(offer.productId),
-      { tags },
-    );
-  }
-
-  const now = new Date().toISOString();
-  const { error: stateError } = await supabase
-    .from("catalog_daily_offer_state")
-    .upsert(
-      {
-        id: "primary",
-        day_key: calendar.dayKey,
-        spree_price_list_id: priceList.id,
-        special: calendar.saturday,
-        active_products: selected.map((offer) => ({
-          productId: offer.productId,
-          hadSale: offer.hadSale,
-          hadFeatured: offer.hadFeatured,
-        })),
-        last_rotated_at: now,
-        last_error: null,
-        updated_at: now,
-      },
-      { onConflict: "id" },
-    );
+  // Persist the list and replayable tag work before activating it. A timeout
+  // may leave a pending tracked rotation, but cannot activate an orphan list.
+  const pendingState: DailyOfferStateRow = {
+    id: "primary", day_key: calendar.dayKey, spree_price_list_id: priceList.id,
+    special: calendar.saturday, active_products: selected.map(offer => ({
+      productId: offer.productId, hadSale: offer.hadSale, hadFeatured: offer.hadFeatured,
+      profile: offer.profile, tagged: false,
+    })), last_rotated_at: null, last_error: null,
+  };
+  const { error: stateError } = await supabase.from("catalog_daily_offer_state")
+    .upsert({ ...pendingState, updated_at: new Date().toISOString() }, { onConflict: "id" });
   if (stateError) throw stateError;
+  await resumeDailyOfferRotation(config, pendingState);
 
   return {
     status: "rotated",
@@ -8534,12 +8634,14 @@ async function rotateDailyOffers(
 async function validateSpreeAdminKey(
   spreeApiUrl: string,
   key: string,
+  budget?: ConfigRow["request_budget"],
 ): Promise<void> {
   if (!key.startsWith("sk_"))
     throw new Error("La clave de Spree no es una Secret API Key válida.");
-  const response = await fetch(
+  const { response } = await fetchSyncText(
     spreeApiUrl.replace(/\/$/, "") + "/api/v3/admin/products?limit=1",
     { redirect: "error", headers: { accept: "application/json", "x-spree-api-key": key } },
+    budget,
   );
   if (!response.ok) {
     throw new Error(
@@ -8850,6 +8952,7 @@ async function ingestCatalogItemsAction(
         selectedSupplier: synced.selectedSupplierCode,
       });
     } catch (error) {
+      if (isSyncDeferred(error)) throw error;
       failed += 1;
       results.push({
         ok: false,
@@ -9099,6 +9202,7 @@ async function repriceCatalogSupplierBatch(
         targetMargin,
       });
     } catch (error) {
+      if (isSyncDeferred(error)) throw error;
       failed += 1;
       results.push({
         variantId,
@@ -9132,6 +9236,34 @@ async function repriceCatalogSupplierBatch(
   };
 }
 
+async function reconcileCompletedSupplierVariants(
+  config: ConfigRow,
+  supplier: CatalogSupplierRow,
+  runId: string,
+  variantIds: string[],
+): Promise<void> {
+  if (!variantIds.length) return;
+  const categories = await spreeCategories(config);
+  const defs = await definitions(config);
+  let reconciled = 0;
+  for (const variantId of variantIds) {
+    if (reconciled >= 3 || !canStartSyncWork(config)) throw syncDeferred();
+    const synced = await reconcileCatalogVariant(config, await loadCatalogVariant(variantId), categories, defs);
+    if (synced.productId) {
+      await markCatalogProductDirty(synced.productId);
+      await preparePublishBatch(config, 0, 1, synced.productId);
+    }
+    // Selection alone is not a completion checkpoint: acknowledge only after
+    // all Spree writes and publication reconciliation succeeded.
+    const { data: acknowledged, error } = await supabase.rpc("catalog_ack_supplier_run_reconciliation", {
+      p_supplier_id: supplier.id, p_run_id: runId, p_variant_id: variantId,
+    });
+    if (error) throw error;
+    if (acknowledged !== true) throw syncDeferred();
+    reconciled += 1;
+  }
+}
+
 async function completeCatalogSupplierRun(
   config: ConfigRow,
   body: Record<string, unknown>,
@@ -9147,6 +9279,10 @@ async function completeCatalogSupplierRun(
     throw new Error("runId inválido");
   }
   const supplier = await configuredCatalogSupplier(supplierCode);
+  if (supplier.last_completed_run_id && supplier.last_completed_run_id !== runId) {
+    await reconcileCompletedSupplierVariants(config, supplier, supplier.last_completed_run_id, supplier.pending_reconciliation_variant_ids ?? []);
+  }
+  if (!canStartSyncWork(config)) throw syncDeferred();
   const { data: completed, error: completeError } = await supabase.rpc(
     "catalog_complete_supplier_run",
     { p_supplier_id: supplier.id, p_run_id: runId },
@@ -9160,24 +9296,7 @@ async function completeCatalogSupplierRun(
     ? Array.from(new Set(result.variantIds.map(String)))
     : [];
 
-  if (affectedVariantIds.length > 0) {
-    const categories = await spreeCategories(config);
-    const defs = await definitions(config);
-    const affectedProducts = new Set<string>();
-    for (const variantId of affectedVariantIds) {
-      const synced = await reconcileCatalogVariant(
-        config,
-        await loadCatalogVariant(variantId),
-        categories,
-        defs,
-      );
-      if (synced.productId) affectedProducts.add(synced.productId);
-    }
-    for (const productId of affectedProducts) {
-      await markCatalogProductDirty(productId);
-      await preparePublishBatch(config, 0, 1, productId);
-    }
-  }
+  await reconcileCompletedSupplierVariants(config, supplier, runId, affectedVariantIds);
 
   return {
     supplierCode,
@@ -9277,12 +9396,13 @@ function tcgCookieHeader(session: TcgFactorySessionState, url: string): string {
 async function tcgFactoryTextFetch(
   url: string,
   session?: TcgFactorySessionState,
+  budget?: ConfigRow["request_budget"],
 ): Promise<{
   html: string;
   finalUrl: string;
   session: TcgFactorySessionState;
 }> {
-  const response = await fetch(url, {
+  const { response, text: html } = await fetchSyncText(url, {
     redirect: "follow",
     headers: {
       accept: "text/html,application/xhtml+xml",
@@ -9292,9 +9412,7 @@ async function tcgFactoryTextFetch(
         ? { cookie: tcgCookieHeader(session, url) }
         : {}),
     },
-    signal: AbortSignal.timeout(30_000),
-  });
-  const html = await response.text();
+  }, budget);
   if (!response.ok) {
     throw new Error(
       "TcgFactory HTTP " + response.status + " en " + new URL(url).pathname,
@@ -9310,13 +9428,14 @@ async function tcgFactoryTextFetch(
 
 async function tcgFactoryLogin(
   credentialsOverride?: TcgFactoryCredentials,
+  budget?: ConfigRow["request_budget"],
 ): Promise<TcgFactorySessionState> {
   const credentials = credentialsOverride ?? (await tcgFactoryCredentials());
   if (!credentials) {
     throw new Error("TCGFACTORY_B2B_CREDENTIALS_MISSING");
   }
   const loginUrl = TCGFACTORY_BASE_URL + "/es/iniciar-sesion?back=my-account";
-  const login = await tcgFactoryTextFetch(loginUrl);
+  const login = await tcgFactoryTextFetch(loginUrl, undefined, budget);
   const formTag =
     login.html.match(
       /<form\b[^>]*(?:id=["']login-form["']|action=["'][^"']*(?:iniciar-sesion|login)[^"']*["'])[^>]*>/i,
@@ -9330,7 +9449,7 @@ async function tcgFactoryLogin(
   body.set("submitLogin", "1");
   if (!body.has("back")) body.set("back", "my-account");
 
-  const response = await fetch(action, {
+  const { response, text: responseHtml } = await fetchSyncText(action, {
     method: "POST",
     redirect: "manual",
     headers: {
@@ -9341,9 +9460,7 @@ async function tcgFactoryLogin(
       referer: loginUrl,
     },
     body,
-    signal: AbortSignal.timeout(30_000),
-  });
-  const responseHtml = await response.text();
+  }, budget);
   let session = mergeSessionCookies(
     login.session,
     parseSetCookies(response.headers),
@@ -9359,6 +9476,7 @@ async function tcgFactoryLogin(
   const probe = await tcgFactoryTextFetch(
     TCGFACTORY_BASE_URL + "/es/mi-cuenta",
     session,
+    budget,
   );
   session = probe.session;
   const loginStillVisible =
@@ -9460,6 +9578,7 @@ async function tcgFactoryDiscoverPublicBatch(
       await upsertTcgFactoryDiscovery(supplier.id, product, runId);
       discovered += 1;
     } catch (error) {
+      if (isSyncDeferred(error)) throw error;
       failed += 1;
       console.error(
         "TcgFactory public discovery failed",
@@ -9628,6 +9747,7 @@ async function backfillTcgFactoryMinimumOrders(
         surchargeEligible: isHighMinimum,
       });
     } catch (scanError) {
+      if (isSyncDeferred(scanError)) throw scanError;
       failed += 1;
       results.push({
         supplierSku,
@@ -9732,11 +9852,28 @@ function tcgFactoryItemFailureDisposition(
   return "fail";
 }
 
+async function finishTcgFactoryCrawl(
+  config: ConfigRow,
+  supplierId: string,
+  firstSection: string,
+  state: TcgFactoryCrawlState,
+): Promise<Record<string, unknown>> {
+  const completed = await completeCatalogSupplierRun(config, { supplierCode: TCGFACTORY_SUPPLIER_CODE, runId: state.run_id });
+  const { error } = await supabase.from("catalog_supplier_crawl_state")
+    .update({ run_id: null, section: firstSection, page: 1, item_offset: 0,
+      total_pages: state.total_pages, discovered_items: state.discovered_items,
+      processed_items: state.processed_items, failed_items: 0, status: "idle",
+      last_error: null, updated_at: new Date().toISOString(),
+    }).eq("supplier_id", supplierId);
+  if (error) throw error;
+  return { status: "complete", credentialsConfigured: true, ...completed };
+}
+
 async function tcgFactoryTick(
   config: ConfigRow,
   force = false,
 ): Promise<Record<string, unknown>> {
-  const tickStartedAt = Date.now();
+  if (!canStartSyncWork(config)) throw syncDeferred();
   const supplier = await tcgFactorySupplierRow();
   if (!supplier.enabled && !force) return { skipped: "supplier_disabled" };
   const sectionKeys = Array.isArray(supplier.config?.sections)
@@ -9753,6 +9890,11 @@ async function tcgFactoryTick(
     .maybeSingle();
   if (stateError) throw stateError;
   let state = currentState as TcgFactoryCrawlState | null;
+  if (state?.status === "running" && state.run_id && state.run_id === supplier.last_completed_run_id) {
+    // The canonical close already committed. Drain its durable queue before
+    // any refresh/discovery ingestion tries to write into the closed run.
+    return await finishTcgFactoryCrawl(config, supplier.id, sectionKeys[0], state);
+  }
   const running = state?.status === "running";
   const credentialsAvailable = await tcgFactoryCredentialsConfigured();
   const credentialsError =
@@ -9798,7 +9940,7 @@ async function tcgFactoryTick(
     state?.status === "running" &&
     state.processed_items === 0 &&
     supplier.last_error?.startsWith("credentials_missing") &&
-    (state.page > 1 || state.item_offset > 0)
+    (state.section !== sectionKeys[0] || state.page > 1 || state.item_offset > 0)
   ) {
     const { data: restarted, error } = await supabase
       .from("catalog_supplier_crawl_state")
@@ -9858,7 +10000,7 @@ async function tcgFactoryTick(
     status: "idle", last_error: null, started_at: null, updated_at: new Date().toISOString(),
   };
   const itemRunId = state.status === "running" ? state.run_id : null;
-  const session = credentialsAvailable ? await tcgFactoryLogin() : null;
+  const session = credentialsAvailable ? await tcgFactoryLogin(undefined, config.request_budget) : null;
   const page = state.page;
   const offset = state.item_offset;
   const sectionIndex = sectionKeys.indexOf(state.section);
@@ -9869,14 +10011,14 @@ async function tcgFactoryTick(
   // Discovery and refresh share ingestion. Refresh uses a durable ID cursor,
   // so dead URLs cannot monopolize the queue or falsely become fresh.
   const refreshUrls = refreshOffers.map(offer => offer.source_url);
-  const listing = refreshingOffers ? null : await tcgFactoryTextFetch(pageUrl);
+  const listing = refreshingOffers ? null : await tcgFactoryTextFetch(pageUrl, undefined, config.request_budget);
   const parsed = listing ? parseTcgFactoryListing(listing.html, pageUrl) : {
     productUrls: refreshUrls, totalPages: 1, totalItems: refreshUrls.length,
   };
   if (!refreshingOffers && !parsed.productUrls.length && parsed.totalItems !== 0) {
     throw new Error("TCGFACTORY_EMPTY_LISTING: " + state.section + "/" + page);
   }
-  const urls = refreshingOffers ? refreshUrls : parsed.productUrls.slice(offset, offset + 6);
+  const urls = refreshingOffers ? refreshUrls : parsed.productUrls.slice(offset, offset + 24);
   const categories = credentialsAvailable ? await spreeCategories(config) : [];
   const defs = credentialsAvailable
     ? await definitions(config)
@@ -9889,17 +10031,16 @@ async function tcgFactoryTick(
   let retryBlocked = false;
 
   const processUrl = async (url: string) => {
-    let discoveredThisItem = false;
-    let consumeThisItem = true;
-    try {
-      const publicDetail = await tcgFactoryTextFetch(url);
+    const outcome = { finished: true, discovered: 0, processed: 0, failed: 0, skipped: 0 };
+    const ingestUrl = async () => {
+      const publicDetail = await tcgFactoryTextFetch(url, undefined, config.request_budget);
       const publicProduct = parseTcgFactoryPublicProduct(
         publicDetail.html,
         url,
         refreshingOffers ? undefined : state.section,
       );
       await upsertTcgFactoryDiscovery(supplier.id, publicProduct, itemRunId);
-      discoveredThisItem = true;
+      outcome.discovered = 1;
 
       if (!credentialsAvailable) return;
       if (
@@ -9913,6 +10054,7 @@ async function tcgFactoryTick(
       const authenticatedDetail = await tcgFactoryTextFetch(
         url,
         session ?? undefined,
+        config.request_budget,
       );
       const authenticatedProduct = parseTcgFactoryPublicProduct(
         authenticatedDetail.html,
@@ -9945,7 +10087,7 @@ async function tcgFactoryTick(
       );
       rawItem.metadata = { ...rawItem.metadata, purchasePricePolicy: "highest_unit_price_no_volume_discount" };
       await ingestCatalogItem(config, rawItem, itemRunId, categories, defs);
-      processed += 1;
+      outcome.processed = 1;
       await upsertTcgFactoryDiscovery(
         supplier.id,
         publicProduct,
@@ -9955,55 +10097,53 @@ async function tcgFactoryTick(
           ...(minimumOrderQuantity ? { minimumOrderQuantity } : {}),
         },
       );
+    };
+    try {
+      await ingestUrl();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      const disposition = tcgFactoryItemFailureDisposition(error);
+      const disposition = isSyncDeferred(error) ? "retry" : tcgFactoryItemFailureDisposition(error);
       if (disposition === "retry") {
-        // A product lock is transient. Do not poison the full supplier run and
-        // do not advance over this URL; retry it after the other worker exits.
-        consumeThisItem = false;
-        retryBlocked = true;
-        console.warn("TcgFactory sync deferred by product lock", url, message);
+        // Replay the unfinished URL next tick. A budget yield is not a failed
+        // validation, and later siblings cannot advance the durable cursor.
+        outcome.finished = false;
       } else if (disposition === "skip") {
-        // Distributor listings occasionally retain a dead product link. A 404
-        // cannot be validated, but it must not make every crawl restart forever.
-        skipped += 1;
+        outcome.skipped = 1;
         console.warn("TcgFactory stale listing skipped", url, message);
       } else {
-        failed += 1;
+        outcome.failed = 1;
         console.error("TcgFactory sync failed", url, message);
       }
-    } finally {
-      if (consumeThisItem) {
-        consumed += 1;
-        if (discoveredThisItem) discovered += 1;
-      }
     }
+    return outcome;
   };
 
-  if (refreshingOffers) {
-    let attempted = 0;
-    // Bound concurrency and stop starting chunks after the elapsed-time budget.
-    for (let index = 0; index < urls.length && Date.now() - tickStartedAt < 60_000; index += 3) {
-      const chunk = urls.slice(index, index + 3);
-      await Promise.all(chunk.map(processUrl));
-      attempted += chunk.length;
-      // Checkpoint each completed group before attempting more work. A hard
-      // runtime limit must not lose the fair cursor for validated groups.
-      const { error } = await supabase.from("catalog_supplier_crawl_state").upsert({
-        supplier_id: supplier.id,
-        refresh_after_id: refreshOffers[attempted - 1].id,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: "supplier_id" });
-      if (error) throw error;
-      if (retryBlocked) break;
+  // Both discovery and refresh use the same ingestion, with only three active
+  // products. Persist each contiguous finished prefix before starting a group.
+  for (let index = 0; index < urls.length && canStartSyncWork(config); index += 3) {
+    const outcomes = await Promise.all(urls.slice(index, index + 3).map(processUrl));
+    for (const outcome of outcomes) {
+      if (!outcome.finished) { retryBlocked = true; break; }
+      consumed += 1;
+      discovered += outcome.discovered;
+      processed += outcome.processed;
+      failed += outcome.failed;
+      skipped += outcome.skipped;
     }
-    return { status: "refreshing_offers", refreshed: consumed - failed, processed, failed, skipped, retryBlocked };
-  }
-  for (const url of urls) {
-    if (Date.now() - tickStartedAt >= 100_000) break;
-    await processUrl(url);
+    const checkpoint = refreshingOffers
+      ? { refresh_after_id: consumed > 0 ? refreshOffers[consumed - 1].id : state.refresh_after_id }
+      : { item_offset: offset + consumed, total_pages: parsed.totalPages,
+          discovered_items: state.discovered_items + discovered,
+          processed_items: state.processed_items + processed,
+          failed_items: state.failed_items + failed, status: "running" };
+    const { error } = await supabase.from("catalog_supplier_crawl_state").upsert({
+      supplier_id: supplier.id, ...checkpoint, updated_at: new Date().toISOString(),
+    }, { onConflict: "supplier_id" });
+    if (error) throw error;
     if (retryBlocked) break;
+  }
+  if (refreshingOffers) {
+    return { status: "refreshing_offers", refreshed: consumed - failed, processed, failed, skipped, retryBlocked };
   }
 
   const cumulativeFailed = state.failed_items + failed;
@@ -10017,6 +10157,10 @@ async function tcgFactoryTick(
   const nextOffset = pageDone ? 0 : offset + consumed;
   const fullDone =
     sectionDone && sectionIndex === sectionKeys.length - 1;
+
+  if (fullDone && !canStartSyncWork(config)) {
+    return { status: "running", reason: "request_budget", page, nextOffset: offset + consumed, discovered, processed, failed, skipped };
+  }
 
   if (fullDone) {
     if (cumulativeFailed > 0) {
@@ -10086,31 +10230,10 @@ async function tcgFactoryTick(
       };
     }
 
-    const completed = await completeCatalogSupplierRun(config, {
-      supplierCode: TCGFACTORY_SUPPLIER_CODE,
-      runId: state.run_id,
+    return await finishTcgFactoryCrawl(config, supplier.id, sectionKeys[0], {
+      ...state, total_pages: parsed.totalPages, discovered_items: cumulativeDiscovered,
+      processed_items: cumulativeProcessed, failed_items: 0,
     });
-    await supabase
-      .from("catalog_supplier_crawl_state")
-      .update({
-        run_id: null,
-        section: sectionKeys[0],
-        page: 1,
-        item_offset: 0,
-        total_pages: parsed.totalPages,
-        discovered_items: cumulativeDiscovered,
-        processed_items: cumulativeProcessed,
-        failed_items: 0,
-        status: "idle",
-        last_error: null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("supplier_id", supplier.id);
-    return {
-      status: "complete",
-      credentialsConfigured: true,
-      ...completed,
-    };
   }
 
   await supabase
@@ -10190,7 +10313,7 @@ async function operatorAction(
       return json({ error: "bootstrap_missing_credentials" }, 400);
     }
 
-    await validateSpreeAdminKey(spreeApiUrl, providedKey);
+    await validateSpreeAdminKey(spreeApiUrl, providedKey, config.request_budget);
 
     const probeConfig: ConfigRow = {
       ...config,
@@ -10899,7 +11022,7 @@ async function operatorAction(
       return json({ ok: false, error: "credentials_required" }, 400);
     }
 
-    await tcgFactoryLogin({ email, password });
+    await tcgFactoryLogin({ email, password }, config.request_budget);
 
     const { error: credentialError } = await supabase.rpc(
       "tcgfactory_sync_set_credentials",
@@ -11409,7 +11532,8 @@ async function processCategories(
 
   let processed = 0;
   for (const job of jobs as JobRow[]) {
-    await supabase
+    if (!canStartSyncWork(config)) break;
+    const { error: claimError } = await supabase
       .from("devir_sync_jobs")
       .update({
         status: "processing",
@@ -11417,6 +11541,7 @@ async function processCategories(
         updated_at: new Date().toISOString(),
       })
       .eq("id", job.id);
+    if (claimError) throw claimError;
     try {
       const url = new URL(job.url);
       if (job.page > 1) url.searchParams.set("p", String(job.page));
@@ -11430,12 +11555,13 @@ async function processCategories(
           page: 1,
           status: "pending",
         }));
-        await supabase.from("devir_sync_jobs").upsert(productRows, {
+        const { error: enqueueError } = await supabase.from("devir_sync_jobs").upsert(productRows, {
           onConflict: "cycle_id,kind,url,page",
           ignoreDuplicates: true,
         });
+        if (enqueueError) throw enqueueError;
         if (job.page < config.max_pages) {
-          await supabase.from("devir_sync_jobs").upsert(
+          const { error: pageEnqueueError } = await supabase.from("devir_sync_jobs").upsert(
             {
               cycle_id: cycleId,
               kind: "category",
@@ -11445,9 +11571,10 @@ async function processCategories(
             },
             { onConflict: "cycle_id,kind,url,page", ignoreDuplicates: true },
           );
+          if (pageEnqueueError) throw pageEnqueueError;
         }
       }
-      await supabase
+      const { error: doneError } = await supabase
         .from("devir_sync_jobs")
         .update({
           status: "done",
@@ -11455,8 +11582,14 @@ async function processCategories(
           updated_at: new Date().toISOString(),
         })
         .eq("id", job.id);
+      if (doneError) throw doneError;
       processed += 1;
     } catch (err) {
+      if (isSyncDeferred(err)) {
+        const { error: requeueError } = await supabase.from("devir_sync_jobs").update({ status: "pending", attempts: job.attempts, error: null, updated_at: new Date().toISOString() }).eq("id", job.id);
+        if (requeueError) throw requeueError;
+        break;
+      }
       await supabase
         .from("devir_sync_jobs")
         .update({
@@ -11498,7 +11631,8 @@ async function processProducts(
   let reviews = 0;
 
   for (const job of jobs as JobRow[]) {
-    await supabase
+    if (!canStartSyncWork(config)) break;
+    const { error: claimError } = await supabase
       .from("devir_sync_jobs")
       .update({
         status: "processing",
@@ -11506,6 +11640,7 @@ async function processProducts(
         updated_at: new Date().toISOString(),
       })
       .eq("id", job.id);
+    if (claimError) throw claimError;
     try {
       const html = await devirFetch(config, job.url);
       const product = parseProduct(html, job.url);
@@ -11591,7 +11726,7 @@ async function processProducts(
           { onConflict: "supplier_sku" },
         );
       if (catalogError) throw catalogError;
-      await supabase
+      const { error: doneError } = await supabase
         .from("devir_sync_jobs")
         .update({
           status: "done",
@@ -11605,10 +11740,16 @@ async function processProducts(
           updated_at: new Date().toISOString(),
         })
         .eq("id", job.id);
+      if (doneError) throw doneError;
       processed += 1;
       images += synced.images;
       if (synced.review) reviews += 1;
     } catch (err) {
+      if (isSyncDeferred(err)) {
+        const { error: requeueError } = await supabase.from("devir_sync_jobs").update({ status: "pending", attempts: job.attempts, error: null, updated_at: new Date().toISOString() }).eq("id", job.id);
+        if (requeueError) throw requeueError;
+        break;
+      }
       const message = String(err);
       const lockContention =
         message.includes("está siendo sincronizado por otro worker");
@@ -11626,80 +11767,48 @@ async function processProducts(
   return { done: false, processed, images, reviews };
 }
 
-async function retireMissingDevirOffers(config: ConfigRow, cycleId: string): Promise<void> {
-  // A completed full crawl is the only safe moment to infer that a supplier SKU
-  // disappeared. Missing once is recorded; it is not treated as deletion.
-  const nowIso = new Date().toISOString();
-  const { error: seenResetError } = await supabase
-    .from("devir_sync_catalog")
-    .update({ missing_cycles: 0 })
-    .eq("last_seen_cycle_id", cycleId);
+async function retireMissingDevirOffers(config: ConfigRow, cycleId: string): Promise<boolean> {
+  if (!canStartSyncWork(config)) throw syncDeferred();
+  const supplier = await configuredCatalogSupplier("devir");
+  // The transactional canonical close counts this run once, even when an HTTP
+  // response or subsequent Spree reconciliation times out and is replayed.
+  await completeCatalogSupplierRun(config, { supplierCode: "devir", runId: cycleId });
+  const { error: seenResetError } = await supabase.from("devir_sync_catalog")
+    .update({ missing_cycles: 0 }).eq("last_seen_cycle_id", cycleId);
   if (seenResetError) throw seenResetError;
 
-  const { data: missingRows, error: missingReadError } = await supabase
-    .from("devir_sync_catalog")
-    .select("supplier_sku,missing_cycles,spree_product_id,spree_variant_id")
-    .or(`last_seen_cycle_id.is.null,last_seen_cycle_id.neq.${cycleId}`);
-  if (missingReadError) throw missingReadError;
-
-  const devirSupplier = await configuredCatalogSupplier("devir");
-  const affectedVariantIds = new Set<string>();
-
-  for (const row of missingRows ?? []) {
-    const missingCycles = Number(row.missing_cycles ?? 0) + 1;
-    const missing = missingCycles >= 2;
-    const { error } = await supabase
-      .from("devir_sync_catalog")
-      .update({
-        missing_cycles: missingCycles,
-        supplier_status: missing ? "missing" : "unknown",
-        updated_at: nowIso,
-      })
-      .eq("supplier_sku", row.supplier_sku);
-    if (error) throw error;
-
-    // A SKU absent from two complete supplier crawls can no longer be selected
-    // from Devir. Reconciliation may immediately choose another distributor.
-    if (missing) {
-      const { data: retiredOffers, error: retiredError } = await supabase
-        .from("catalog_supplier_offers")
-        .update({
-          active: false,
-          availability: "unavailable",
-          missing_runs: missingCycles,
-          updated_at: nowIso,
-        })
-        .eq("supplier_id", devirSupplier.id)
-        .eq("external_variant_id", row.supplier_sku)
-        .select("variant_id");
-      if (retiredError) throw retiredError;
-      for (const offer of retiredOffers ?? []) {
-        if (offer.variant_id) affectedVariantIds.add(String(offer.variant_id));
-      }
-      if (!retiredOffers?.length && row.spree_variant_id) {
-        await syncBackorderability(
-          config,
-          row.spree_product_id ? String(row.spree_product_id) : null,
-          String(row.spree_variant_id),
-          "unavailable",
-        );
-      }
+  // Mirror the canonical counters into the legacy index. Skip already mirrored
+  // rows so a budget yield makes durable progress without counting again.
+  for (let offset = 0; ; offset += 500) {
+    if (!canStartSyncWork(config)) return false;
+    const { data: missingRows, error: readError } = await supabase.from("devir_sync_catalog")
+      .select("supplier_sku,missing_cycles,supplier_status")
+      .or(`last_seen_cycle_id.is.null,last_seen_cycle_id.neq.${cycleId}`)
+      .order("supplier_sku").range(offset, offset + 499);
+    if (readError) throw readError;
+    if (!missingRows?.length) break;
+    const { data: offers, error: offersError } = await supabase.from("catalog_supplier_offers")
+      .select("external_variant_id,missing_runs")
+      .eq("supplier_id", supplier.id)
+      .in("external_variant_id", missingRows.map(row => row.supplier_sku));
+    if (offersError) throw offersError;
+    const missingBySku = new Map((offers ?? []).map(row => [String(row.external_variant_id), Number(row.missing_runs)]));
+    for (const row of missingRows) {
+      const missingCycles = missingBySku.get(String(row.supplier_sku));
+      // Legacy entries without a validated canonical cost do not compete.
+      if (missingCycles === undefined) continue;
+      const status = missingCycles >= 2 ? "missing" : "unknown";
+      if (Number(row.missing_cycles) === missingCycles && row.supplier_status === status) continue;
+      if (!canStartSyncWork(config)) return false;
+      const { error } = await supabase.from("devir_sync_catalog")
+        .update({ missing_cycles: missingCycles, supplier_status: status, updated_at: new Date().toISOString() })
+        .eq("supplier_sku", row.supplier_sku);
+      if (error) throw error;
     }
+    if (missingRows.length < 500) break;
   }
 
-  if (affectedVariantIds.size > 0) {
-    const categories = await spreeCategories(config);
-    const defs = await definitions(config);
-    for (const variantId of affectedVariantIds) {
-      await reconcileCatalogVariant(
-        config,
-        await loadCatalogVariant(variantId),
-        categories,
-        defs,
-      );
-    }
-  }
-
+  return true;
 }
 
 async function recoverExpiredCycleJobs(cycleId: string): Promise<void> {
@@ -11742,7 +11851,7 @@ async function finishCycle(config: ConfigRow, cycleId: string): Promise<boolean>
   if (productsError) throw productsError;
   // A failed crawl must schedule another attempt without treating unseen SKUs
   // as missing. In-flight jobs are handled above and must not close the cycle.
-  if (errors === 0) await retireMissingDevirOffers(config, cycleId);
+  if (errors === 0 && !(await retireMissingDevirOffers(config, cycleId))) return false;
 
   const now = new Date();
   const next = new Date(now.getTime() + config.interval_hours * 60 * 60 * 1000);
@@ -11875,6 +11984,7 @@ async function scheduledTcgFactoryTick(config: ConfigRow): Promise<Record<string
   try {
     return await tcgFactoryTick(config);
   } catch (error) {
+    if (isSyncDeferred(error)) return { status: "deferred", reason: "request_budget" };
     const message = error instanceof Error ? error.message : String(error);
     console.error("TcgFactory scheduled sync failed", message);
     try {
@@ -11889,7 +11999,33 @@ async function scheduledTcgFactoryTick(config: ConfigRow): Promise<Record<string
   }
 }
 
-Deno.serve(async (req) => {
+async function runtimeMaintenanceTick(config: ConfigRow): Promise<Record<string, unknown>> {
+  const turn = Number(config.maintenance_turn ?? 0) % 4;
+  const { error } = await supabase.from("devir_sync_config")
+    .update({ maintenance_turn: (turn + 1) % 4 }).eq("id", "primary");
+  if (error) throw error;
+  const maintenanceConfig = { ...config, request_budget: {
+    deadline_at: Math.min(config.request_budget?.deadline_at ?? Infinity, Date.now() + 25_000),
+  } };
+  const lane = ["stale", "physical", "review", "daily"][turn];
+  try {
+    const result = turn === 0 ? await reconcileStaleCatalogBatch(maintenanceConfig, 10)
+      : turn === 1 ? await reconcilePhysicalOnlyCatalogBatch(maintenanceConfig, 10)
+      : turn === 2 ? await refreshHumanReviewMarkersBatch(maintenanceConfig, 3)
+      : await rotateDailyOffers(maintenanceConfig);
+    return { lane, result };
+  } catch (error) {
+    if (isSyncDeferred(error)) return { lane, status: "deferred", reason: "request_budget" };
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("Catalog maintenance failed", lane, message);
+    return { lane, status: "error", error: message };
+  }
+}
+
+Deno.serve((req) => syncRuntime.run({ database_budget: { deadline_at: Date.now() + 115_000 } }, async () => {
+  // pg_net waits 120s. Reserve 25s after this work deadline for checkpoints,
+  // lock release and the HTTP response; worker lifetime is a separate limit.
+  const requestBudget = { deadline_at: Date.now() + 95_000 };
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
 
   let body: Record<string, unknown> = {};
@@ -11906,13 +12042,14 @@ Deno.serve(async (req) => {
     .single();
   if (configError)
     return json({ error: "config", detail: configError.message }, 500);
-  const config = configData as ConfigRow;
+  const config = { ...configData, request_budget: requestBudget } as ConfigRow;
 
   const action = typeof body.action === "string" ? body.action : null;
   if (action) {
     try {
       return await operatorAction(action, req, config, body);
     } catch (error) {
+      if (isSyncDeferred(error)) return json({ ok: true, status: "deferred", reason: "request_budget" });
       const detail =
         error instanceof Error
           ? error.message
@@ -11962,9 +12099,9 @@ Deno.serve(async (req) => {
       // backorder/preorder off without touching physical quantities or hiding
       // the product page.
       try {
-        await reconcileStaleCatalogBatch(config, 10, false);
+        await reconcileStaleCatalogBatch({ ...config, request_budget: { deadline_at: Math.min(requestBudget.deadline_at, Date.now() + 20_000) } }, 3, false);
       } catch (error) {
-        console.error(
+        if (!isSyncDeferred(error)) console.error(
           "Critical stale supplier reconciliation failed",
           error instanceof Error ? error.message : String(error),
         );
@@ -11987,40 +12124,15 @@ Deno.serve(async (req) => {
       return await processDevirCycleTick(config);
     }
 
-    const reviewMarkers = await refreshHumanReviewMarkersBatch(config);
-    const staleReconciliation = await reconcileStaleCatalogBatch(config);
-    const physicalOnlyReconciliation =
-      await reconcilePhysicalOnlyCatalogBatch(config);
+    const maintenance = await runtimeMaintenanceTick(config);
     const tcgFactoryResult = await scheduledTcgFactoryTick(config);
-
-    let dailyOffersResult: Record<string, unknown>;
-    try {
-      dailyOffersResult = await rotateDailyOffers(config);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error("Daily offer rotation failed", message);
-      await supabase
-        .from("catalog_daily_offer_state")
-        .upsert(
-          {
-            id: "primary",
-            last_error: message,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "id" },
-        );
-      dailyOffersResult = { status: "error", error: message };
-    }
 
     if (!config.enabled) {
       return json({
         ok: true,
         skipped: "disabled",
-        catalog_reconciliation: staleReconciliation,
-        physical_only_reconciliation: physicalOnlyReconciliation,
-        review_markers: reviewMarkers,
+        maintenance,
         tcgfactory: tcgFactoryResult,
-        daily_offers: dailyOffersResult,
       });
     }
     if (!config.session_state) {
@@ -12043,13 +12155,11 @@ Deno.serve(async (req) => {
       ok: true,
       skipped: "not_due",
       next_due_at: config.next_due_at,
-      review_markers: reviewMarkers,
-      catalog_reconciliation: staleReconciliation,
-      physical_only_reconciliation: physicalOnlyReconciliation,
+      maintenance,
       tcgfactory: tcgFactoryResult,
-      daily_offers: dailyOffersResult,
     });
   } catch (error) {
+    if (isSyncDeferred(error)) return json({ ok: true, status: "deferred", reason: "request_budget" });
     const message = error instanceof Error ? error.message : String(error);
     await supabase
       .from("devir_sync_config")
@@ -12073,4 +12183,4 @@ Deno.serve(async (req) => {
   } finally {
     await supabase.rpc("devir_sync_release_lock", { p_token: lockToken });
   }
-});
+}));

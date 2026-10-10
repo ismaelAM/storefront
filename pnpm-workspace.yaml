@@ -32,3 +32,8 @@ allowBuilds:
   '@swc/core': true
   esbuild: true
   lefthook: true
+
+patchedDependencies:
+  # Keep Next pinned until its minimal-mode bot resumes preserve the PPR tree.
+  # Remove only after test:next-ppr passes without this patch on both bundlers.
+  next@16.2.11: patches/next@16.2.11.patch

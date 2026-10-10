@@ -8,15 +8,17 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 
 ### Sesión de apertura — 10/10/2026 (estado vigente)
 
-- [x] Retiradas referencias públicas a identificadores personales según instrucción del propietario; no tratarlos como pendiente de apertura. Regresión RED→GREEN y559 pruebas pasan; deployment pendiente junto a correcciones de web.
-- [ ] Correcciones React/PPR y fallback de políticas implementados;559 pruebas/tsc pasan. Pendientes revisión, build Vercel y verificación pública tras merge.
-- [ ] Integrar PR #71 (bot y correcciones verificadas) en main; comprobar el nuevo deployment de producción.
-- [ ] Corregir URL directa www y eventos del webhook Stripe existente, conservando su secreto de firma.
-- [ ] Resolver los timeouts del cron con presupuesto de trabajo y checkpoints; mantener reparto entre distribuidores.
-- [ ] Completar catálogo TCGFactory de las cinco familias y actualizar Devir, manteniendo exclusiones seguras de fichas inválidas.
-- [ ] Compra completa, correo y fulfillment: pendiente de prueba real autorizada; no confundir Element cargado con cobro verificado.
+- [x] Retiradas referencias públicas a identificadores personales y comprobadas políticas públicas sin etiqueta fiscal.
+- [x] Integrada PR #71 en main2f98dec; CI/build/producción READY.
+- [x] Fallback seguro de políticas conocidas implementado y comprobado en ES/EN/FR.
+- [x] Webhook Stripe corregido a www con tres eventos, manteniendo secreto. Entrega real firmada pendiente.
+- [x] Bot v133 desplegado: presupuesto/checkpoints, mantenimiento justo y cola de recuperación genérica. Migración aplicada y prueba SQL pasó.
+- [ ] Publicar segundo arreglo Next/PPR, verificar CI/build y Googlebot en producción. Local581 pruebas y16 regresiones reales pasan.
+- [ ] Verificar cron v133 y cierre completo de cinco familias TCGFactory y ciclo fresco Devir. Nunca retirar por crawl parcial.
+- [ ] Compra completa, entrega firmada Stripe, correo y fulfillment: pendiente de prueba operativa autorizada; no hubo cargos.
+- [ ] Correos: credenciales/contrato y prueba operativa pendientes según sección Transporte externo.
 
-Continuidad y evidencias actuales: AUDIT_HANDOFF.md. Los pendientes históricos siguientes necesitan contrastarse con ese bloque antes de repetir trabajo.
+Continuidad y evidencias: AUDIT_HANDOFF.md. Los pendientes históricos siguientes necesitan contrastarse con ese bloque antes de repetir trabajo.
 
 - [ ] Verificar el nuevo Preview de Vercel tras los últimos cambios de UI/navegación/apariencia y seguridad.
 - [ ] **Seguridad Puck:** configurar `PUCK_EDITOR_PASSWORD` como secreto en Vercel y comprobar que `/editor` y sus subrutas solo son accesibles con la contraseña de administrador.

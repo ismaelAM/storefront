@@ -1,0 +1,30 @@
+diff --git a/dist/build/templates/app-page.js b/dist/build/templates/app-page.js
+index e0e16e8cdcb98beb66af51c924921b6d2e2fa904..94bbf20f88a06c077f34bd7d00dc5b7c4b54bab2 100644
+--- a/dist/build/templates/app-page.js
++++ b/dist/build/templates/app-page.js
+@@ -509,7 +509,9 @@ async function handler(req, res, ctx) {
+                     page: srcPage,
+                     postponed,
+                     shouldWaitOnAllReady,
+-                    serveStreamingMetadata,
++                    // A resume must match the streaming metadata tree in the PPR shell.
++                    // https://github.com/vercel/next.js/pull/94630
++                    serveStreamingMetadata: typeof postponed === 'string' || serveStreamingMetadata,
+                     supportsDynamicResponse: typeof postponed === 'string' || supportsDynamicResponse,
+                     buildManifest,
+                     nextFontManifest,
+diff --git a/dist/esm/build/templates/app-page.js b/dist/esm/build/templates/app-page.js
+index 0cec08429603871865933de0a5ae4dd8f0d9a0d3..a69f46f7d240cde7416ab19ae87c7b9c734b0c6a 100644
+--- a/dist/esm/build/templates/app-page.js
++++ b/dist/esm/build/templates/app-page.js
+@@ -500,7 +500,9 @@ export async function handler(req, res, ctx) {
+                     page: srcPage,
+                     postponed,
+                     shouldWaitOnAllReady,
+-                    serveStreamingMetadata,
++                    // A resume must match the streaming metadata tree in the PPR shell.
++                    // https://github.com/vercel/next.js/pull/94630
++                    serveStreamingMetadata: typeof postponed === 'string' || serveStreamingMetadata,
+                     supportsDynamicResponse: typeof postponed === 'string' || supportsDynamicResponse,
+                     buildManifest,
+                     nextFontManifest,

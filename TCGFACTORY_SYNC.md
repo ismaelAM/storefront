@@ -339,3 +339,11 @@ Antes de implementar el transporte autenticado:
 Si cambia la web pública, actualizar la sección «Hechos verificados», no el
 contrato por reflejo. El contrato sólo debe versionarse (`v2`, etc.) cuando el
 cambio semántico no sea compatible.
+
+## Recuperación y presupuesto del worker — 10/10/2026
+
+El worker v133 limita el trabajo externo a95s por petición y reserva hasta115s para persistencia/liberación del lock. Fetch, lectura del body y reintentos comparten el presupuesto local. Un agotamiento aplaza el trabajo y conserva checkpoints, sin convertirlo en fallo de validación. Mantenimiento global usa turnos persistentes; Devir activo y TCG alternan. Descubrimiento TCG procesa hasta24 fichas con concurrencia3 y guarda únicamente el prefijo continuo finalizado.
+
+La migración20261010042225 guarda pending_reconciliation_variant_ids en cada proveedor. Completar un run persiste esa cola atómicamente y sólo cuenta ausencias una vez. Cada variante se confirma con ACK privado tras escribir Spree; un reintento recupera el resto. No iniciar otro cierre mientras existan pendientes, ni considerar la selección escrita como prueba de que Spree ya se actualizó. Devir reutiliza esta misma recuperación. Regresión SQL: supabase/tests/supplier_completion_replay.sql (ROLLBACK).
+
+El primer barrido ampliado de cinco familias sigue en curso: consultar estado real y cola pendiente antes de declarar catálogo completo. Las fichas sin SKU válido o con fuente404 se excluyen de forma segura; no inventar referencias.

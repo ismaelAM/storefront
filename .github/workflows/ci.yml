@@ -56,6 +56,12 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm run test
+      - name: Verify production PPR bot resumes (Turbopack)
+        run: pnpm run test:next-ppr
+      - name: Verify production PPR bot resumes (Webpack)
+        run: pnpm run test:next-ppr
+        env:
+          PPR_TEST_WEBPACK: '1'
 
   e2e:
     name: E2E (Playwright + Spree)
