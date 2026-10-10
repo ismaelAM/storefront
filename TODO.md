@@ -6,15 +6,15 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 
 ## Prioridad alta
 
-### Revisión de continuidad y textos — 10/10/2026, 12:27 Madrid
+### Revisión de continuidad y textos — 10/10/2026, 12:33 Madrid
 
 - [x] Comprobadas últimas publicaciones anteriores a esta revisión: Git 06:45, producción READY 06:47, Edge v133 06:32, todo en hora de Madrid. No se puede ver ni detener el proceso interno del otro Work.
-- [x] Comprobado avance automático del catálogo: Devir 1022 done / 9 pending / 1 processing / 8 error; TCG accesorios 11/32; conciliación pendiente 0.
-- [ ] Confirmar cierre completo de cinco familias TCGFactory y del ciclo fresco Devir. Los rechazos por SKU ausente o coste cero no se deben forzar ni ocultar.
+- [x] Comprobado avance automático del catálogo: Devir cerró a las 12:33 con 1032 done / 8 error y sin pendientes; TCG accesorios 11/32 (525 procesados / 799 descubiertos); conciliación pendiente 0 en comprobación anterior.
+- [ ] Confirmar cierre completo de cinco familias TCGFactory y resolver/verificar las 8 fichas rechazadas de Devir. Los rechazos por SKU ausente o coste cero no se deben forzar ni ocultar.
 - [x] Auditadas rutas públicas; sin NIF/CIF vacío, errores React ni href vacíos. Sitemap anunciado respondió 200 (unos 30 s); `/sitemap.xml` no es su ruta configurada.
 - [x] Corregido el título SEO en configuración Vercel y el subtítulo publicado de prerreservas.
 - [x] Preparada corrección de 190 cadenas ES, etiquetas Puck, contacto mayorista ficticio y destino genérico de correo en políticas; TypeScript, 581 pruebas y paridad de idiomas pasan.
-- [ ] Integrar la rama `fix/public-copy-audit-2026-10-10` tras revisión y confirmar el deployment. El título SEO corregido necesita un deployment nuevo para verse en producción.
+- [ ] Integrar PR #74 (`fix/public-copy-audit-2026-10-10`) tras revisión y confirmar el deployment. El título SEO corregido necesita un deployment nuevo para verse en producción.
 - [ ] Configurar/verificar un correo de contacto público real: la web actual no muestra una dirección concreta en las políticas. No inventar email ni recuperar etiquetas fiscales vacías.
 - [ ] Correos: pendiente respuesta/contrato/credenciales; mantener alternativa manual documentada. El propietario realizará la primera compra Stripe cuando el resto esté listo.
 

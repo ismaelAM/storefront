@@ -1,4 +1,4 @@
-# Revisión de continuidad y textos públicos — 10/10/2026, 12:27 Madrid
+# Revisión de continuidad y textos públicos — 10/10/2026, 12:33 Madrid
 
 Este bloque es la lectura más reciente. El propietario ha retomado el proyecto y pidió comprobar la actividad del otro Work, observar el catálogo y retirar erratas/referencias vacías. No se hicieron compras ni envíos de correo.
 
@@ -9,11 +9,11 @@ Este bloque es la lectura más reciente. El propietario ha retomado el proyecto 
 - Edge `devir-sync` continúa en v133, actualizado a las **06:32 Madrid**.
 - Estos datos describen cambios publicados. No hay acceso al proceso interno ni a cambios locales sin publicar del otro Work; no afirmar que está detenido.
 
-## Catálogo observado a las 12:27 Madrid
+## Catálogo observado a las 12:33 Madrid
 
-- Devir, ciclo `6994adf7-2a94-4366-a45a-37d6c649b5e4`: **1022 productos done, 9 pending, 1 processing y 8 error**; ciclo todavía running.
+- Devir, ciclo `6994adf7-2a94-4366-a45a-37d6c649b5e4`: **1032 productos done y 8 error**, sin pendientes. Cerrado a las **12:33 Madrid** con estado error; no acredita sincronización completa correcta.
 - Los 8 errores corresponden a 4 fichas sin SKU reconocible y 4 con purchasePrice cero. Mantener el rechazo; no inventar SKU/coste ni convertir esta pasada en éxito artificial.
-- TCGFactory, run `tcgfactory-1791568032822`: accesorios página **11/32**, 798 descubiertos, 524 procesados y 2 fallidos. No terminó el primer barrido de cinco familias.
+- TCGFactory, run `tcgfactory-1791568032822`: accesorios página **11/32**, 799 descubiertos, 525 procesados y 2 fallidos. No terminó el primer barrido de cinco familias.
 - Cola de conciliación pendiente: **0**. Cron observado con respuestas 200 y avances posteriores a esta revisión. No se modificó ni relanzó el worker.
 - El paso de verificar cobertura completa sigue pendiente: esperar cierre validado, revisar errores y confirmar conciliación 0. Una cola vacía durante el crawl no equivale a catálogo completo.
 
@@ -24,7 +24,7 @@ Este bloque es la lectura más reciente. El propietario ha retomado el proyecto 
 - Rama `fix/public-copy-audit-2026-10-10`: corregidas 190 cadenas españolas (tildes/ñ y prerreserva), retirada la referencia `wholesale@example.com` y sus seis traducciones, corregidas etiquetas Puck y fallback de contacto de políticas. Se preservan variables ICU y reglas comerciales.
 - Configuración Vercel: `STORE_SEO_TITLE` corregido a `Tienda online de MTG, Pokémon, TCG, juegos de mesa, juegos de rol y más.`, conservando targets/tipo. Se aplicará al siguiente deployment; la producción existente conserva su snapshot anterior.
 - Contenido Puck publicado: solo el subtítulo del bloque `home-preorders` se cambió a `Prerreservas activas con lanzamiento pendiente.`, mediante UPDATE condicionado por versión/valor anterior; readback confirmado.
-- Código todavía pendiente de integración a main y deployment. Seguir la regla de AGENTS.md sobre no hacer merge automático; no atribuir el futuro deployment al otro Work.
+- Código publicado en PR #74 (https://github.com/ismaelAM/storefront/pull/74), pendiente de integración a main y deployment. Seguir la regla de AGENTS.md sobre no hacer merge automático; no atribuir el futuro deployment al otro Work.
 
 ## Validación
 
