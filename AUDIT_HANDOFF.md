@@ -21,7 +21,9 @@ Este bloque prevalece sobre el historial de septiembre. Continuar sin preguntas 
 
 ## Próximo paso
 
-Publicar rama fix/launch-runtime y PR con los arreglos, esperar CI/build READY, merge autorizado y comprobar producción pública: Googlebot/Twitterbot/títulos, políticas y logs. Comprobar v133 cron/checkpoints y estado del primer catálogo completo; registrar evidencias finales aquí y en TODO.md. Compra real y Correos siguen requiriendo una prueba operativa autorizada.
+PR #72 abierta: https://github.com/ismaelAM/storefront/pull/72, commit41e4e010b355ed2c59cdc5b21d0045714cae7b50. CI verde (E2E compra saltado por secretos ausentes); preview build pendiente READY. Árbol remoto coincide exactamente con local. Edge v133 leído:9 archivos idénticos al código revisado. Primer cron nuevo200 y avance comprobado Devir620done/717pending y TCG592descubiertos/386procesados,0fallos; seleccionadas caducadas0 y ofertas elegibles más baratas ignoradas0. Retirada también la variable fiscal obsoleta del ejemplo de configuración.
+
+Esperar CI/build del último checkpoint, merge autorizado y comprobar producción pública: Googlebot/Twitterbot/títulos, políticas y logs. Comprobar v133 cron/checkpoints y estado del primer catálogo completo; registrar evidencias finales aquí y en TODO.md. Compra real y Correos siguen requiriendo una prueba operativa autorizada.
 
 ## Limitaciones del entorno
 
