@@ -63,7 +63,8 @@
     "cart": "Carrito",
     "policies": "Políticas",
     "wholesale": "Comercio y venta al por mayor",
-    "rightsReserved": "Todos los derechos reservados."
+    "rightsReserved": "Todos los derechos reservados.",
+    "shippingEstimate": "Calcular envío con Correos"
   },
   "home": {
     "welcome": "{storeName}",
@@ -637,5 +638,37 @@
     "reject": "Rechazar",
     "accept": "Aceptar",
     "preferences": "Preferencias de cookies"
+  },
+  "shippingEstimate": {
+    "title": "Calcular envío con Correos",
+    "intro": "Calcula el coste orientativo de Paq Estándar con la tarifa pública de Correos de 2026.",
+    "scope": "Origen: España peninsular. Destino: España. Introduce el peso y las medidas de la caja lista para enviar.",
+    "postalCode": "Código postal de destino",
+    "weightKg": "Peso con embalaje (kg)",
+    "lengthCm": "Largo (cm)",
+    "widthCm": "Ancho (cm)",
+    "heightCm": "Alto (cm)",
+    "calculate": "Calcular precio",
+    "busy": "Calculando…",
+    "result": "Coste estimado",
+    "net": "Base",
+    "tax": "IVA",
+    "billableWeight": "Peso facturable",
+    "volumetricWeight": "Peso volumétrico",
+    "notice": "Esta es una estimación de la tarifa pública, no una oferta de contrato. El precio final de tu pedido, incluidos los gastos de envío, aparece en el checkout.",
+    "limitations": "No incluye embalaje, servicios adicionales ni gestiones o tributos aduaneros. Solo cajas dentro de las medidas estándar.",
+    "source": "Ver tarifa oficial de Correos 2026 (páginas 10–11)",
+    "zonePeninsula": "Península",
+    "zoneBaleares": "Baleares",
+    "zoneCanarias": "Canarias",
+    "zoneCeutaMelilla": "Ceuta y Melilla",
+    "invalidPostalCode": "Introduce un código postal español válido de cinco dígitos.",
+    "invalidWeight": "Introduce un peso real mayor que cero y de hasta 30 kg, incluido el embalaje.",
+    "invalidDimensions": "Introduce las tres dimensiones de la caja, mayores que cero.",
+    "oversized": "Las medidas superan el estándar (120 cm por lado y 240 cm en total). Consulta el recargo de dimensiones extra.",
+    "undersized": "La caja debe tener una cara de al menos 14,5 × 10 cm para la etiqueta.",
+    "tariffExpired": "La tarifa de 2026 no es válida para la fecha actual. Hay que actualizarla antes de calcular.",
+    "invalidRequest": "No se han podido leer los datos del paquete.",
+    "networkError": "No se pudo calcular. Inténtalo de nuevo."
   }
 }

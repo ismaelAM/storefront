@@ -63,7 +63,8 @@
     "cart": "Cart",
     "policies": "Policies",
     "wholesale": "Trade & Wholesale",
-    "rightsReserved": "All rights reserved."
+    "rightsReserved": "All rights reserved.",
+    "shippingEstimate": "Estimate Correos shipping"
   },
   "home": {
     "welcome": "{storeName}",
@@ -637,5 +638,37 @@
     "reject": "Reject",
     "accept": "Accept",
     "preferences": "Cookie preferences"
+  },
+  "shippingEstimate": {
+    "title": "Estimate Correos shipping",
+    "intro": "Estimate the cost of Paq Estándar using the published Correos rates for 2026.",
+    "scope": "Origin: mainland Spain. Destination: Spain. Enter the weight and dimensions of the packed box.",
+    "postalCode": "Destination postcode",
+    "weightKg": "Packed weight (kg)",
+    "lengthCm": "Length (cm)",
+    "widthCm": "Width (cm)",
+    "heightCm": "Height (cm)",
+    "calculate": "Calculate price",
+    "busy": "Calculating…",
+    "result": "Estimated cost",
+    "net": "Net amount",
+    "tax": "VAT",
+    "billableWeight": "Chargeable weight",
+    "volumetricWeight": "Volumetric weight",
+    "notice": "This is an estimate based on published rates, not a contract quote. Your final order price, including shipping, appears at checkout.",
+    "limitations": "Packaging, optional services and customs handling or duties are excluded. Standard-size boxes only.",
+    "source": "View official Correos 2026 rates (pages 10–11)",
+    "zonePeninsula": "Mainland Spain",
+    "zoneBaleares": "Balearic Islands",
+    "zoneCanarias": "Canary Islands",
+    "zoneCeutaMelilla": "Ceuta and Melilla",
+    "invalidPostalCode": "Enter a valid five-digit Spanish postcode.",
+    "invalidWeight": "Enter a real weight above zero and up to 30 kg, including packaging.",
+    "invalidDimensions": "Enter all three box dimensions, each above zero.",
+    "oversized": "The box exceeds standard limits (120 cm per side and 240 cm total). Check extra-size surcharges.",
+    "undersized": "The box needs a face of at least 14.5 × 10 cm for the label.",
+    "tariffExpired": "The 2026 rates are not valid for the current date. They must be updated before calculating.",
+    "invalidRequest": "The parcel details could not be read.",
+    "networkError": "The estimate failed. Please try again."
   }
 }

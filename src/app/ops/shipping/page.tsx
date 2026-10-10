@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { getTranslations } from "next-intl/server";
+import { ShippingEstimateCalculator } from "@/components/shipping/ShippingEstimateCalculator";
 import { getDefaultCountry, getDefaultLocale } from "@/lib/store";
 import { cookies } from "next/headers";
 import {
@@ -29,6 +31,7 @@ export default async function ShippingOperationsPage({
     cookieStore.get(SHIPPING_OPERATIONS_SESSION_COOKIE)?.value,
   );
   const query = await searchParams;
+  const shippingTranslations = await getTranslations({ locale: "es" });
   const puckEditorHref = `/${getDefaultCountry()}/${getDefaultLocale()}/editor`;
 
   if (!configured) {
@@ -133,6 +136,7 @@ export default async function ShippingOperationsPage({
         </div>
 
         <div className="space-y-6">
+          <ShippingEstimateCalculator labels={shippingTranslations.raw("shippingEstimate")} locale="es" />
           <SpecialPricingOperationsPanel />
 
           <section>

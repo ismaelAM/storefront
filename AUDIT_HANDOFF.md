@@ -1,3 +1,16 @@
+# Continuidad — calculadora Correos — 10/10/2026, 14:32 Madrid
+
+Este bloque prevalece sobre el historial. El propietario pidió «haz todo lo que puedas» y calcular el precio sin esperar respuesta de Correos. Autorizada integración de cambios revisados y verificados; no se hicieron cargos ni mensajes externos.
+
+- PR #74 integrada en `cbc92542e304215ccb3f28eaca7614b69e69931d`. Producción `dpl_8VqdPotPbvvhPzWWStfrkiPeVNDN` READY, mismo SHA. Home y políticas ES: HTTP200, SEO corregido, sin errores React ni contacto ficticio.
+- Rama `feat/correos-published-rate-calculator`: calculadora pública `/{country}/{locale}/shipping-estimate`, enlace de footer, panel ops autenticado y POST público de solo cálculo `/api/shipping/estimate`. Seis idiomas. Tarifas oficiales 2026, Paq Estándar, origen peninsular; coste/peso volumétrico/IVA según destino español. Fuente, límites y diferencias con checkout en SHIPPING.md.
+- Revisión independiente contrastó tablas con PDF oficial páginas10–11 y dimensiones con página oficial del servicio. Halló ruido de coma flotante en suma240cm y volumen31kg; reproducido en rojo y corregido con tolerancia de máquina, conservando excesos reales. 40 pruebas específicas y suite completa de 621 pruebas/62 archivos pasan; TypeScript, paridad y Biome de archivos nuevos verdes. Segunda revisión sin hallazgos pendientes. Ver PR de esta rama para validación final de CI y deployment; no asumir publicado por este bloque.
+- Las APIs documentadas no ofrecen una cotización identificada. Vercel tiene client ID, URL base y token interno; no constan client secret ni Bearer Correos ID. No se recuperaron secretos. El administrador Spree redirige a login. El estimador no requiere estos accesos y **no cambia gastos del checkout**.
+- Para cobro nativo faltan acceso administrativo autenticado y datos fiables del paquete; para etiquetas/tracking automático, credenciales/contrato y prueba controlada. Nunca generar una etiqueta como truco para obtener un precio.
+- Catálogo observado14:23Madrid: TCG run `tcgfactory-1791568032822`, accesorios29/32, 831procesados/1270descubiertos/2fallos, cierre completo aún no validado. Devir1032done/8error, sin pendientes. No inventar SKU/coste ni ocultar rechazos. Selector de menor coste comparable ya verificado; no reimplementarlo.
+
+---
+
 # Revisión de continuidad y textos públicos — 10/10/2026, 12:33 Madrid
 
 Este bloque es la lectura más reciente. El propietario ha retomado el proyecto y pidió comprobar la actividad del otro Work, observar el catálogo y retirar erratas/referencias vacías. No se hicieron compras ni envíos de correo.
