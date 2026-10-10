@@ -1,4 +1,41 @@
-# Sesión activa — preparación de apertura — 10/10/2026
+# Revisión de continuidad y textos públicos — 10/10/2026, 12:33 Madrid
+
+Este bloque es la lectura más reciente. El propietario ha retomado el proyecto y pidió comprobar la actividad del otro Work, observar el catálogo y retirar erratas/referencias vacías. No se hicieron compras ni envíos de correo.
+
+## Actividad anterior a esta revisión
+
+- Todas las referencias Git visibles tenían como último commit `fb30e905867cb7db42fc389f813683642a2fafde`, del 10/10 a las **06:45 Madrid**. Sin PR abiertas ni nuevos deployments en curso.
+- Producción Vercel `dpl_XSRYTY6FAorSQtUK1x2E6v1a6tYF`, del mismo SHA, READY a las **06:47 Madrid**.
+- Edge `devir-sync` continúa en v133, actualizado a las **06:32 Madrid**.
+- Estos datos describen cambios publicados. No hay acceso al proceso interno ni a cambios locales sin publicar del otro Work; no afirmar que está detenido.
+
+## Catálogo observado a las 12:33 Madrid
+
+- Devir, ciclo `6994adf7-2a94-4366-a45a-37d6c649b5e4`: **1032 productos done y 8 error**, sin pendientes. Cerrado a las **12:33 Madrid** con estado error; no acredita sincronización completa correcta.
+- Los 8 errores corresponden a 4 fichas sin SKU reconocible y 4 con purchasePrice cero. Mantener el rechazo; no inventar SKU/coste ni convertir esta pasada en éxito artificial.
+- TCGFactory, run `tcgfactory-1791568032822`: accesorios página **11/32**, 799 descubiertos, 525 procesados y 2 fallidos. No terminó el primer barrido de cinco familias.
+- Cola de conciliación pendiente: **0**. Cron observado con respuestas 200 y avances posteriores a esta revisión. No se modificó ni relanzó el worker.
+- El paso de verificar cobertura completa sigue pendiente: esperar cierre validado, revisar errores y confirmar conciliación 0. Una cola vacía durante el crawl no equivale a catálogo completo.
+
+## Revisión pública y cambios
+
+- Auditadas 68 rutas por HTTP: 67 respuestas 200, sin error React ni enlaces href vacíos/#. `/sitemap.xml` devuelve 404 porque robots anuncia `/sitemap/0.xml`; la ruta anunciada respondió 200, aproximadamente 30 segundos. No se cambió su arquitectura.
+- Las políticas públicas no muestran NIF/CIF vacío. Sí mostraban la referencia ficticia `el canal de contacto indicado en la tienda`; se preparó su eliminación con destino de correo condicional. Sigue pendiente configurar y verificar un correo real de contacto público, sin inventarlo.
+- Rama `fix/public-copy-audit-2026-10-10`: corregidas 190 cadenas españolas (tildes/ñ y prerreserva), retirada la referencia `wholesale@example.com` y sus seis traducciones, corregidas etiquetas Puck y fallback de contacto de políticas. Se preservan variables ICU y reglas comerciales.
+- Configuración Vercel: `STORE_SEO_TITLE` corregido a `Tienda online de MTG, Pokémon, TCG, juegos de mesa, juegos de rol y más.`, conservando targets/tipo. Se aplicará al siguiente deployment; la producción existente conserva su snapshot anterior.
+- Contenido Puck publicado: solo el subtítulo del bloque `home-preorders` se cambió a `Prerreservas activas con lanzamiento pendiente.`, mediante UPDATE condicionado por versión/valor anterior; readback confirmado.
+- Código publicado en PR #74 (https://github.com/ismaelAM/storefront/pull/74), pendiente de integración a main y deployment. Seguir la regla de AGENTS.md sobre no hacer merge automático; no atribuir el futuro deployment al otro Work.
+
+## Validación
+
+- Suite completa: **60 archivos / 581 pruebas pasan**. TypeScript storefront sin errores; paridad de seis idiomas y variables ICU preservadas.
+- Biome lint sin errores, con 241 avisos y 3 infos ya existentes. Biome check completo tiene **122 errores de formato tanto en el main original como en esta rama**; no se hizo un reformateo masivo para cambiar textos.
+- Contacto de políticas comprobado con variable vacía y con correo configurado; no quedan `<strong>` vacíos ni el contacto ficticio. No se alteraron las cláusulas sustantivas.
+- Correos continúa pendiente de contrato/credenciales y prueba operativa; el propietario indica que todavía no obtiene respuesta. Stripe ya está configurado; el propietario probará una primera compra cuando el resto esté listo.
+
+---
+
+# Sesión anterior — preparación de apertura — 10/10/2026
 
 Este bloque prevalece sobre el historial de septiembre. Continuar sin preguntas rutinarias: el propietario está ausente y autoriza corregir, integrar y verificar. No realizar cargos ni enviar mensajes a clientes.
 

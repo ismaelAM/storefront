@@ -59,7 +59,7 @@ export const enhancedConfig: Config = {
             { label: "Todos", value: "all" },
             { label: "Disponibles", value: "available" },
             { label: "En oferta", value: "sale" },
-            { label: "Prereservas", value: "preorder" },
+            { label: "Prerreservas", value: "preorder" },
           ],
         },
         variantFilter: { type: "text", label: "Texto de variante" },
