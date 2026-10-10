@@ -575,8 +575,7 @@
       "description": "Thanks for applying. Your account is set up, but wholesale access is still pending approval.",
       "nameLabel": "Name",
       "emailLabel": "Email",
-      "whatNext": "Our team reviews new wholesale applications and enables trade pricing once approved. You'll be able to sign in here as soon as your account is activated.",
-      "support": "Questions? Contact wholesale@example.com"
+      "whatNext": "Our team reviews new wholesale applications and enables trade pricing once approved. You'll be able to sign in here as soon as your account is activated."
     },
     "plp": {
       "title": "Wholesale Catalog",

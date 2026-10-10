@@ -65,7 +65,7 @@ function isSaleProduct(product: ProductWithRelations): boolean {
 }
 
 function getMerchandisingBadge(product: ProductWithRelations): string {
-  if (product.preorder) return "Prereserva";
+  if (product.preorder) return "Prerreserva";
   const onSale = isSaleProduct(product);
   if (product.in_stock && onSale) return "En stock · Oferta";
   if (product.in_stock) return "En stock";

@@ -575,8 +575,7 @@
       "description": "Dziękujemy za złożenie wniosku. Twoje konto zostało utworzone, ale dostęp hurtowy nadal czeka na zatwierdzenie.",
       "nameLabel": "Imię i nazwisko",
       "emailLabel": "E-mail",
-      "whatNext": "Nasz zespół sprawdza nowe wnioski hurtowe i po zatwierdzeniu włącza ceny handlowe. Będziesz mógł zalogować się tutaj, gdy tylko Twoje konto zostanie aktywowane.",
-      "support": "Masz pytania? Skontaktuj się z wholesale@example.com"
+      "whatNext": "Nasz zespół sprawdza nowe wnioski hurtowe i po zatwierdzeniu włącza ceny handlowe. Będziesz mógł zalogować się tutaj, gdy tylko Twoje konto zostanie aktywowane."
     },
     "plp": {
       "title": "Katalog hurtowy",

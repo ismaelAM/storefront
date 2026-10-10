@@ -59,7 +59,7 @@ export function RealProductShowcase({ productPosition, description, badge, butto
       ? product.original_price?.display_amount
       : "");
   const resolvedBadge = product.preorder
-    ? "Prereserva"
+    ? "Prerreserva"
     : product.in_stock && comparePrice
       ? "En stock · Oferta"
       : product.in_stock

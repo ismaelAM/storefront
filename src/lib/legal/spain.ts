@@ -62,8 +62,9 @@ function identityHtml(): string {
   `;
 }
 
-function contactEmail(): string {
-  return legalIdentity().email ?? "el canal de contacto indicado en la tienda";
+function contactDestination(): string {
+  const email = legalIdentity().email;
+  return email ? ` a <strong>${email}</strong>` : "";
 }
 
 const policies: Record<string, () => LocalLegalPolicy> = {
@@ -89,7 +90,7 @@ const policies: Record<string, () => LocalLegalPolicy> = {
       <p>Verás el coste antes de pagar. Depende del destino, peso, volumen y método de transporte. No añadimos después gastos que no se hayan mostrado durante la compra.</p>
 
       <h2>Problemas con la entrega</h2>
-      <p>Si el paquete llega golpeado, falta algo o has recibido un artículo distinto, escríbenos cuanto antes a <strong>${contactEmail()}</strong>. Si puedes, adjunta fotos del embalaje y del producto: suelen acelerar bastante la gestión.</p>
+      <p>Si el paquete llega golpeado, falta algo o has recibido un artículo distinto, escríbenos cuanto antes${contactDestination()}. Si puedes, adjunta fotos del embalaje y del producto: suelen acelerar bastante la gestión.</p>
       <p>No condicionamos tus derechos a avisar en 24 o 48 horas. Cuando el problema sea responsabilidad nuestra o exista una falta de conformidad, asumiremos los costes que legalmente correspondan.</p>
 
       <h2>Dirección incorrecta, rechazo o entrega fallida</h2>
@@ -106,11 +107,11 @@ const policies: Record<string, () => LocalLegalPolicy> = {
     local: true,
     body_html: `
       <p><strong>Actualizado el ${LAST_UPDATED}</strong></p>
-      <p>Si quieres devolver un pedido o ha llegado con algún problema, escríbenos a <strong>${contactEmail()}</strong> con el número de pedido.</p>
+      <p>Si quieres devolver un pedido o ha llegado con algún problema, escríbenos${contactDestination()} con el número de pedido.</p>
 
       <h2>Derecho legal de desistimiento: 14 días</h2>
       <p>En las compras online realizadas por consumidores existe, con carácter general, un plazo de <strong>14 días naturales</strong> para comunicar el desistimiento sin necesidad de indicar un motivo. En la venta de bienes, el plazo empieza normalmente cuando tú o un tercero indicado por ti adquiere la posesión material del pedido, con las reglas especiales que legalmente correspondan cuando haya varios bienes o entregas.</p>
-      <p>Para ejercerlo basta con enviarnos, antes de que venza el plazo, una declaración inequívoca de que deseas desistir. Puedes escribir a <strong>${contactEmail()}</strong> o utilizar cualquier función de desistimiento online que tengamos habilitada en la tienda.</p>
+      <p>Para ejercerlo basta con enviarnos, antes de que venza el plazo, una declaración inequívoca de que deseas desistir. Puedes escribirnos${contactDestination()} o utilizar cualquier función de desistimiento online que tengamos habilitada en la tienda.</p>
       <p>Después de comunicarnos el desistimiento, debes devolver los bienes sin demora indebida y, en todo caso, dentro de los <strong>14 días naturales</strong> siguientes.</p>
 
       <h2>Coste de la devolución</h2>
@@ -149,7 +150,7 @@ const policies: Record<string, () => LocalLegalPolicy> = {
       <p>No consideramos automáticamente excluido del desistimiento un juego de mesa, manga, TCG u otro artículo por el simple hecho de venir precintado. Cuando no exista una excepción legal, lo que podrá valorarse es la disminución real de valor causada por una manipulación superior a la necesaria para examinar el artículo.</p>
 
       <h2>Modelo de comunicación de desistimiento</h2>
-      <p>No es obligatorio utilizar este modelo, pero puedes copiarlo y enviarlo a <strong>${contactEmail()}</strong>:</p>
+      <p>No es obligatorio utilizar este modelo, pero puedes copiarlo y enviárnoslo${contactDestination()}:</p>
       <blockquote>
         <p>A la atención de <strong>${legalIdentity().businessName}</strong>${legalIdentity().address ? `, ${legalIdentity().address}` : ""}.</p>
         <p>Por la presente comunico que desisto del contrato de venta relativo al siguiente bien o pedido: [producto / número de pedido].</p>
@@ -187,7 +188,7 @@ const policies: Record<string, () => LocalLegalPolicy> = {
       <p>Conservamos la información durante el tiempo necesario para gestionar la relación contigo y, después, durante los plazos que puedan exigir las obligaciones fiscales, contables, de consumo o la defensa de posibles reclamaciones.</p>
 
       <h2>Tus derechos</h2>
-      <p>Puedes solicitar acceso, rectificación, supresión, oposición, limitación o portabilidad cuando correspondan, y retirar un consentimiento que hayas dado. Para hacerlo, escribe a <strong>${contactEmail()}</strong>.</p>
+      <p>Puedes solicitar acceso, rectificación, supresión, oposición, limitación o portabilidad cuando correspondan, y retirar un consentimiento que hayas dado. Para hacerlo, escríbenos${contactDestination()}.</p>
       <p>Si consideras que tus datos no se están tratando correctamente, también puedes reclamar ante la Agencia Española de Protección de Datos.</p>
 
       <h2>Cookies</h2>
@@ -257,7 +258,7 @@ const policies: Record<string, () => LocalLegalPolicy> = {
       <p>Las marcas, ilustraciones, fotografías y materiales de fabricantes y editoriales pertenecen a sus respectivos titulares. Los contenidos propios de la web también están protegidos por la normativa de propiedad intelectual.</p>
 
       <h2>Contacto y reclamaciones</h2>
-      <p>Para cualquier consulta, desistimiento o reclamación puedes escribir a <strong>${contactEmail()}</strong>. Indicar el número de pedido nos ayuda a localizar el caso más rápido.</p>
+      <p>Para cualquier consulta, desistimiento o reclamación puedes escribirnos${contactDestination()}. Indicar el número de pedido nos ayuda a localizar el caso más rápido.</p>
 
       <h2>Ley aplicable</h2>
       <p>Estas condiciones se interpretan conforme a la legislación española, sin privar a un consumidor de la protección imperativa que le corresponda por su lugar de residencia. Los conflictos se resolverán ante los órganos que sean competentes conforme a la normativa aplicable.</p>

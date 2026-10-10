@@ -575,8 +575,7 @@
       "description": "Obrigado pela candidatura. A sua conta está criada, mas o acesso profissional ainda aguarda aprovação.",
       "nameLabel": "Nome",
       "emailLabel": "Email",
-      "whatNext": "A nossa equipa analisa as novas candidaturas profissionais e ativa os preços profissionais após a aprovação. Poderá iniciar sessão aqui assim que a conta estiver ativa.",
-      "support": "Questões? Contacte wholesale@example.com"
+      "whatNext": "A nossa equipa analisa as novas candidaturas profissionais e ativa os preços profissionais após a aprovação. Poderá iniciar sessão aqui assim que a conta estiver ativa."
     },
     "plp": {
       "title": "Catálogo profissional",

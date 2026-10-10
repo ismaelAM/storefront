@@ -32,7 +32,7 @@ export function HomeFeaturedProductsBlock({ title, columns }: HomeFeaturedProduc
                 : "");
             const productUrl = product.slug ? `${basePath}/products/${product.slug}` : `${basePath}/products`;
             const badge = product.preorder
-              ? "Prereserva"
+              ? "Prerreserva"
               : product.in_stock && comparePrice
                 ? "En stock · Oferta"
                 : product.in_stock

@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Clock, LogOut, Mail } from "lucide-react";
+import { ArrowLeft, Clock, LogOut } from "lucide-react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
@@ -56,10 +56,6 @@ export function WholesaleApplicationPending({
 
           <div className="space-y-2 text-sm text-slate-600">
             <p>{t("pending.whatNext")}</p>
-            <p className="flex items-center gap-2">
-              <Mail className="h-4 w-4 text-slate-400" />
-              {t("pending.support")}
-            </p>
           </div>
 
           <div className="flex flex-col gap-2 sm:flex-row">

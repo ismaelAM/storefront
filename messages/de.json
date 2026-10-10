@@ -575,8 +575,7 @@
       "description": "Vielen Dank für Ihre Bewerbung. Ihr Konto ist eingerichtet, aber der Großhandelszugang steht noch zur Genehmigung aus.",
       "nameLabel": "Name",
       "emailLabel": "E-Mail",
-      "whatNext": "Unser Team prüft neue Großhandelsbewerbungen und aktiviert nach der Genehmigung die Handelspreise. Sobald Ihr Konto aktiviert ist, können Sie sich hier anmelden.",
-      "support": "Fragen? Kontaktieren Sie wholesale@example.com"
+      "whatNext": "Unser Team prüft neue Großhandelsbewerbungen und aktiviert nach der Genehmigung die Handelspreise. Sobald Ihr Konto aktiviert ist, können Sie sich hier anmelden."
     },
     "plp": {
       "title": "Großhandelskatalog",
