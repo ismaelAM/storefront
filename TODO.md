@@ -6,6 +6,18 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 
 ## Prioridad alta
 
+### Sesión de apertura — 10/10/2026 (estado vigente)
+
+- [x] Retiradas referencias públicas a identificadores personales según instrucción del propietario; no tratarlos como pendiente de apertura. Regresión RED→GREEN y559 pruebas pasan; deployment pendiente junto a correcciones de web.
+- [ ] Correcciones React/PPR y fallback de políticas implementados;559 pruebas/tsc pasan. Pendientes revisión, build Vercel y verificación pública tras merge.
+- [ ] Integrar PR #71 (bot y correcciones verificadas) en main; comprobar el nuevo deployment de producción.
+- [ ] Corregir URL directa www y eventos del webhook Stripe existente, conservando su secreto de firma.
+- [ ] Resolver los timeouts del cron con presupuesto de trabajo y checkpoints; mantener reparto entre distribuidores.
+- [ ] Completar catálogo TCGFactory de las cinco familias y actualizar Devir, manteniendo exclusiones seguras de fichas inválidas.
+- [ ] Compra completa, correo y fulfillment: pendiente de prueba real autorizada; no confundir Element cargado con cobro verificado.
+
+Continuidad y evidencias actuales: AUDIT_HANDOFF.md. Los pendientes históricos siguientes necesitan contrastarse con ese bloque antes de repetir trabajo.
+
 - [ ] Verificar el nuevo Preview de Vercel tras los últimos cambios de UI/navegación/apariencia y seguridad.
 - [ ] **Seguridad Puck:** configurar `PUCK_EDITOR_PASSWORD` como secreto en Vercel y comprobar que `/editor` y sus subrutas solo son accesibles con la contraseña de administrador.
 - [ ] **Seguridad Puck:** validar que el Server Action de guardado rechaza peticiones no autenticadas aunque se invoque directamente.

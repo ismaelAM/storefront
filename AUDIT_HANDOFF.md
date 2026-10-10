@@ -1,4 +1,43 @@
-# Continuidad de la auditoría Bisontcg — 24/09/2026
+# Sesión activa — preparación de apertura — 10/10/2026
+
+Este bloque es el estado vigente; los apartados de septiembre de abajo son históricos. Reanudar desde el primer pendiente sin repetir trabajo ya verificado.
+
+## Autorización y reglas vigentes
+- El propietario pide retirar las referencias públicas a identificadores personales, corregir fallos de web, integrar el bot y después corregir Stripe, tiempos de espera y catálogo incompleto. No introducir identificadores personales como requisito de publicación.
+- Autorizado integrar los cambios verificados del bot en main (PR #71), incluyendo correcciones de la web y privacidad. Los siguientes arreglos de Stripe/bot también están autorizados. No realizar cargos ni enviar mensajes a clientes.
+- Mantener Spree como fuente comercial, reutilizar ingesta/selector canónico, preservar PVP manuales, márgenes y cantidades físicas; no cerrar rastreos parciales ni inventar SKU/stock.
+- Documento operativo: este archivo. Pendientes visibles: TODO.md. Reglas del bot: CATALOG_SOURCING.md y TCGFACTORY_SYNC.md. Actualizar evidencias/commits/despliegues tras cada hito y antes de compactar.
+
+## Punto de partida comprobado
+- Rama local y remota: fix/full-tcgfactory-catalog, HEAD e4d7195268f1df7ad52c575131c26de2ed7d8fc5; PR #71 abierta. main/Vercel producción da6dc652d79632963a137bed80b942b35b32834a. Repo limpio al iniciar.
+- Supabase ikglqbjlbkbaronbiryl: devir-sync v132, autenticación propia, cron cada minuto habilitado. Código de PR #71 desplegado y migración de cursor aplicada.
+- TCGFactory a 20:29 UTC: running, sección tcg, página6/12, offset12,147 descubiertos,92 procesados,0 fallos. Cinco familias configuradas; barrido completo todavía pendiente.
+- Devir: ciclo ec1fa70a-a1c2-4046-912a-bdd391629db5 terminado parcial,16 fichas sin SKU y1 URL404 de presentación Akropolis. Siguiente ciclo 10/10 01:49 UTC. 605 ofertas antiguas Devir y12 TCG fuera de vigencia; seleccionadas caducadas0; alternativas elegibles más baratas ignoradas0.
+- Desde 18:06 UTC:135 respuestas cron200,5 timeouts120s. La función sigue avanzando. Examinar presupuesto total y tareas de mantenimiento combinadas; no basta subir timeout.
+- Vercel: errores recientes en fichas (resume div frente a __next_metadata_boundary__) y políticas (Spree401). Next instalado16.2.11, cacheComponents habilitado. Agente diagnose_web_runtime investiga causa, sin editar inicialmente.
+- Stripe BisonTCG acct_1UDiVZHU3Etzdhlg, live: webhook habilitado en dominio raíz, devuelve308 a www; solo payment_intent.succeeded. Código atiende también amount_capturable_updated y canceled. No cambiar secreto de firma ni efectuar cargos.
+- Catálogo/ficha/carrito/checkout/Stripe Element comprobados en www; carrito temporal vaciado, ningún cargo. Editor exige contraseña; API logística devuelve401 sin token. Sitemap/0.xml200,5688 URLs,18.4s en segunda comprobación. ES/FR/PT y políticaEN200.
+- Baseline:544 pruebas/57 archivos y tsc pasan. E2E de checkout saltado por credenciales de prueba; no atribuir compra real verificada.
+
+## Plan y registro de ejecución
+- [x] Retirada lectura/salida pública del identificador fiscal en src/lib/legal/spain.ts; prueba con valor ficticio configurado demuestra que no aparece en HTML (RED→GREEN).
+- [ ] Diagnosticar errores de fichas/políticas; reproducir o contrastar upstream, fijar regresiones y corregir causa mínima en rutas/data/config existentes.
+- [ ] Pruebas completas, tsc, lint, revisión independiente; push rama, actualizar PR #71 al alcance final, merge autorizado y verificar Vercel READY del SHA integrado.
+- [ ] Stripe: cambiar URL existente directamente a www y suscribir los tres eventos atendidos; verificar configuración y respuesta HTTP/firma sin cargos.
+- [ ] Bot: corregir presupuesto global/justicia de tareas; demostrar timeout controlado/checkpoint/no retiros parciales. Desplegar y comprobar cron y avance real.
+- [ ] Reanudar ciclo completo fresco de Devir y completar cinco familias TCG sin duplicados ni publicaciones de excepciones; documentar conteos/cobertura, exclusiones reales y límites pendientes.
+
+Estado actual (reanudar aquí): privacidad en commit191ea68. Web implementada: htmlLimitedBots conserva lista oficial y añade Googlebot para evitar el árbol incompatible al reanudar PPR; fallback de políticas conocidas a contenido español existente solo ante Spree401/5xx. 559 pruebas/59 archivos pasan; tsc pasa; lint0 errores,240 avisos/3informaciones preexistentes. Revisión independiente antes de merge en curso. Build local no comprobable: Node/Next fallan en uv_resident_set_memory por entorno; exigir buildREADY de Vercel del SHA nuevo.
+
+El acceso al preview protegido fue rechazado por revisión automática: la herramienta creaba un enlace temporal de acceso. No eludir la protección; comprobar producción pública tras merge autorizado. No afirmar preview verificado.
+
+Bot: trabajo aislado en ../bot-runtime rama fix/bot-runtime-budget, basado191ea68. Cambios incompletos de index.ts y pruebas runtime retomados por finish_bot_budget; no desplegar sin terminar/regresiones/revisión. Deadline local por petición95s, fetch/body/retry acotados, defer seguro, mantenimiento global por turno, checkpoint de descubrimiento por grupos. Nueva columna global maintenance_turn default0 necesaria; aplicar migración antes de código. CLI Supabase2.120.0 fallaSIGABRT/Bun al ejecutar --help; documentar fallback de creación de migración si no funciona. WallClockTime de Supabase mide vida del worker (puede incluir varias llamadas), no prueba por sí solo un timeout de petición.
+
+Próximo: guardar y subir web+docs, esperar revisión/build/CI, integrarPR71; verificar título Googlebot y políticas públicas; corregir webhook Stripe existente; terminar/desplegar presupuesto bot y verificar avance fresco de ambos proveedores. Ningún cambio web nuevo desplegado aún. El propietario autoriza continuar sin preguntas rutinarias.
+
+---
+
+# Historial — auditoría Bisontcg — 24/09/2026
 
 ## Leer primero
 Este documento describe el código incluido en PR #57. El resultado definitivo del merge y despliegue se registra en outputs/BISONTCG-CONTINUAR.md de la tarea Codex. No confundir código integrado con producción comprobada.

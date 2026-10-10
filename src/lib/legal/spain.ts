@@ -28,7 +28,6 @@ function configured(name: string): string | null {
 function legalIdentity() {
   const tradeName = escapeHtml(getStoreName());
   const businessName = configured("LEGAL_BUSINESS_NAME") ?? tradeName;
-  const taxId = configured("LEGAL_TAX_ID");
   const address = configured("LEGAL_REGISTERED_ADDRESS");
   const register = configured("LEGAL_REGISTER_INFO");
   const phone = configured("LEGAL_CONTACT_PHONE");
@@ -38,7 +37,6 @@ function legalIdentity() {
   return {
     tradeName,
     businessName,
-    taxId,
     address,
     register,
     phone,
@@ -55,7 +53,6 @@ function identityHtml(): string {
       <p><strong>${identity.tradeName}</strong> es el nombre comercial utilizado en esta web.</p>
       <ul>
         <li><strong>Titular:</strong> ${identity.businessName}</li>
-        ${identity.taxId ? `<li><strong>NIF/CIF:</strong> ${identity.taxId}</li>` : ""}
         ${identity.address ? `<li><strong>Domicilio:</strong> ${identity.address}</li>` : ""}
         ${identity.register ? `<li><strong>Datos registrales:</strong> ${identity.register}</li>` : ""}
         ${identity.email ? `<li><strong>Email:</strong> ${identity.email}</li>` : ""}
@@ -268,8 +265,6 @@ const policies: Record<string, () => LocalLegalPolicy> = {
   }),
 };
 
-export function getSpanishLegalPolicy(
-  slug: string,
-): LocalLegalPolicy | null {
+export function getSpanishLegalPolicy(slug: string): LocalLegalPolicy | null {
   return policies[slug]?.() ?? null;
 }
