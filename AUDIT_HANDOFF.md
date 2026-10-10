@@ -1,39 +1,35 @@
 # Sesión activa — preparación de apertura — 10/10/2026
 
-Este bloque es el estado vigente; los apartados de septiembre de abajo son históricos. Reanudar desde el primer pendiente sin repetir trabajo ya verificado.
+Este bloque prevalece sobre el historial de septiembre. Continuar sin preguntas rutinarias: el propietario está ausente y autoriza corregir, integrar y verificar. No realizar cargos ni enviar mensajes a clientes.
 
-## Autorización y reglas vigentes
-- El propietario pide retirar las referencias públicas a identificadores personales, corregir fallos de web, integrar el bot y después corregir Stripe, tiempos de espera y catálogo incompleto. No introducir identificadores personales como requisito de publicación.
-- Autorizado integrar los cambios verificados del bot en main (PR #71), incluyendo correcciones de la web y privacidad. Los siguientes arreglos de Stripe/bot también están autorizados. No realizar cargos ni enviar mensajes a clientes.
-- Mantener Spree como fuente comercial, reutilizar ingesta/selector canónico, preservar PVP manuales, márgenes y cantidades físicas; no cerrar rastreos parciales ni inventar SKU/stock.
-- Documento operativo: este archivo. Pendientes visibles: TODO.md. Reglas del bot: CATALOG_SOURCING.md y TCGFACTORY_SYNC.md. Actualizar evidencias/commits/despliegues tras cada hito y antes de compactar.
+## Estado y reglas
 
-## Punto de partida comprobado
-- Rama local y remota: fix/full-tcgfactory-catalog, HEAD e4d7195268f1df7ad52c575131c26de2ed7d8fc5; PR #71 abierta. main/Vercel producción da6dc652d79632963a137bed80b942b35b32834a. Repo limpio al iniciar.
-- Supabase ikglqbjlbkbaronbiryl: devir-sync v132, autenticación propia, cron cada minuto habilitado. Código de PR #71 desplegado y migración de cursor aplicada.
-- TCGFactory a 20:29 UTC: running, sección tcg, página6/12, offset12,147 descubiertos,92 procesados,0 fallos. Cinco familias configuradas; barrido completo todavía pendiente.
-- Devir: ciclo ec1fa70a-a1c2-4046-912a-bdd391629db5 terminado parcial,16 fichas sin SKU y1 URL404 de presentación Akropolis. Siguiente ciclo 10/10 01:49 UTC. 605 ofertas antiguas Devir y12 TCG fuera de vigencia; seleccionadas caducadas0; alternativas elegibles más baratas ignoradas0.
-- Desde 18:06 UTC:135 respuestas cron200,5 timeouts120s. La función sigue avanzando. Examinar presupuesto total y tareas de mantenimiento combinadas; no basta subir timeout.
-- Vercel: errores recientes en fichas (resume div frente a __next_metadata_boundary__) y políticas (Spree401). Next instalado16.2.11, cacheComponents habilitado. Agente diagnose_web_runtime investiga causa, sin editar inicialmente.
-- Stripe BisonTCG acct_1UDiVZHU3Etzdhlg, live: webhook habilitado en dominio raíz, devuelve308 a www; solo payment_intent.succeeded. Código atiende también amount_capturable_updated y canceled. No cambiar secreto de firma ni efectuar cargos.
-- Catálogo/ficha/carrito/checkout/Stripe Element comprobados en www; carrito temporal vaciado, ningún cargo. Editor exige contraseña; API logística devuelve401 sin token. Sitemap/0.xml200,5688 URLs,18.4s en segunda comprobación. ES/FR/PT y políticaEN200.
-- Baseline:544 pruebas/57 archivos y tsc pasan. E2E de checkout saltado por credenciales de prueba; no atribuir compra real verificada.
+- PR #71 integrada en main: `2f98dec667df8c7bc51b815f2cdd8bc63aab4af9`. Producción Vercel READY `dpl_3EGw1iSAjXPxZtg39iuRnVNUN4eB`.
+- Retirada lectura/salida pública del identificador fiscal. Políticas conocidas recuperan contenido español existente ante Spree401/5xx; ES/EN/FR200 y sin etiqueta fiscal comprobados.
+- Stripe live: endpoint existente `we_1UH9ejHU3EtzdhlgOft5aXb1` corregido a https://www.bisontcg.com/api/payments/stripe/webhook con amount_capturable_updated, succeeded y canceled. ID/secreto conservados. Configuración leída y POST sin firma400 comprobados. Entrega real firmada, cobro, correo y fulfillment aún NO verificados.
+- Spree sigue siendo fuente comercial. Reutilizar selector/ingesta canónicos; preservar PVP manual, márgenes, MOQ y stock físico. TCG usa mayor precio unitario profesional de los tramos; selector elige menor coste comparable entre proveedores. No inventar SKU ni completar rastreos parciales.
 
-## Plan y registro de ejecución
-- [x] Retirada lectura/salida pública del identificador fiscal en src/lib/legal/spain.ts; prueba con valor ficticio configurado demuestra que no aparece en HTML (RED→GREEN).
-- [ ] Diagnosticar errores de fichas/políticas; reproducir o contrastar upstream, fijar regresiones y corregir causa mínima en rutas/data/config existentes.
-- [ ] Pruebas completas, tsc, lint, revisión independiente; push rama, actualizar PR #71 al alcance final, merge autorizado y verificar Vercel READY del SHA integrado.
-- [ ] Stripe: cambiar URL existente directamente a www y suscribir los tres eventos atendidos; verificar configuración y respuesta HTTP/firma sin cargos.
-- [ ] Bot: corregir presupuesto global/justicia de tareas; demostrar timeout controlado/checkpoint/no retiros parciales. Desplegar y comprobar cron y avance real.
-- [ ] Reanudar ciclo completo fresco de Devir y completar cinco familias TCG sin duplicados ni publicaciones de excepciones; documentar conteos/cobertura, exclusiones reales y límites pendientes.
+## Segundo arreglo y evidencia
 
-Estado actual (reanudar aquí): privacidad en commit191ea68. Web implementada: htmlLimitedBots conserva lista oficial y añade Googlebot para evitar el árbol incompatible al reanudar PPR; fallback de políticas conocidas a contenido español existente solo ante Spree401/5xx. 559 pruebas/59 archivos pasan; tsc pasa; lint0 errores,240 avisos/3informaciones preexistentes. Revisión independiente antes de merge en curso. Build local no comprobable: Node/Next fallan en uv_resident_set_memory por entorno; exigir buildREADY de Vercel del SHA nuevo.
+- El primer override htmlLimitedBots no resolvió producción: Googlebot tuvo digest478882988 por árbol Next-Resume incompatible. Se retira ese override y se parchean ambas plantillas app-page de Next16.2.11 para conservar streaming metadata en resumes postponed. Patch versionado, dependencia fijada y lock pnpm10.33.4 sin cambios de versiones/integridades ajenas.
+- Regresión HTTP real en minimal-mode: Turbopack8/8 y Webpack8/8 pasan; prueba de procesos ignorando SIGTERM confirma cleanup acotado. Fixture usa stub temporal de instrumentación RSS porque este entorno falla uv_resident_set_memory; renderers Next/React intactos. Revisiones independientes sin bloqueadores.
+- Suite combinada60 archivos/581 pruebas, TypeScript storefront y Biome sin errores; TypeScript semántico Edge con shimDeno pasa. No se ejecutó DenoCLI real.
+- Bot runtime commit local `f2167b5` (origen `ab4bb75`): deadline95s de trabajo/115s DBcleanup por petición, fetch y body con abort, retries acotados, defer con checkpoints; mantenimiento global por turnos, alternancia persistente Devir/TCG y descubrimiento24 concurrente3 con prefijo continuo.
+- Migración `20261010042225_sync_maintenance_turn` APLICADA. Cola genérica de conciliación persistente y ACK privado después de escribir Spree; replay no duplica ausencias, nuevo run bloqueado mientras pendientes. Prueba SQL transaccional pasó con ROLLBACK, fixtures no persistidos y sin permisos anon/authenticated. Errores de encolado y recuperación de oferta diaria corregidos.
+- Edge `devir-sync` v133 ACTIVE desplegado el10/10 04:32:33UTC con los9 archivos exactos de la implementación revisada. verify_jwt=false conserva autenticación propia. Cron cada minuto sigue activo. Pendiente observar avance postdespliegue.
+- Antes del despliegue, últimos15min cron14 respuestas200,0timeouts; TCG sigue barrido de cinco familias y last_completed_run_id todavía null. Devir inició ciclo fresco6994adf7-2a94-4366-a45a-37d6c649b5e4. No declarar catálogo completo hasta cierre validado y cola pendiente0.
 
-El acceso al preview protegido fue rechazado por revisión automática: la herramienta creaba un enlace temporal de acceso. No eludir la protección; comprobar producción pública tras merge autorizado. No afirmar preview verificado.
+## Próximo paso
 
-Bot: trabajo aislado en ../bot-runtime rama fix/bot-runtime-budget, basado191ea68. Cambios incompletos de index.ts y pruebas runtime retomados por finish_bot_budget; no desplegar sin terminar/regresiones/revisión. Deadline local por petición95s, fetch/body/retry acotados, defer seguro, mantenimiento global por turno, checkpoint de descubrimiento por grupos. Nueva columna global maintenance_turn default0 necesaria; aplicar migración antes de código. CLI Supabase2.120.0 fallaSIGABRT/Bun al ejecutar --help; documentar fallback de creación de migración si no funciona. WallClockTime de Supabase mide vida del worker (puede incluir varias llamadas), no prueba por sí solo un timeout de petición.
+PR #72 abierta: https://github.com/ismaelAM/storefront/pull/72, commit41e4e010b355ed2c59cdc5b21d0045714cae7b50. CI verde (E2E compra saltado por secretos ausentes); preview build pendiente READY. Árbol remoto coincide exactamente con local. Edge v133 leído:9 archivos idénticos al código revisado. Primer cron nuevo200 y avance comprobado Devir620done/717pending y TCG592descubiertos/386procesados,0fallos; seleccionadas caducadas0 y ofertas elegibles más baratas ignoradas0. Retirada también la variable fiscal obsoleta del ejemplo de configuración.
 
-Próximo: guardar y subir web+docs, esperar revisión/build/CI, integrarPR71; verificar título Googlebot y políticas públicas; corregir webhook Stripe existente; terminar/desplegar presupuesto bot y verificar avance fresco de ambos proveedores. Ningún cambio web nuevo desplegado aún. El propietario autoriza continuar sin preguntas rutinarias.
+Esperar CI/build del último checkpoint, merge autorizado y comprobar producción pública: Googlebot/Twitterbot/títulos, políticas y logs. Comprobar v133 cron/checkpoints y estado del primer catálogo completo; registrar evidencias finales aquí y en TODO.md. Compra real y Correos siguen requiriendo una prueba operativa autorizada.
+
+## Limitaciones del entorno
+
+- Acceso al preview protegido rechazado por revisión automática porque creaba enlace temporal de acceso. No eludir protección: usar build metadata y producción pública después del merge autorizado.
+- CLI Supabase2.120.0 fallaSIGABRT/Bun; migración aplicada por conector y SQL verificado. GitpushCLI carece credenciales: publicar árbol por GitHub API y comprobar SHA de árbol idéntico.
+- Evitar wrapper pnpm local (pruna symlinks e intenta reinstalar con storeSQLite roto). Pruebas directas node; lock validado por pnpm10.33.4 offline. Hooks locales reemplazados por comprobaciones manuales equivalentes antes de commit.
 
 ---
 

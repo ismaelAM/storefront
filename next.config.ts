@@ -1,7 +1,6 @@
 import { withSentryConfig } from "@sentry/nextjs";
 import type { NextConfig } from "next";
 import type { RemotePattern } from "next/dist/shared/lib/image-config";
-import { HTML_LIMITED_BOT_UA_RE } from "next/dist/shared/lib/router/utils/html-bots";
 import createNextIntlPlugin from "next-intl/plugin";
 
 const withNextIntl = createNextIntlPlugin();
@@ -55,13 +54,6 @@ const nextConfig: NextConfig = {
     root: __dirname,
   },
   cacheComponents: true,
-  // Vercel uses this pattern to bypass the postponed PPR shell. Googlebot
-  // otherwise resumes streaming metadata with a blocking tree in Next 16.2.
-  // Retain Next's complete default list and keep browser PPR caching enabled.
-  htmlLimitedBots: new RegExp(
-    `${HTML_LIMITED_BOT_UA_RE.source}|Googlebot`,
-    "i",
-  ),
   cacheLife: {
     tenMinutes: {
       stale: 300, // 5 minutes client stale window

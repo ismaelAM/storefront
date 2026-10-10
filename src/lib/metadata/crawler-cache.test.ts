@@ -10,19 +10,13 @@ vi.mock("@sentry/nextjs", () => ({
 
 import nextConfig from "../../../next.config";
 
-// Next writes htmlLimitedBots to the PPR manifest's user-agent cache bypass.
-// Without Googlebot here, Vercel resumes the streaming shell using blocking
-// metadata, discarding the product's server-rendered title and content.
+// Use Next's supported defaults. Bot resumes are covered by the production
+// runtime replay in scripts/test-next-ppr-resume.mjs, not by this regex check.
 const cacheBypass = nextConfig.htmlLimitedBots ?? HTML_LIMITED_BOT_UA_RE;
 
-describe("crawler PPR cache bypass", () => {
-  it("bypasses the postponed shell for Google Search crawlers", () => {
-    expect(
-      cacheBypass.test(
-        "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
-      ),
-    ).toBe(true);
-    expect(cacheBypass.test("Mozilla/5.0 Googlebot Smartphone")).toBe(true);
+describe("crawler metadata defaults", () => {
+  it("keeps the official bot policy without a custom metadata override", () => {
+    expect(nextConfig.htmlLimitedBots).toBeUndefined();
   });
 
   it("preserves blocking renders for the official HTML-limited bots", () => {
