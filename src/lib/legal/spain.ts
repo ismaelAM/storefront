@@ -204,7 +204,7 @@ const policies: Record<string, () => LocalLegalPolicy> = {
     body: null,
     local: true,
     body_html: `
-      <p><strong>Actualizado el ${LAST_UPDATED}</strong></p>
+      <p><strong>Actualizado el 10 de octubre de 2026</strong></p>
       ${identityHtml()}
 
       <h2>Ámbito de estas condiciones</h2>
@@ -224,7 +224,8 @@ const policies: Record<string, () => LocalLegalPolicy> = {
       <p>Cuando una ficha, promoción o lanzamiento establezca un límite de unidades por cliente, cuenta, domicilio o pedido, podremos cancelar y reembolsar las unidades que excedan del límite o los pedidos que, de forma razonablemente acreditada, se hayan realizado para eludirlo.</p>
       <p>Si después de comprar se produce una incidencia real de disponibilidad y no podemos servir un artículo, te informaremos y devolveremos las cantidades correspondientes sin demora indebida cuando proceda. No sustituiremos un producto por otro sin tu consentimiento.</p>
 
-      <h2>Preventas y fechas de lanzamiento</h2>
+      <h2>Reservas, preventas y fechas de lanzamiento</h2>
+      <p>Las reservas y preventas están sujetas a disponibilidad. Reservar un producto no garantiza que haya stock si el artículo deja de estar disponible. Si no podemos suministrar el producto reservado, te informaremos, cancelaremos la reserva afectada y reembolsaremos íntegramente el importe abonado por ella sin demora indebida, mediante el mismo medio de pago utilizado. Esto no limita los derechos que te reconoce la normativa de consumo.</p>
       <p>Las fechas comunicadas por fabricantes, editoriales o distribuidores en preventas son estimaciones salvo que indiquemos expresamente que una fecha concreta constituye un compromiso de entrega. Esas fechas pueden cambiar por decisiones o incidencias de terceros.</p>
       <p>Si un cambio afecta de forma relevante al plazo de entrega, te informaremos y respetaremos los derechos de cancelación o resolución que legalmente correspondan. Una modificación razonable de la fecha estimada de lanzamiento no altera por sí sola las características del producto reservado.</p>
 
