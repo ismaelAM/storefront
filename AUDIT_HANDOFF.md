@@ -1,4 +1,14 @@
-# Continuidad — tarifa Madrid y logo — 10/10/2026
+# Continuidad — reservas y reembolso — 10/10/2026
+
+El propietario solicita añadir a la política de tienda que reservar no garantiza stock si el producto deja de estar disponible y que se reembolse lo pagado cuando no pueda suministrarse. Se añade a las condiciones españolas existentes (`src/lib/legal/spain.ts`), fuente prioritaria de `/es/es/policies/terms-of-service`; no duplicar este contenido en Spree. Incluye aviso al cliente, cancelación de la reserva afectada y reembolso íntegro sin demora indebida al mismo medio de pago, conservando los derechos de consumo. Referencia contrastada: artículo110 del RDL1/2007, https://www.boe.es/buscar/act.php?id=BOE-A-2007-20555#a110. No se añade una exclusión general de responsabilidad ni se tramita ningún reembolso real.
+
+- Base main `55dfcdf2bfcddfa356072d54a11467efaf2b9dc1` (PR77); producción READY `dpl_GJ6iCgq2zonm88Rk8dnZkXLj47Ly`. Logo BisonTCG comprobado en tienda/checkout; Madrid local4,99€ y total26,89€ con un CatanDuelo21,90€. Al cambiar a Lugo desaparece Madrid y queda Correos17,10€, total39,00€. No hubo pago.
+- Gratuidad BISON3 soloMadrid continúa pendiente por la falta de una restricción nativa de provincia/método; la promoción preparada sigue inactiva. No activar FreeShipping global ni ampliar permisos sin autorización específica.
+- Validación de la cláusula: TypeScript sin errores, prueba existente de privacidad legal pasa y diff sin errores. Revisión, CI y publicación definitiva se registran en la PR de `fix/preorder-availability-policy`; verificar allí el deployment y la cláusula pública antes de atribuirla a producción.
+
+---
+
+# Historial — tarifa Madrid y logo — 10/10/2026
 
 Este bloque prevalece. El propietario pide continuar sin preguntas: Madrid local4,99€, gratis solo para cuentas BISON3 aprobadas y soloMadrid; resolver logo ya subido a Spree. Autorización de integración/publicación verificada conservada; no compras, mensajes ni expansión de credenciales.
 
