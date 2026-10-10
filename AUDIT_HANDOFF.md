@@ -19,11 +19,19 @@ Este bloque prevalece sobre el historial de septiembre. Continuar sin preguntas 
 - Edge `devir-sync` v133 ACTIVE desplegado el10/10 04:32:33UTC con los9 archivos exactos de la implementación revisada. verify_jwt=false conserva autenticación propia. Cron cada minuto sigue activo. Pendiente observar avance postdespliegue.
 - Antes del despliegue, últimos15min cron14 respuestas200,0timeouts; TCG sigue barrido de cinco familias y last_completed_run_id todavía null. Devir inició ciclo fresco6994adf7-2a94-4366-a45a-37d6c649b5e4. No declarar catálogo completo hasta cierre validado y cola pendiente0.
 
-## Próximo paso
+## Producción verificada — 10/10/2026 04:42UTC
 
-PR #72 abierta: https://github.com/ismaelAM/storefront/pull/72, commit41e4e010b355ed2c59cdc5b21d0045714cae7b50. CI verde (E2E compra saltado por secretos ausentes); preview build pendiente READY. Árbol remoto coincide exactamente con local. Edge v133 leído:9 archivos idénticos al código revisado. Primer cron nuevo200 y avance comprobado Devir620done/717pending y TCG592descubiertos/386procesados,0fallos; seleccionadas caducadas0 y ofertas elegibles más baratas ignoradas0. Retirada también la variable fiscal obsoleta del ejemplo de configuración.
+PR #72 integrada: `c634378a8edf3ed0f29b45eee2a6bc085cb451ec`; CI del headbbb4845 verde y previewREADY. Producción `dpl_9mWMfo9iabjPcyWCyQ2QpuKsZqCv` READY del SHA integrado. Comprobación HTTP pública de CatanDuelo: Chrome, Googlebot, GooglebotSmartphone y Twitterbot200, título HTML presente, sin $RX/data-dgst ni digest478882988. Políticas privacidad ES/EN/FR200, título presente, sin etiqueta fiscal ni errorReact. Runtime errors/fatal del nuevo deployment: ninguno en ventana consultada. El fallo de reanudación queda corregido y contrastado en producción, no sólo localmente.
 
-Esperar CI/build del último checkpoint, merge autorizado y comprobar producción pública: Googlebot/Twitterbot/títulos, políticas y logs. Comprobar v133 cron/checkpoints y estado del primer catálogo completo; registrar evidencias finales aquí y en TODO.md. Compra real y Correos siguen requiriendo una prueba operativa autorizada.
+Edge v133 readback: los9 archivos coinciden exactamente con el código revisado. Cron posterior a despliegue avanza alternando Devir/TCG, devuelve200 y registra0 errores. Ofertas caducadas seleccionadas0 y alternativas elegibles más baratas ignoradas0. La primera cobertura completa sigue pendiente: TCG accesorios página5/32,613descubiertos/400procesados/0fallos a04:40UTC; Devir635done/705pending. El cron activo continuará sin intervención del propietario. Consultar cierre validado y cola0; no confundir el bot integrado con el primer barrido ya completado.
+
+## Antes de dar la apertura por verificada
+
+1. Observar fin del primer catálogo de cinco familias y ciclo fresco Devir; revisar fichas inválidas sin inventarSKU. El ciclo antiguo excluyó16sinSKU y1URL404.
+2. Probar entrega real firmada Stripe, compra, confirmación y fulfillment en entorno/prueba operativa autorizados. No se realizaron cargos ni mensajes. E2E de checkout CI fue saltado por secretos de prueba ausentes; CIverde no acredita compra real.
+3. Confirmar contrato/credenciales Correos y probar etiqueta/tracking/recogida; alternativa manual MiOficina+trackingSpree sigue documentada en TODO.md.
+
+No hace falta reimplementar selector, privacidad, integraciónPR71, Stripeendpoint, recuperación del worker ni parcheNext. El propietario pidió continuar sin preguntas rutinarias. Mantener los límites y reglas de arriba.
 
 ## Limitaciones del entorno
 

@@ -13,8 +13,9 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [x] Fallback seguro de políticas conocidas implementado y comprobado en ES/EN/FR.
 - [x] Webhook Stripe corregido a www con tres eventos, manteniendo secreto. Entrega real firmada pendiente.
 - [x] Bot v133 desplegado: presupuesto/checkpoints, mantenimiento justo y cola de recuperación genérica. Migración aplicada y prueba SQL pasó.
-- [ ] Publicar segundo arreglo Next/PPR, verificar CI/build y Googlebot en producción. Local581 pruebas y16 regresiones reales pasan.
-- [ ] Verificar cron v133 y cierre completo de cinco familias TCGFactory y ciclo fresco Devir. Nunca retirar por crawl parcial.
+- [x] Integrada PR #72: CI/build/producción READY, Chrome/Googlebot/GooglebotSmartphone/Twitterbot200 con título y sin errorReact.581 pruebas y16 regresiones reales pasan.
+- [x] Cron v133 observado con respuestas200, alternancia y checkpoints;9 archivos desplegados idénticos a código revisado.
+- [ ] Observar cierre completo de cinco familias TCGFactory y ciclo fresco Devir: siguen avanzando automáticamente. Nunca retirar por crawl parcial.
 - [ ] Compra completa, entrega firmada Stripe, correo y fulfillment: pendiente de prueba operativa autorizada; no hubo cargos.
 - [ ] Correos: credenciales/contrato y prueba operativa pendientes según sección Transporte externo.
 
