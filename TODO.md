@@ -6,12 +6,23 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 
 ## Prioridad alta
 
+### Correos automático y cálculo privado — 10/10/2026, 15:18 Madrid
+
+- [x] Configurados y releídos en Spree 21 tramos por peso para las zonas existentes Península, Baleares y Canarias. Nombre público Correos; configuración y límites en SHIPPING.md.
+- [x] Portugal conserva su regla anterior; Madrid conserva entrega local de 5 €. Las reglas antiguas de Canarias/Baleares quedan solo en administración, incluida la tarifa errónea 0 % de Baleares.
+- [x] Checkout real de prueba sin compra: un Catan Duelo a Lugo recibe automáticamente solo Correos 17,10 €, total 39,00 €.
+- [x] Mismo carrito: Baleares21,80 €, Canarias30,70 €; Madrid entrega local5 € o Correos17,10 €. Cuatro unidades a Lugo recalculan Correos22,95 € y total110,55 €, sin opción local ni nombres internos.
+- [x] Retiradas la página pública del estimador y su enlace; API de estimación exige la sesión de operaciones existente. Panel interno conservado. Tres regresiones de autenticación y suite completa624/63archivos pasan; TypeScript, paridad y lint verdes.
+- [ ] Confirmar CI y producción de esta retirada; registrar SHA/deployment y las demás comprobaciones del carrito en la PR.
+- [ ] Revisar peso/volumen al embalar: el cálculo nativo usa estimaciones de peso del catálogo, no el volumen del paquete final. Actualizar las tarifas nativas antes de 2027; no caducan solas.
+- [ ] Etiquetas, tracking/recogidas y primera compra siguen pendientes de credenciales/prueba operativa; configurar tarifas no acredita esas operaciones.
+
 ### Calculadora Correos — 10/10/2026, 14:32 Madrid
 
 - [x] Integrada PR #74; producción READY del commit `cbc92542e304215ccb3f28eaca7614b69e69931d`. Home y políticas ES devuelven 200, título corregido y sin errores React/contacto ficticio.
 - [x] Preparada calculadora pública y de operaciones con tarifas oficiales Paq Estándar 2026, peso real/volumétrico, IVA por zona y validación de tamaños. No necesita API para estimar el coste.
 - [x] Corregidos límites decimales tras revisión independiente; 40 pruebas específicas y suite completa621/62archivos pasan; TypeScript/paridad/Biome de archivos nuevos verdes. Publicación/CI y comprobación del nuevo deployment se registrarán en la PR de esta rama.
-- [ ] Integrar la tarifa de cobro en los calculadores nativos de Spree con acceso autenticado y datos fiables de peso/medidas del paquete. El estimador no cambia los gastos del checkout.
+- [x] Integrada tarifa nativa por peso con acceso autenticado; ver bloque vigente arriba. Medidas finales del paquete siguen siendo comprobación de preparación.
 - [ ] Completar acceso operativo Correos: faltan Bearer de Correos ID y client secret en producción. No se creó ningún envío/etiqueta/recogida ni se enviaron correos.
 - [ ] Primer barrido completo TCGFactory aún pendiente: 14:23 Madrid, accesorios 29/32, 831 procesados/1270 descubiertos/2 fallos. Devir cerró con 8 fichas rechazadas (4 sin SKU y 4 coste cero), que no deben forzarse.
 

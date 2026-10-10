@@ -63,8 +63,7 @@
     "cart": "Carrito",
     "policies": "Políticas",
     "wholesale": "Comercio y venta al por mayor",
-    "rightsReserved": "Todos los derechos reservados.",
-    "shippingEstimate": "Calcular envío con Correos"
+    "rightsReserved": "Todos los derechos reservados."
   },
   "home": {
     "welcome": "{storeName}",

@@ -63,8 +63,7 @@
     "cart": "Koszyk",
     "policies": "Regulaminy",
     "wholesale": "Handel i sprzedaż hurtowa",
-    "rightsReserved": "Wszelkie prawa zastrzeżone.",
-    "shippingEstimate": "Oblicz wysyłkę Correos"
+    "rightsReserved": "Wszelkie prawa zastrzeżone."
   },
   "home": {
     "welcome": "{storeName}",

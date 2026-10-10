@@ -3,8 +3,12 @@ import {
   CorreosRateError,
   estimateCorreosShipping,
 } from "@/lib/shipping/correos-rates";
+import { isShippingOperationsAuthorized } from "@/lib/shipping/operations-auth";
 
 export async function POST(request: Request) {
+  if (!isShippingOperationsAuthorized(request)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   let input: unknown;
   try {
     input = await request.json();
