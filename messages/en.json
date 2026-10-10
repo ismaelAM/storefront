@@ -63,8 +63,7 @@
     "cart": "Cart",
     "policies": "Policies",
     "wholesale": "Trade & Wholesale",
-    "rightsReserved": "All rights reserved.",
-    "shippingEstimate": "Estimate Correos shipping"
+    "rightsReserved": "All rights reserved."
   },
   "home": {
     "welcome": "{storeName}",

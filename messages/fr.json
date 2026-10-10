@@ -63,8 +63,7 @@
     "cart": "Panier",
     "policies": "Politiques",
     "wholesale": "Professionnels & vente en gros",
-    "rightsReserved": "Tous droits réservés.",
-    "shippingEstimate": "Estimer un envoi avec Correos"
+    "rightsReserved": "Tous droits réservés."
   },
   "home": {
     "welcome": "{storeName}",

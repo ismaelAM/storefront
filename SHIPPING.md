@@ -6,12 +6,66 @@ Spree sigue siendo la fuente de verdad para zonas, métodos de entrega, tarifas,
 pedidos, fulfillments, estados y tracking. El storefront no decide por código
 si una dirección pertenece a Madrid ni mantiene una base logística paralela.
 
-## Calculadora de tarifa pública 2026
+## Cobro automático en Spree — 10/10/2026
 
-Disponible en `/{country}/{locale}/shipping-estimate`, enlazada desde el pie de
-página, y en el panel autenticado `/ops/shipping`. Traducciones ES/EN/FR/PT/DE/PL.
+Se configuraron **21 métodos nativos FlatRate**: siete tramos de peso para cada
+Zone existente de Península (`5621`), Baleares (`5623`) y Canarias (`5622`).
+Nombre público único: **Correos**. Nombre interno y código
+`correos-2026-{peninsula|baleares|canarias}-{1|5|10|15|20|25|30}kg`
+identifican zona/tramo sin mostrarlos al cliente. Spree calcula la tarifa al
+guardar la dirección y recalcula al cambiar las cantidades del carrito.
+
+| Peso nativo del shipment (kg) | Península (€) | Baleares (€) | Canarias (€) |
+| --- | ---: | ---: | ---: |
+| >0–1 | 13,65 | 15,40 | 21,30 |
+| >1–5 | 17,10 | 21,80 | 30,70 |
+| >5–10 | 22,95 | 34,90 | 38,40 |
+| >10–15 | 27,81 | 46,50 | 49,10 |
+| >15–20 | 33,65 | 58,46 | 66,75 |
+| >20–25 | 39,01 | 70,25 | 86,85 |
+| >25–30 | 44,25 | 83,09 | 107,00 |
+
+Importes finales publicados Paq Estándar 2026, EUR, origen peninsular. Categorías
+físicas Default (`1072`) y Predeterminado (`1235`), Digital excluida. Categoría
+fiscal del método conservada en Ninguno para no añadir de nuevo IVA a importes
+finales. Límites mínimo exclusivo y máximo inclusivo. Plazos conservados:
+Península 4–7 días hábiles; islas 7–14. Son gastos comerciales del checkout,
+no una cotización contractual obtenida de la API de Correos.
+
+La regla antigua `dm_Q8V2A48cIW` conserva su tarifa para Portugal solamente.
+Las reglas antiguas Canarias `dm_86ZBR0I7fE` y Baleares `dm_oD27lrKdXj`
+(esta última cobraba 0 %) quedan solo en back-office, sin borrar registros.
+Entrega en Madrid `dm_VeVXmZF31w`, Zone Madrid y 5 €, se conserva.
+No se amplió cobertura a Ceuta/Melilla ni otros destinos.
+
+**Límites:** FlatRate usa peso registrado en Spree, no dimensiones del paquete
+embalado. `shippingDefaults` del worker guarda pesos/dimensiones por perfil de
+categoría; son estimaciones, no pesajes certificados. Comprobar peso real,
+volumen y embalaje al preparar pedidos; la calculadora interna siguiente sí
+admite las medidas finales. Un shipment de peso cero o superior a 30 kg no
+recibe estos tramos: requiere corregir datos o dividirlo en Spree. No inventar
+pesos ni introducir recargos calculados por Next.js fuera de Spree.
+
+**Mantenimiento anual:** revisar las 21 tarifas nativas antes de 2027. Spree no
+caduca automáticamente estas preferencias; el bloqueo anual del estimador
+interno no desactiva los métodos nativos. Para cobro exacto por volumen haría
+falta un calculador de backend y datos fiables de embalaje; los seis calculadores
+registrados en esta instancia no ofrecen ese servicio.
+
+Validación en checkout público, con carrito/direcciones ficticios y sin compra:
+un Catan Duelo recibe 17,10 € a Lugo, 21,80 € a Baleares y 30,70 € a Las Palmas;
+Madrid ofrece entrega local 5 € y Correos 17,10 €. Cuatro unidades a Lugo
+recalculan automáticamente a Correos 22,95 €, total 110,55 €. Solo hay una
+opción Correos elegible por destino/peso; el nombre interno no aparece.
+
+## Calculadora interna de tarifa publicada 2026
+
+Disponible únicamente en el panel autenticado `/ops/shipping`. La página pública
+`/{country}/{locale}/shipping-estimate` y su enlace del pie se retiraron a petición
+del propietario. Traducciones ES/EN/FR/PT/DE/PL conservadas para operaciones.
 `POST /api/shipping/estimate` recibe únicamente código postal, peso real en kg y
-largo/ancho/alto en cm; calcula localmente, sin credenciales ni llamadas de
+largo/ancho/alto en cm; exige la sesión de operaciones existente y calcula localmente,
+sin credenciales de Correos ni llamadas de
 escritura a Correos. Responde con céntimos netos, impuestos y total, peso
 volumétrico/facturable y zona. No recibe datos de pedidos ni direcciones completas.
 
@@ -28,16 +82,15 @@ son 120 cm por lado y 240 cm sumados; cara mínima de etiqueta 14,5×10 cm.
 Se rechazan tamaños extra en vez de omitir sus recargos. La aritmética absorbe
 solo ruido de precisión de máquina en límites, sin redondear excesos reales.
 
-Es una **estimación pública**, no una cotización API ni tarifa de contrato.
+Es una **estimación interna de tarifa publicada**, no una cotización API ni tarifa de contrato.
 No incluye embalaje, servicios adicionales ni trámites aduaneros. Requiere
 medidas/peso del paquete ya preparado, no estimaciones inventadas por producto.
 El cálculo se bloquea fuera de 2026 para no seguir ofreciendo una tarifa caducada.
 
-**No cambia los gastos cobrados en checkout.** Spree mantiene sus métodos y
-calculadores nativos. Para integrar una tarifa de cobro hacen falta acceso
-administrativo autenticado y datos fiables del paquete/categorías de envío.
-El acceso observado al administrador redirige a login; no se alteraron sus
-métodos ni se crearon envíos, etiquetas o recogidas facturables.
+El estimador interno no escribe gastos del checkout. Los métodos nativos de
+Spree descritos arriba realizan el cobro automático. Se accedió al administrador
+de BisonTCG mediante autenticación segura del propietario; no se crearon envíos,
+etiquetas o recogidas facturables ni se modificaron credenciales.
 
 Estado de credenciales observado el 10/10/2026: Vercel tiene client ID, las
 cuatro URL base y token de operaciones; faltan `CORREOS_CLIENT_SECRET` y

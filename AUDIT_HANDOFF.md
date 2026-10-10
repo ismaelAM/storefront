@@ -1,4 +1,19 @@
-# Continuidad — calculadora Correos — 10/10/2026, 14:32 Madrid
+# Continuidad — Correos nativo y estimador privado — 10/10/2026, 15:18 Madrid
+
+Este bloque prevalece. El propietario pide integrar en Spree el cálculo automático y ocultar la calculadora al cliente; mantiene autorización para publicar cambios verificados. No efectuar compras ni crear etiquetas/recogidas facturables.
+
+- Main de partida `e4e05cc3966fb80b3e54324ae67d761c3738a2d2`, PR #75 integrada y producción READY. Rama actual `feat/automatic-correos-shipping`.
+- Acceso seguro GitHub al administrador completado por el propietario. GitHub aterrizó en otra tienda `bisontcgasd`: se salió sin cambios y se configuró únicamente **bisontcg.spree.sh / BisonTCG**. No se copiaron cookies ni credenciales.
+- Guardados y releídos 21 FlatRate por peso para Península/Baleares/Canarias. Códigos, tabla, límites y tratamiento de impuestos en SHIPPING.md. Cliente ve Correos; nombres internos distinguen tramos. Los pesos son estimaciones de `shippingDefaults` del worker; no fingir cálculo volumétrico del paquete final ni cotización contractual.
+- Regla previa Península/Portugal `dm_Q8V2A48cIW` ahora solo Portugal, mismo FlexiRate. Reglas previas Canarias `dm_86ZBR0I7fE` y Baleares `dm_oD27lrKdXj` solo back_end; ninguna borrada. Entrega Madrid `dm_VeVXmZF31w`, 5 €, preservada.
+- Carrito temporal con datos ficticios, sin pago: un Catan Duelo a Lugo muestra solo Correos17,10 €, envío seleccionado y total39,00 €. No pulsar Pagar ahora ni aceptar términos durante verificaciones.
+- Destinos adicionales comprobados: Baleares21,80 €, Las Palmas30,70 €; Madrid ofrece local5 € + Correos17,10 €. Cuatro unidades a Lugo recalculan Correos22,95 €, total110,55 €; se comprobó desaparición de entrega local tras guardar Lugo.
+- Retirada página pública `/shipping-estimate` y enlace Footer en seis idiomas. `/ops/shipping` permanece autenticado y POST `/api/shipping/estimate` exige su cookie firmada existente. Pruebas rojas antes del guard y verdes después;624 pruebas/63archivos, TypeScript/paridad/lint pasan. Publicación/CI/deployment y comprobaciones restantes se registran en PR de esta rama.
+- Tarifas nativas necesitan revisión antes de 2027; bloqueo anual del estimador no las desactiva. >30kg/0kg quedan sin estos tramos. Ceuta/Melilla no se incorporaron como cobertura nueva. API Correos para etiquetas sigue pendiente de client secret/Bearer; no bloquea el cobro de tarifas publicadas.
+
+---
+
+# Historial — calculadora Correos — 10/10/2026, 14:32 Madrid
 
 Este bloque prevalece sobre el historial. El propietario pidió «haz todo lo que puedas» y calcular el precio sin esperar respuesta de Correos. Autorizada integración de cambios revisados y verificados; no se hicieron cargos ni mensajes externos.
 

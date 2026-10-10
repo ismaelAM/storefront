@@ -73,7 +73,6 @@ export async function Footer({ basePath, locale, categoryLinks, appearance }: Fo
               {POLICY_LINKS.map((policy) => (
                 <li key={policy.slug}><Link href={`${basePath}/policies/${policy.slug}`} className="text-sm transition-colors" style={linkStyle}>{tp(policy.nameKey)}</Link></li>
               ))}
-              <li><Link href={`${basePath}/shipping-estimate`} className="text-sm transition-colors" style={linkStyle}>{t("shippingEstimate")}</Link></li>
             </ul>
           </div>
         </div>
