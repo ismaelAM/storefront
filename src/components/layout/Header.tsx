@@ -1,16 +1,15 @@
 import type { Category } from "@spree/sdk";
 import { User } from "lucide-react";
 import dynamic from "next/dynamic";
-import Image from "next/image";
 import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 import type { CSSProperties, ReactNode } from "react";
 import { CartButton } from "@/components/layout/CartButton";
 import { SearchToggle } from "@/components/layout/SearchToggle";
+import { StoreLogo } from "@/components/layout/StoreLogo";
 import { Button } from "@/components/ui/button";
 import { isWholesaleEnabled } from "@/lib/spree";
 import { getSiteAppearance, type SiteAppearance } from "@/lib/puck/get-site-appearance";
-import { getStoreName } from "@/lib/store";
 
 const LazyMobileMenu = dynamic(
   () =>
@@ -33,8 +32,6 @@ const LazyRegionPreferences = dynamic(
     loading: () => <div className="size-11" aria-hidden="true" />,
   },
 );
-
-const storeName = getStoreName();
 
 interface HeaderProps {
   basePath: string;
@@ -77,16 +74,7 @@ export async function Header({ basePath, locale, mobileNavigation, appearance }:
         left={mobileNavigation}
         center={
           <Link href={basePath || "/"} className="flex items-center min-w-0" style={{ color: colors.headerText }}>
-            <Image
-              src="/spree.png"
-              alt={storeName}
-              width={90}
-              height={32}
-              className="max-w-full object-contain"
-              style={{ width: "auto", height: "auto" }}
-              fetchPriority="high"
-              loading="eager"
-            />
+            <StoreLogo />
           </Link>
         }
         rightStart={

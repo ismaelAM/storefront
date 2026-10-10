@@ -6,6 +6,14 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 
 ## Prioridad alta
 
+### Madrid y logo — 10/10/2026
+
+- [x] Tarifa local `Entrega en Madrid` guardada y releída en Spree a **4,99 €**, manteniendo Zone Madrid y categorías físicas. Correos conservado.
+- [ ] BISON3: envío gratis **solo para entrega local Madrid**, ligado a aprobación/revocación de cuentas. La acción FreeShipping de esta instancia regala todos los métodos y no tiene regla de Zone/método. Promoción `promo_V0dXmZF31w` preparada pero inactiva (inicio2099, sin acciones/reglas); requiere backend con alcance limitado. Ver SHIPPING.md.
+- [x] Eliminado logo `/spree.png` fijo de encabezado y checkout. Componente servidor compartido consulta logo nativo; respaldo `STORE_LOGO_URL` configurado con la imagen subida por el propietario. Cambiar el logo en Spree → Preferencias → Detalles de la tienda → Nombre & Logo.
+- [x] Cuatro regresiones de logo y suite completa **628 pruebas /64 archivos** pasan; TypeScript y paridad de idiomas pasan.
+- [ ] Confirmar CI, despliegue y logo en home/checkout; distinguir lectura automática Admin `/store` frente a respaldo configurado. Evidencia final se registra en la PR de esta rama.
+
 ### Correos automático y cálculo privado — 10/10/2026, 15:18 Madrid
 
 - [x] Configurados y releídos en Spree 21 tramos por peso para las zonas existentes Península, Baleares y Canarias. Nombre público Correos; configuración y límites en SHIPPING.md.
@@ -13,7 +21,7 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [x] Checkout real de prueba sin compra: un Catan Duelo a Lugo recibe automáticamente solo Correos 17,10 €, total 39,00 €.
 - [x] Mismo carrito: Baleares21,80 €, Canarias30,70 €; Madrid entrega local5 € o Correos17,10 €. Cuatro unidades a Lugo recalculan Correos22,95 € y total110,55 €, sin opción local ni nombres internos.
 - [x] Retiradas la página pública del estimador y su enlace; API de estimación exige la sesión de operaciones existente. Panel interno conservado. Tres regresiones de autenticación y suite completa624/63archivos pasan; TypeScript, paridad y lint verdes.
-- [ ] Confirmar CI y producción de esta retirada; registrar SHA/deployment y las demás comprobaciones del carrito en la PR.
+- [x] PR #76 integrada en main `48bd7c19764583d67a9bb9398ffe2f01291aaa83`; producción `dpl_Sn16Ao76sV85LUQGvq68BGGKhxvv` READY. CI de unidad/lint/typecheck verde; checkout E2E saltado por secretos de prueba ausentes. Home pública sin enlace a calculadora; ruta antigua404 y API anónima401.
 - [ ] Revisar peso/volumen al embalar: el cálculo nativo usa estimaciones de peso del catálogo, no el volumen del paquete final. Actualizar las tarifas nativas antes de 2027; no caducan solas.
 - [ ] Etiquetas, tracking/recogidas y primera compra siguen pendientes de credenciales/prueba operativa; configurar tarifas no acredita esas operaciones.
 

@@ -35,7 +35,8 @@ no una cotización contractual obtenida de la API de Correos.
 La regla antigua `dm_Q8V2A48cIW` conserva su tarifa para Portugal solamente.
 Las reglas antiguas Canarias `dm_86ZBR0I7fE` y Baleares `dm_oD27lrKdXj`
 (esta última cobraba 0 %) quedan solo en back-office, sin borrar registros.
-Entrega en Madrid `dm_VeVXmZF31w`, Zone Madrid y 5 €, se conserva.
+Entrega en Madrid `dm_VeVXmZF31w`, Zone Madrid, se conserva; tarifa actual
+**4,99 €** desde el cambio del 10/10 descrito abajo.
 No se amplió cobertura a Ceuta/Melilla ni otros destinos.
 
 **Límites:** FlatRate usa peso registrado en Spree, no dimensiones del paquete
@@ -100,8 +101,24 @@ Trackpub y Requests; no se encontró un servicio de cotización aplicable.
 
 ## Entrega local Madrid
 
-Método previsto: **Entrega local BisonTCG — Madrid**  
-Código recomendado: `BISON_LOCAL_MADRID`.
+Método real: **Entrega en Madrid**, `dm_VeVXmZF31w`, Zone Madrid `4790`,
+FlatRate EUR **4,99 €**, categorías físicas Default y Predeterminado.
+Guardado y releído en el administrador el 10/10/2026. Correos no se modificó.
+
+**BISON3 gratis solo para este método: pendiente.** BISON3 corresponde a
+cuentas aprobadas en `special_pricing_requests`; su lista de precios nativa
+`pl_NJzXvxTk8u` utiliza `user_rule`, no un cupón público ni un grupo de clientes.
+La acción FreeShipping instalada no admite seleccionar métodos de entrega y
+descuenta todos los envíos del pedido. Las reglas instaladas no incluyen
+provincia/Zone ni método de envío. Activarla para usuarios BISON3 regalaría
+también Correos fuera de Madrid, contrario a la instrucción del propietario.
+
+Promoción preparada `promo_V0dXmZF31w` **inactiva**, inicio 01/01/2099,
+sin acciones ni reglas. No concede descuentos. Antes de activarla se necesita
+una implementación de backend que limite el beneficio al método local y use
+las aprobaciones/revocaciones BISON3 vigentes; probar invitados, pendientes,
+aprobados, revocados, Madrid local, Madrid Correos y otra provincia. No fingir
+un cero en Next.js ni aceptar un código que el cliente pueda usar en otro destino.
 
 La Zone, la Shipping Category, la tarifa y el plazo deben configurarse en
 Spree. Si el método aparece para una dirección fuera de Madrid, se corrige la

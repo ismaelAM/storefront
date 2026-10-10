@@ -1,4 +1,16 @@
-# Continuidad — Correos nativo y estimador privado — 10/10/2026, 15:18 Madrid
+# Continuidad — tarifa Madrid y logo — 10/10/2026
+
+Este bloque prevalece. El propietario pide continuar sin preguntas: Madrid local4,99€, gratis solo para cuentas BISON3 aprobadas y soloMadrid; resolver logo ya subido a Spree. Autorización de integración/publicación verificada conservada; no compras, mensajes ni expansión de credenciales.
+
+- Base main `48bd7c19764583d67a9bb9398ffe2f01291aaa83` (PR76), producción READY `dpl_Sn16Ao76sV85LUQGvq68BGGKhxvv`. Rama `feat/bison3-madrid-shipping-branding`.
+- Método local `dm_VeVXmZF31w` guardado/releído4,99€, soloZoneMadrid4790; Correos sin cambios.
+- Gratuidad BISON3 **NO activa**: promoción `promo_V0dXmZF31w`, inicio2099, sin acciones/reglas. BISON3 tiene2cuentas aprobadas, PriceList`pl_NJzXvxTk8u` con user_rule. No se cambió membresía ni precios. FreeShipping UI no tiene preferencias de método y reglas disponibles no restringen provincia/método; no activar globalmente ni simular coste0 en frontend. Detalles/prueba pendiente en SHIPPING.md.
+- Logo real localizado en Preferencias → Detalles de tienda → Nombre & Logo, imagen pública ActiveStorage en console.spree.sh. Encabezado y checkout estaban hardcodeados a `/spree.png`. Componente server-only compartido lee Admin`GET /store`logo_url con credencial existente y cache10min; si falla utiliza STORE_LOGO_URL público (Vercel actualizada con imagen del propietario), o nombre textual si no hay imagen. SoloURLpública llega al cliente. No se ampliaron permisos ni copiaron credenciales. Confirmar en producción cuál origen funciona.
+- Regresiones rojas/verdes de logo: API actual prevalece,403 conserva respaldo, URL ejecutable rechazada, sin imagen devuelve null.628pruebas/64archivos pasan; TypeScript/paridad verdes. Publicación/CI/validación visual restantes se registrarán en la PR.
+
+---
+
+# Historial — Correos nativo y estimador privado — 10/10/2026, 15:18 Madrid
 
 Este bloque prevalece. El propietario pide integrar en Spree el cálculo automático y ocultar la calculadora al cliente; mantiene autorización para publicar cambios verificados. No efectuar compras ni crear etiquetas/recogidas facturables.
 
