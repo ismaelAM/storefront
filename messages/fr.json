@@ -63,7 +63,8 @@
     "cart": "Panier",
     "policies": "Politiques",
     "wholesale": "Professionnels & vente en gros",
-    "rightsReserved": "Tous droits réservés."
+    "rightsReserved": "Tous droits réservés.",
+    "shippingEstimate": "Estimer un envoi avec Correos"
   },
   "home": {
     "welcome": "{storeName}",
@@ -637,5 +638,37 @@
     "reject": "Refuser",
     "accept": "Accepter",
     "preferences": "Préférences de cookies"
+  },
+  "shippingEstimate": {
+    "title": "Estimer un envoi avec Correos",
+    "intro": "Estimez le coût de Paq Estándar avec les tarifs publics de Correos pour 2026.",
+    "scope": "Origine : Espagne continentale. Destination : Espagne. Indiquez le poids et les dimensions du colis emballé.",
+    "postalCode": "Code postal de destination",
+    "weightKg": "Poids avec emballage (kg)",
+    "lengthCm": "Longueur (cm)",
+    "widthCm": "Largeur (cm)",
+    "heightCm": "Hauteur (cm)",
+    "calculate": "Calculer le prix",
+    "busy": "Calcul en cours…",
+    "result": "Coût estimé",
+    "net": "Montant hors taxes",
+    "tax": "TVA",
+    "billableWeight": "Poids facturable",
+    "volumetricWeight": "Poids volumétrique",
+    "notice": "Cette estimation utilise les tarifs publics et ne constitue pas une offre contractuelle. Le prix final de votre commande, livraison comprise, est indiqué lors du paiement.",
+    "limitations": "Emballage, services supplémentaires, frais et droits de douane exclus. Colis de dimensions standard uniquement.",
+    "source": "Voir les tarifs officiels Correos 2026 (pages 10–11)",
+    "zonePeninsula": "Espagne continentale",
+    "zoneBaleares": "Îles Baléares",
+    "zoneCanarias": "Îles Canaries",
+    "zoneCeutaMelilla": "Ceuta et Melilla",
+    "invalidPostalCode": "Indiquez un code postal espagnol valide à cinq chiffres.",
+    "invalidWeight": "Indiquez un poids réel supérieur à zéro et de 30 kg maximum, emballage compris.",
+    "invalidDimensions": "Indiquez les trois dimensions du colis, chacune supérieure à zéro.",
+    "oversized": "Le colis dépasse les dimensions standard (120 cm par côté et 240 cm au total). Consultez les suppléments.",
+    "undersized": "Le colis doit avoir une face de 14,5 × 10 cm minimum pour l’étiquette.",
+    "tariffExpired": "Les tarifs 2026 ne sont pas valables à la date actuelle. Ils doivent être actualisés avant le calcul.",
+    "invalidRequest": "Les données du colis n’ont pas pu être lues.",
+    "networkError": "Le calcul a échoué. Veuillez réessayer."
   }
 }

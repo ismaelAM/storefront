@@ -63,7 +63,8 @@
     "cart": "Warenkorb",
     "policies": "Richtlinien",
     "wholesale": "Handel & Großhandel",
-    "rightsReserved": "Alle Rechte vorbehalten."
+    "rightsReserved": "Alle Rechte vorbehalten.",
+    "shippingEstimate": "Versand mit Correos berechnen"
   },
   "home": {
     "welcome": "{storeName}",
@@ -637,5 +638,37 @@
     "reject": "Ablehnen",
     "accept": "Akzeptieren",
     "preferences": "Cookie-Einstellungen"
+  },
+  "shippingEstimate": {
+    "title": "Versand mit Correos berechnen",
+    "intro": "Berechnen Sie die voraussichtlichen Kosten für Paq Estándar anhand der öffentlichen Correos-Tarife für 2026.",
+    "scope": "Versand ab dem spanischen Festland nach Spanien. Geben Sie Gewicht und Maße des verpackten Kartons ein.",
+    "postalCode": "Postleitzahl des Zielorts",
+    "weightKg": "Gewicht mit Verpackung (kg)",
+    "lengthCm": "Länge (cm)",
+    "widthCm": "Breite (cm)",
+    "heightCm": "Höhe (cm)",
+    "calculate": "Preis berechnen",
+    "busy": "Berechnung läuft…",
+    "result": "Geschätzte Kosten",
+    "net": "Nettobetrag",
+    "tax": "MwSt.",
+    "billableWeight": "Abrechnungsgewicht",
+    "volumetricWeight": "Volumengewicht",
+    "notice": "Dies ist eine Schätzung nach öffentlichen Tarifen, kein Vertragsangebot. Der endgültige Bestellpreis einschließlich Versand wird an der Kasse angezeigt.",
+    "limitations": "Verpackung, Zusatzleistungen und Zollgebühren sind nicht enthalten. Nur Kartons mit Standardmaßen.",
+    "source": "Offizielle Correos-Tarife 2026 ansehen (Seiten 10–11)",
+    "zonePeninsula": "Spanisches Festland",
+    "zoneBaleares": "Balearische Inseln",
+    "zoneCanarias": "Kanarische Inseln",
+    "zoneCeutaMelilla": "Ceuta und Melilla",
+    "invalidPostalCode": "Geben Sie eine gültige fünfstellige spanische Postleitzahl ein.",
+    "invalidWeight": "Geben Sie ein tatsächliches Gewicht über null und bis 30 kg einschließlich Verpackung ein.",
+    "invalidDimensions": "Geben Sie alle drei Kartonmaße größer als null ein.",
+    "oversized": "Die Standardmaße werden überschritten (120 cm je Seite und 240 cm insgesamt). Prüfen Sie die Zuschläge.",
+    "undersized": "Der Karton benötigt eine Fläche von mindestens 14,5 × 10 cm für das Etikett.",
+    "tariffExpired": "Die Tarife für 2026 gelten nicht für das aktuelle Datum und müssen aktualisiert werden.",
+    "invalidRequest": "Die Paketdaten konnten nicht gelesen werden.",
+    "networkError": "Die Berechnung ist fehlgeschlagen. Bitte erneut versuchen."
   }
 }

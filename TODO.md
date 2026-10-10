@@ -6,6 +6,16 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 
 ## Prioridad alta
 
+### Calculadora Correos — 10/10/2026, 14:32 Madrid
+
+- [x] Integrada PR #74; producción READY del commit `cbc92542e304215ccb3f28eaca7614b69e69931d`. Home y políticas ES devuelven 200, título corregido y sin errores React/contacto ficticio.
+- [x] Preparada calculadora pública y de operaciones con tarifas oficiales Paq Estándar 2026, peso real/volumétrico, IVA por zona y validación de tamaños. No necesita API para estimar el coste.
+- [x] Corregidos límites decimales tras revisión independiente; 40 pruebas específicas y suite completa621/62archivos pasan; TypeScript/paridad/Biome de archivos nuevos verdes. Publicación/CI y comprobación del nuevo deployment se registrarán en la PR de esta rama.
+- [ ] Integrar la tarifa de cobro en los calculadores nativos de Spree con acceso autenticado y datos fiables de peso/medidas del paquete. El estimador no cambia los gastos del checkout.
+- [ ] Completar acceso operativo Correos: faltan Bearer de Correos ID y client secret en producción. No se creó ningún envío/etiqueta/recogida ni se enviaron correos.
+- [ ] Primer barrido completo TCGFactory aún pendiente: 14:23 Madrid, accesorios 29/32, 831 procesados/1270 descubiertos/2 fallos. Devir cerró con 8 fichas rechazadas (4 sin SKU y 4 coste cero), que no deben forzarse.
+
+
 ### Revisión de continuidad y textos — 10/10/2026, 12:33 Madrid
 
 - [x] Comprobadas últimas publicaciones anteriores a esta revisión: Git 06:45, producción READY 06:47, Edge v133 06:32, todo en hora de Madrid. No se puede ver ni detener el proceso interno del otro Work.
@@ -14,7 +24,7 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [x] Auditadas rutas públicas; sin NIF/CIF vacío, errores React ni href vacíos. Sitemap anunciado respondió 200 (unos 30 s); `/sitemap.xml` no es su ruta configurada.
 - [x] Corregido el título SEO en configuración Vercel y el subtítulo publicado de prerreservas.
 - [x] Preparada corrección de 190 cadenas ES, etiquetas Puck, contacto mayorista ficticio y destino genérico de correo en políticas; TypeScript, 581 pruebas y paridad de idiomas pasan.
-- [ ] Integrar PR #74 (`fix/public-copy-audit-2026-10-10`) tras revisión y confirmar el deployment. El título SEO corregido necesita un deployment nuevo para verse en producción.
+- [x] Integrada y desplegada PR #74; ver evidencia vigente arriba.
 - [ ] Configurar/verificar un correo de contacto público real: la web actual no muestra una dirección concreta en las políticas. No inventar email ni recuperar etiquetas fiscales vacías.
 - [ ] Correos: pendiente respuesta/contrato/credenciales; mantener alternativa manual documentada. El propietario realizará la primera compra Stripe cuando el resto esté listo.
 
@@ -57,7 +67,8 @@ Continuidad y evidencias: AUDIT_HANDOFF.md. Los pendientes históricos siguiente
 - [x] Añadida ruta interna protegida `/api/internal/shipping` para operaciones de back-office; no expone secretos al navegador.
 - [x] Preregister está activo para crear/prerregistrar envíos mediante `POST /delivery`; BoxEntry se ha retirado del flujo operativo.
 - [ ] Confirmar que el contrato de transporte de Correos está firmado y vinculado al mismo Correos ID.
-- [ ] Configurar en Vercel `SHIPPING_OPERATIONS_TOKEN` y las variables `CORREOS_*` emitidas por Correos.
+- [x] Comprobados `SHIPPING_OPERATIONS_TOKEN`, client ID y cuatro URL base en Vercel.
+- [ ] Completar `CORREOS_CLIENT_SECRET` y `CORREOS_ID_ACCESS_TOKEN` con credenciales válidas de Correos.
 - [ ] Obtener/validar el mecanismo oficial de emisión y renovación del Bearer de Correos ID; hasta entonces se admite `CORREOS_ID_ACCESS_TOKEN` y se falla de forma segura al caducar.
 - [ ] Confirmar con Correos el procedimiento de prueba/sandbox o una operación controlada sin cargos.
 - [ ] Ejecutar una prueba controlada real de tracking, etiqueta y recogida.

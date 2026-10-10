@@ -6,6 +6,45 @@ Spree sigue siendo la fuente de verdad para zonas, métodos de entrega, tarifas,
 pedidos, fulfillments, estados y tracking. El storefront no decide por código
 si una dirección pertenece a Madrid ni mantiene una base logística paralela.
 
+## Calculadora de tarifa pública 2026
+
+Disponible en `/{country}/{locale}/shipping-estimate`, enlazada desde el pie de
+página, y en el panel autenticado `/ops/shipping`. Traducciones ES/EN/FR/PT/DE/PL.
+`POST /api/shipping/estimate` recibe únicamente código postal, peso real en kg y
+largo/ancho/alto en cm; calcula localmente, sin credenciales ni llamadas de
+escritura a Correos. Responde con céntimos netos, impuestos y total, peso
+volumétrico/facturable y zona. No recibe datos de pedidos ni direcciones completas.
+
+Fuente: [tarifas oficiales Correos 2026, páginas 10–11](https://www.correos.es/content/dam/correos/documentos/atc/tarifas/2026/Tarifas_Correos_2026_Peninsula_y_Baleares.pdf),
+Paq Estándar a domicilio/oficina con origen peninsular. El código postal español
+selecciona Península, Baleares, Canarias o Ceuta/Melilla. El peso facturable es
+el mayor entre peso real y volumen en cm³ / 6000. Se usan los importes publicados
+exactos, incluido su tratamiento de IVA; por encima de 30 kg volumétricos se
+aplica cada kg adicional iniciado. Peso real máximo: 30 kg.
+
+Ejemplos peninsulares: paquete 20×15×10 cm y 1 kg → **13,65 €**; paquete
+60×40×30 cm y 0,5 kg → 12 kg volumétricos → **27,81 €**. Los límites estándar
+son 120 cm por lado y 240 cm sumados; cara mínima de etiqueta 14,5×10 cm.
+Se rechazan tamaños extra en vez de omitir sus recargos. La aritmética absorbe
+solo ruido de precisión de máquina en límites, sin redondear excesos reales.
+
+Es una **estimación pública**, no una cotización API ni tarifa de contrato.
+No incluye embalaje, servicios adicionales ni trámites aduaneros. Requiere
+medidas/peso del paquete ya preparado, no estimaciones inventadas por producto.
+El cálculo se bloquea fuera de 2026 para no seguir ofreciendo una tarifa caducada.
+
+**No cambia los gastos cobrados en checkout.** Spree mantiene sus métodos y
+calculadores nativos. Para integrar una tarifa de cobro hacen falta acceso
+administrativo autenticado y datos fiables del paquete/categorías de envío.
+El acceso observado al administrador redirige a login; no se alteraron sus
+métodos ni se crearon envíos, etiquetas o recogidas facturables.
+
+Estado de credenciales observado el 10/10/2026: Vercel tiene client ID, las
+cuatro URL base y token de operaciones; faltan `CORREOS_CLIENT_SECRET` y
+`CORREOS_ID_ACCESS_TOKEN`. Se comprobaron nombres/configuración, sin exponer
+valores secretos. La documentación pública enumera Preregister, Labels,
+Trackpub y Requests; no se encontró un servicio de cotización aplicable.
+
 ## Entrega local Madrid
 
 Método previsto: **Entrega local BisonTCG — Madrid**  

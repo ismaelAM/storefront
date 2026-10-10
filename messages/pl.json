@@ -63,7 +63,8 @@
     "cart": "Koszyk",
     "policies": "Regulaminy",
     "wholesale": "Handel i sprzedaż hurtowa",
-    "rightsReserved": "Wszelkie prawa zastrzeżone."
+    "rightsReserved": "Wszelkie prawa zastrzeżone.",
+    "shippingEstimate": "Oblicz wysyłkę Correos"
   },
   "home": {
     "welcome": "{storeName}",
@@ -637,5 +638,37 @@
     "reject": "Odrzuć",
     "accept": "Akceptuj",
     "preferences": "Ustawienia cookies"
+  },
+  "shippingEstimate": {
+    "title": "Oblicz wysyłkę Correos",
+    "intro": "Oszacuj koszt Paq Estándar na podstawie publicznego cennika Correos na 2026 rok.",
+    "scope": "Nadanie: Hiszpania kontynentalna. Dostawa: Hiszpania. Podaj wagę i wymiary zapakowanego pudełka.",
+    "postalCode": "Kod pocztowy odbiorcy",
+    "weightKg": "Waga z opakowaniem (kg)",
+    "lengthCm": "Długość (cm)",
+    "widthCm": "Szerokość (cm)",
+    "heightCm": "Wysokość (cm)",
+    "calculate": "Oblicz cenę",
+    "busy": "Obliczanie…",
+    "result": "Szacowany koszt",
+    "net": "Kwota netto",
+    "tax": "VAT",
+    "billableWeight": "Waga rozliczeniowa",
+    "volumetricWeight": "Waga objętościowa",
+    "notice": "To szacunek według publicznego cennika, a nie oferta umowna. Ostateczna cena zamówienia wraz z wysyłką jest podana przy płatności.",
+    "limitations": "Cena nie obejmuje opakowania, usług dodatkowych ani opłat i należności celnych. Tylko pudełka o standardowych wymiarach.",
+    "source": "Zobacz oficjalny cennik Correos 2026 (strony 10–11)",
+    "zonePeninsula": "Hiszpania kontynentalna",
+    "zoneBaleares": "Baleary",
+    "zoneCanarias": "Wyspy Kanaryjskie",
+    "zoneCeutaMelilla": "Ceuta i Melilla",
+    "invalidPostalCode": "Podaj prawidłowy pięciocyfrowy hiszpański kod pocztowy.",
+    "invalidWeight": "Podaj rzeczywistą wagę większą od zera i do 30 kg, wraz z opakowaniem.",
+    "invalidDimensions": "Podaj wszystkie trzy wymiary pudełka, każdy większy od zera.",
+    "oversized": "Pudełko przekracza standardowe wymiary (120 cm na bok i 240 cm łącznie). Sprawdź dopłaty.",
+    "undersized": "Pudełko musi mieć powierzchnię co najmniej 14,5 × 10 cm na etykietę.",
+    "tariffExpired": "Cennik na 2026 rok nie obowiązuje w bieżącej dacie. Przed obliczeniem należy go zaktualizować.",
+    "invalidRequest": "Nie udało się odczytać danych paczki.",
+    "networkError": "Nie udało się obliczyć ceny. Spróbuj ponownie."
   }
 }
