@@ -10,6 +10,19 @@ import {
 } from "../../supabase/functions/_shared/tcgfactory-web";
 
 describe("TcgFactory public web parser", () => {
+  it("reads quantity tiers with decimal PrestaShop quantity attributes", () => {
+    const html = `<span class="current-price-value" content="7.00"></span><table class="table-product-discounts"><tr><td rel="4.000000">8,50€</td><td rel="12.000000">7,25€</td></tr></table>`;
+    expect(parseTcgFactoryAuthenticatedPrice(html)).toBe(8.5);
+  });
+  it.each([
+    ["accessories", "Fundas Magic", "accesorios/fundas-standard"],
+    ["board_games", "Magic Innistrad juego de mesa", "juegos-de-mesa/general"],
+    ["merchandising", "Figura One Piece", "merchandising"],
+    ["tcg", "Disney Lorcana", "tcg/lorcana"],
+  ])("uses the %s section when breadcrumbs are generic and ignores global menu labels", (section, title, key) => {
+    const html = `<nav><div>Juegos de mesa</div></nav><nav class="breadcrumb">Inicio > Distribución</nav><h1>${title}</h1><dl><dt>Juego:</dt><dd>Disney Lorcana</dd></dl>`;
+    expect(parseTcgFactoryPublicProduct(html, "https://tcgfactory.com/es/distribucion/item.html", section).categoryKey).toBe(key);
+  });
   it.each(["Restock", "RESTOCK", "Restock 30/10/2026"])("excludes the explicit product status %s", (status) => {
     const product = parseTcgFactoryPublicProduct(`<h1>Fundas</h1><dl><dt>Estado de producto:</dt><dd>${status}</dd></dl><aside>Disponible</aside>`, "https://tcgfactory.com/es/distribucion/fundas.html");
     expect(product.availability).toBe("unavailable");
@@ -177,5 +190,54 @@ describe("TcgFactory public web parser", () => {
         '<span class="current-price-value" content="12.34">12,34 €</span>',
       ),
     ).toBe(12.34);
+  });
+
+  it("classifies TCG from its own technical sheet and preserves edition and language", () => {
+    const product = parseTcgFactoryPublicProduct(`
+      <main><h1>Play Booster Display Lorwyn Eclipsado</h1>
+      <dl><dt>Juego:</dt><dd>Magic the Gathering</dd>
+      <dt>Tipo de producto:</dt><dd>Play Booster Display</dd>
+      <dt>Edición:</dt><dd>Lorwyn Eclipsado</dd>
+      <dt>Idioma:</dt><dd>Inglés</dd>
+      <dt>Estado de producto:</dt><dd>Disponible</dd></dl></main>`,
+      "https://tcgfactory.com/es/distribucion/lorwyn.html");
+    expect(product.categoryKey).toBe("tcg/mtg");
+    expect(product.options).toMatchObject({ edicion: "Lorwyn Eclipsado", idioma: "Inglés" });
+  });
+
+  it.each([
+    ["Juegos de mesa", "Catan", "juegos-de-mesa/general"],
+    ["Merchandising", "Figura One Piece", "merchandising"],
+    ["Pinturas", "Warpaints Fanatic Azul", "pinturas"],
+    ["Trading Card Games", "Caja One Piece", "tcg/one-piece"],
+  ])("maps the product breadcrumb %s instead of treating everything as an accessory", (section, name, category) => {
+    const product = parseTcgFactoryPublicProduct(`
+      <nav class="breadcrumb"><span itemprop="name">Inicio</span><span itemprop="name">${section}</span></nav>
+      <h1>${name}</h1><dl><dt>Juego:</dt><dd>One Piece Card Game</dd><dt>Estado de producto:</dt><dd>Disponible</dd></dl>`,
+      "https://tcgfactory.com/es/distribucion/product.html");
+    expect(product.categoryKey).toBe(category);
+  });
+
+  it("ignores prices from recommended products outside the current product", () => {
+    const html = `<article class="product-miniature"><span class="current-price-value" content="2.00">2,00 €</span></article>
+      <h1>Producto actual</h1><span class="current-price-value" content="12.00">12,00 €</span>`;
+    expect(parseTcgFactoryAuthenticatedPrice(html)).toBe(12);
+  });
+
+  it("uses the highest unit price across authenticated quantity tiers, excluding the public RRP", () => {
+    const html = `<h1>Display</h1><div class="current-price"><span itemprop="price" content="9.00">9,00 €</span></div>
+      <table class="table-product-discounts"><tbody><tr><td>A partir de 1 uds.</td><td>A partir de 6 uds.</td></tr>
+      <tr data-discount-type="percentage" data-discount-quantity="6"><td rel="1" dis="0">12,00€</td><td rel="6" dis="20">8,00€</td></tr></tbody></table>
+      <div class="product-prices"><span class="regular-price">25,00 € PVP</span></div>`;
+    expect(parseTcgFactoryAuthenticatedPrice(html)).toBe(12);
+  });
+
+  it("does not count recommendation links as listing products or pagination", () => {
+    const html = `<div id="js-product-list"><article class="product-miniature"><a href="/es/distribucion/current.html">Actual</a></article></div>
+      <nav class="pagination"><a href="https://tcgfactory.com/es/trading-card-games?page=2">2</a></nav>
+      <aside><a href="/es/distribucion/recommended.html">Recomendado</a><a href="https://tcgfactory.com/es/ofertas?page=99">99</a></aside>`;
+    const page = parseTcgFactoryListing(html, "https://tcgfactory.com/es/trading-card-games");
+    expect(page.productUrls).toEqual(["https://tcgfactory.com/es/distribucion/current.html"]);
+    expect(page.totalPages).toBe(2);
   });
 });

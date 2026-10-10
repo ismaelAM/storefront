@@ -255,6 +255,12 @@ aporta referencia, EAN, disponibilidad y atributos, pero no garantiza el coste
 profesional comparable. El adaptador exige explícitamente un precio B2B neto o
 un precio bruto con IVA/coste normalizado y rechaza precios ambiguos.
 
+El transporte web admite todas las familias de catálogo configuradas. Su precio
+unitario ignora descuentos por volumen: conserva el mayor tramo profesional de
+la ficha antes de compararlo con otros distribuidores. El rastreo completo y el
+repaso de ofertas conocidas comparten la ingesta canónica; añadir un distribuidor
+no requiere otra lógica de deduplicación, selección o publicación.
+
 Leer `TCGFACTORY_SYNC.md` antes de modificar este proveedor. Contiene el estado
 real de la integración, el contrato de feed, los pasos para guardar secretos y
 el protocolo de investigación para futuras IAs.

@@ -1,6 +1,7 @@
 import { withSentryConfig } from "@sentry/nextjs";
 import type { NextConfig } from "next";
 import type { RemotePattern } from "next/dist/shared/lib/image-config";
+import { HTML_LIMITED_BOT_UA_RE } from "next/dist/shared/lib/router/utils/html-bots";
 import createNextIntlPlugin from "next-intl/plugin";
 
 const withNextIntl = createNextIntlPlugin();
@@ -54,6 +55,13 @@ const nextConfig: NextConfig = {
     root: __dirname,
   },
   cacheComponents: true,
+  // Vercel uses this pattern to bypass the postponed PPR shell. Googlebot
+  // otherwise resumes streaming metadata with a blocking tree in Next 16.2.
+  // Retain Next's complete default list and keep browser PPR caching enabled.
+  htmlLimitedBots: new RegExp(
+    `${HTML_LIMITED_BOT_UA_RE.source}|Googlebot`,
+    "i",
+  ),
   cacheLife: {
     tenMinutes: {
       stale: 300, // 5 minutes client stale window
@@ -71,19 +79,19 @@ const nextConfig: NextConfig = {
     dangerouslyAllowLocalIP: true, // Allow localhost images in development
     deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
     imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
-remotePatterns: [
-  // Derived from SPREE_IMAGES_URL (if set) or SPREE_API_URL.
-  ...spreeImagePatterns(),
+    remotePatterns: [
+      // Derived from SPREE_IMAGES_URL (if set) or SPREE_API_URL.
+      ...spreeImagePatterns(),
 
-  // Spree hosted console images
-  {
-    protocol: "https",
-    hostname: "console.spree.sh",
-    pathname: "/rails/active_storage/**",
-  },
+      // Spree hosted console images
+      {
+        protocol: "https",
+        hostname: "console.spree.sh",
+        pathname: "/rails/active_storage/**",
+      },
 
-  // Hosted demo / tunnel backends whose image host differs from SPREE_API_URL.
-],
+      // Hosted demo / tunnel backends whose image host differs from SPREE_API_URL.
+    ],
   },
 };
 

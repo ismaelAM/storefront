@@ -9,6 +9,8 @@
   "syncIntervalHours": 6,
   "config": {
     "feedContract": "tcgfactory_b2b_bridge_v1",
+    "transport": "authenticated_prestashop_web_v1",
+    "sections": ["tcg", "board_games", "accessories", "merchandising", "paints"],
     "documentation": "TCGFACTORY_SYNC.md",
     "secretNames": {
       "email": "TCGFACTORY_B2B_EMAIL",

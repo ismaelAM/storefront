@@ -3,10 +3,41 @@ import {
   type SupplierAvailability,
 } from "./catalog-sourcing.ts";
 import { mapTcgFactoryAvailability } from "./tcgfactory-adapter.ts";
+import { inferDevirCategoryKey } from "./devir-catalog-policy.ts";
 
 export const TCGFACTORY_BASE_URL = "https://tcgfactory.com";
 export const TCGFACTORY_ACCESSORIES_URL =
   "https://tcgfactory.com/es/distribucion-accesorios";
+
+export const TCGFACTORY_CATALOG_SECTIONS = [
+  { key: "accessories", url: TCGFACTORY_ACCESSORIES_URL },
+  { key: "tcg", url: `${TCGFACTORY_BASE_URL}/es/trading-card-games` },
+  { key: "board_games", url: `${TCGFACTORY_BASE_URL}/es/distribucion-juegos-de-mesa` },
+  { key: "merchandising", url: `${TCGFACTORY_BASE_URL}/es/distribucion-merchandising` },
+  { key: "paints", url: `${TCGFACTORY_BASE_URL}/es/pinturas` },
+] as const;
+
+export const TCGFACTORY_TCG_CATEGORY_SPECS = [
+  { key: "tcg/mtg", name: "MTG", slug: "mtg", game: "magic-the-gathering" },
+  { key: "tcg/yugioh", name: "Yugioh", slug: "yugioh", game: "yu-gi-oh-juego-de-cartas-coleccionable" },
+  { key: "tcg/lorcana", name: "Disney Lorcana", slug: "lorcana", game: "disney-lorcana-tcg" },
+  { key: "tcg/digimon", name: "Digimon", slug: "digimon", game: "digimon-card-game" },
+  { key: "tcg/dbscg-masters", name: "Dragon Ball Masters", slug: "dbscg-masters", game: "dbscg-masters" },
+  { key: "tcg/dbscg-fusion-world", name: "Dragon Ball Fusion World", slug: "dbscg-fusion-world", game: "dbscg-fusion-world" },
+  { key: "tcg/gundam", name: "Gundam", slug: "gundam", game: "gundam-card-game" },
+  { key: "tcg/one-piece", name: "One Piece", slug: "one-piece", game: "one-piece-card-game" },
+  { key: "tcg/club-legacyz", name: "Club Legacyz", slug: "club-legacyz", game: "club-legacyz" },
+  { key: "tcg/cyberpunk", name: "Cyberpunk", slug: "cyberpunk", game: "cyberpunk-tcg" },
+  { key: "tcg/palworld", name: "Palworld", slug: "palworld", game: "palworld" },
+  { key: "tcg/weiss-schwarz", name: "Weiß Schwarz", slug: "weiss-schwarz", game: "wei-schwarz" },
+  { key: "tcg/hololive", name: "Hololive", slug: "hololive", game: "hololive-card-game" },
+  { key: "tcg/vanguard", name: "Cardfight!! Vanguard", slug: "vanguard", game: "cardfight-vanguard" },
+  { key: "tcg/shadowverse", name: "Shadowverse: Evolve", slug: "shadowverse", game: "shadowverse-evolve" },
+  { key: "tcg/topps", name: "Topps", slug: "topps", game: "topps" },
+  { key: "tcg/icoins", name: "Icoins", slug: "icoins", game: "icoins" },
+  { key: "tcg/panini", name: "Panini", slug: "panini", game: "panini-cromos" },
+  { key: "tcg/otros", name: "Otros TCG y coleccionismo", slug: "otros", game: "" },
+] as const;
 
 export const TCGFACTORY_ACCESSORY_CATEGORY_SPECS = [
   { key: "accesorios/albumes", name: "Álbumes", slug: "albumes" },
@@ -213,6 +244,16 @@ function referencePriceFromHtml(html: string): number | null {
 }
 
 export function parseTcgFactoryAuthenticatedPrice(html: string): number | null {
+  // Product recommendations can contain the same price selectors. Quantity
+  // tables belong to the current product; never use their cheapest tier or RRP.
+  html = html.replace(/<article\b[^>]*class=["'][^"']*product-miniature[^"']*["'][\s\S]*?<\/article>/gi, "");
+  const tiers: number[] = [];
+  for (const table of html.matchAll(/<table\b[^>]*class=["'][^"']*table-product-discounts[^"']*["'][\s\S]*?<\/table>/gi)) {
+    for (const cell of table[0].matchAll(/<td\b[^>]*rel=["']\d+(?:[.,]\d+)?["'][^>]*>([\s\S]*?)<\/td>/gi)) {
+      const price = decimal(stripHtml(cell[1]));
+      if (price !== null) tiers.push(price);
+    }
+  }
   const candidates = [
     /class=["'][^"']*current-price-value[^"']*["'][^>]*(?:content|data-price-amount)=["']([0-9.,]+)["']/i,
     /(?:content|data-price-amount)=["']([0-9.,]+)["'][^>]*class=["'][^"']*current-price-value/i,
@@ -222,9 +263,9 @@ export function parseTcgFactoryAuthenticatedPrice(html: string): number | null {
   ];
   for (const pattern of candidates) {
     const value = decimal(html.match(pattern)?.[1]);
-    if (value !== null) return value;
+    if (value !== null) return Math.max(value, ...tiers);
   }
-  return null;
+  return tiers.length ? Math.max(...tiers) : null;
 }
 
 function normalizeTcgFactoryMediaStem(value: string): string {
@@ -383,7 +424,9 @@ export function parseTcgFactoryListing(
   pageUrl = TCGFACTORY_ACCESSORIES_URL,
 ): TcgFactoryListingPage {
   const urls: string[] = [];
-  for (const match of html.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>/gi)) {
+  const listStart = html.search(/<[^>]+\bid=["']js-product-list["']/i);
+  const listingHtml = listStart < 0 ? html : html.slice(listStart).split(/<nav\b[^>]*class=["'][^"']*pagination/i)[0];
+  for (const match of listingHtml.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>/gi)) {
     const url = absoluteOfficialUrl(match[1], pageUrl);
     if (
       url &&
@@ -401,9 +444,13 @@ export function parseTcgFactoryListing(
     : null;
   const currentPage =
     Number(new URL(pageUrl).searchParams.get("page") ?? "1") || 1;
-  const linkedPages = Array.from(html.matchAll(/[?&]page=(\d+)/gi), (match) =>
-    Number(match[1]),
-  ).filter(Number.isFinite);
+  const listingUrl = new URL(pageUrl);
+  const linkedPages = Array.from(html.matchAll(/<a\b[^>]*href=["']([^"']+)["']/gi), (match) => {
+    const value = absoluteOfficialUrl(match[1], pageUrl);
+    if (!value) return 0;
+    const link = new URL(value);
+    return link.pathname === listingUrl.pathname ? Number(link.searchParams.get("page") ?? 0) : 0;
+  }).filter(Number.isFinite);
   const totalPages = Math.max(
     currentPage,
     ...linkedPages,
@@ -422,6 +469,7 @@ export function parseTcgFactoryListing(
 export function parseTcgFactoryPublicProduct(
   html: string,
   sourceUrl: string,
+  section?: string,
 ): TcgFactoryPublicProduct {
   const officialUrl = absoluteOfficialUrl(sourceUrl, TCGFACTORY_BASE_URL);
   if (!officialUrl || !/\/es\/distribucion\//i.test(officialUrl)) {
@@ -452,12 +500,39 @@ export function parseTcgFactoryPublicProduct(
     field(lines, /^Tipo de accesorio\s*:?/i) ??
     field(lines, /^Tipo de producto\s*:?/i);
   const manufacturer = field(lines, /^(?:Marca|Fabricante|Editorial)\s*:?/i);
-  const categoryKey = tcgFactoryAccessoryCategory(productName, productType);
+  // Breadcrumb and technical sheet are product-scoped; the global navigation
+  // contains every game and must not influence classification.
+  const breadcrumb = stripHtml(html.match(/<(?:nav|ol)\b[^>]*class=["'][^"']*breadcrumb[^"']*["'][\s\S]*?<\/(?:nav|ol)>/i)?.[0] ?? "");
+  const route = normalizeText(breadcrumb);
+  const game = field(lines, /^Juego(?:\s*:|\s*$)/i);
+  const gameKey = normalizeText(game ?? "");
+  const family = /merchandising/.test(route) ? "merchandising"
+    : /pinturas/.test(route) ? "paints"
+    : /juegos-de-mesa/.test(route) ? "board_games"
+    : /accesorios/.test(route) ? "accessories"
+    : /trading-card-games|coleccionismo/.test(route) ? "tcg"
+    : section;
+  let categoryKey: string;
+  if (family === "merchandising") categoryKey = "merchandising";
+  else if (family === "paints") categoryKey = "pinturas";
+  else if (family === "board_games") {
+    const inferred = inferDevirCategoryKey({ name: `${productType ?? ""} ${productName}` });
+    categoryKey = /^(?:rol|juegos-de-mesa)\//.test(inferred) ? inferred : "juegos-de-mesa/general";
+  } else if (family === "accessories") {
+    categoryKey = tcgFactoryAccessoryCategory(productName, productType);
+  } else if (family === "tcg" || gameKey) {
+    categoryKey = TCGFACTORY_TCG_CATEGORY_SPECS.find(spec => spec.game && (
+      spec.game === gameKey || (gameKey && spec.game.startsWith(gameKey + "-")) ||
+      normalizeText(spec.name) === gameKey || route.includes(spec.game) || route.includes(normalizeText(spec.name))
+    ))?.key ?? "tcg/otros";
+  } else categoryKey = tcgFactoryAccessoryCategory(productName, productType);
   const options: Record<string, string> = {};
   for (const [key, label] of [
     ["color", /^Color\s*:?/i],
     ["tamano", /^Tamañ?o\s*:?/i],
     ["idioma", /^Idioma\s*:?/i],
+    ["edicion", /^Edici[oó]n\s*:?/i],
+    ["serie", /^Serie\s*:?/i],
     ["licencia", /^Licencia\s*:?/i],
   ] as const) {
     const value = field(lines, label);
@@ -491,6 +566,8 @@ export function parseTcgFactoryPublicProduct(
     metadata: {
       source: "tcgfactory_public_web",
       productType,
+      game,
+      section: section ?? null,
       publicReferenceOnly: true,
     },
   };
