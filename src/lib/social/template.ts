@@ -212,6 +212,7 @@ async function image(
   raw: string,
   width: number,
   height: number,
+  background = "#ffffff",
 ): Promise<Buffer> {
   const bytes = await imageBytes(raw);
   const bitmapSignature =
@@ -237,7 +238,8 @@ async function image(
     throw new Error("Unsupported social image encoding");
   return decoder
     .rotate()
-    .resize(width, height, { fit: "contain", background: "#ffffff" })
+    .flatten({ background })
+    .resize(width, height, { fit: "contain", background })
     .png()
     .toBuffer();
 }
@@ -348,7 +350,7 @@ export async function renderOfferSlide(
   let logo: Buffer | undefined;
   if (input.logoUrl) {
     try {
-      logo = await image(input.logoUrl, 220, 84);
+      logo = await image(input.logoUrl, 220, 84, CREAM);
     } catch {
       /* The name is authoritative fallback branding. */
     }

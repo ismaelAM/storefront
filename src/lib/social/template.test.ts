@@ -281,6 +281,65 @@ describe("branded daily offer JPEG", () => {
     });
   });
 
+  it("gives transparent logos a complete cream backdrop while keeping product photos white", async () => {
+    const transparentLogo = await sharp({
+      create: {
+        width: 84,
+        height: 84,
+        channels: 4,
+        background: { r: 0, g: 0, b: 0, alpha: 0 },
+      },
+    })
+      .composite([
+        {
+          input: await sharp({
+            create: {
+              width: 20,
+              height: 20,
+              channels: 3,
+              background: "#30271f",
+            },
+          })
+            .png()
+            .toBuffer(),
+          left: 32,
+          top: 32,
+        },
+      ])
+      .png()
+      .toBuffer();
+    network.responses = [
+      { bytes: transparentLogo },
+      { bytes: transparentLogo },
+    ];
+    const rendered = await renderOfferSlide({
+      ...input,
+      logoUrl: offer.imageUrl,
+    });
+    const pixels = await sharp(rendered)
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const at = (x: number, y: number) => {
+      const offset = (y * pixels.info.width + x) * pixels.info.channels;
+      return [...pixels.data.subarray(offset, offset + 3)];
+    };
+    // Sample flat regions away from antialiased edges and allow JPEG rounding.
+    const colors = [
+      { actual: at(121, 48), expected: [245, 240, 230] }, // transparent original logo area
+      { actual: at(58, 48), expected: [245, 240, 230] }, // contain padding
+      { actual: at(158, 80), expected: [48, 39, 31] }, // original dark mark
+      { actual: at(330, 370), expected: [255, 255, 255] }, // transparent product area
+      { actual: at(260, 360), expected: [255, 255, 255] }, // product contain padding
+    ];
+    for (const { actual, expected } of colors) {
+      for (let channel = 0; channel < 3; channel++) {
+        expect(
+          Math.abs(actual[channel] - expected[channel]),
+        ).toBeLessThanOrEqual(3);
+      }
+    }
+  });
+
   it.each([
     {
       type: "image/svg+xml",
