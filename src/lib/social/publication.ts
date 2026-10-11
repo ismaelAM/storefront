@@ -64,8 +64,12 @@ export interface PublicationDependencies {
   ): Promise<InstagramPublishResult>;
   now(): Date;
 }
+// Keep changed artwork immutable too; bump when the render template changes.
+const TEMPLATE_VERSION = "2026-10-11-logo-contrast";
 function snapshotHash(snapshot: SocialOfferSnapshot) {
-  return createHash("sha256").update(JSON.stringify(snapshot)).digest("hex");
+  return createHash("sha256")
+    .update(JSON.stringify({ templateVersion: TEMPLATE_VERSION, snapshot }))
+    .digest("hex");
 }
 
 export async function executeDailyPublication(deps: PublicationDependencies) {
