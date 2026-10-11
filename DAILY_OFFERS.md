@@ -16,6 +16,8 @@ Las imágenes públicas de publicación se guardan en el bucket `daily-offers` c
 
 ## Conectar Instagram una vez
 
+**Pendiente y aplazado por el propietario el 11/10/2026:** conectar la cuenta `@bisonTCG` después de terminar de listar la tienda en Google. Hasta retomar esta tarea, mantener la preparación de imágenes y las descargas manuales sin activar publicaciones automáticas. Registro de pendientes en [TODO.md](TODO.md).
+
 La cuenta debe ser profesional. La integración implementada utiliza Instagram Login. Tras autorizar la aplicación de Meta y comprobar su versión/contrato de publicación, configurar **solo en producción** `INSTAGRAM_ACCOUNT_ID`, `INSTAGRAM_ACCESS_TOKEN` y `INSTAGRAM_API_VERSION`; nunca con prefijo `NEXT_PUBLIC_`. Mantener/renovar el token según las condiciones de Meta. Detalles y fuentes primarias en [docs/social-instagram-api.md](docs/social-instagram-api.md).
 
 Sin estas credenciales, el botón de publicación está desactivado y no se envía nada a Instagram. No se ha conectado ni publicado en una cuenta de Instagram durante la implementación.

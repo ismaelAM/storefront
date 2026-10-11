@@ -4,6 +4,11 @@ Rama principal: `main`
 
 Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras. Tras cada edición relevante del proyecto, actualizaré este documento con lo hecho y cualquier comprobación nueva que haya quedado pendiente.
 
+## Aplazado por el propietario — 11/10/2026
+
+- [ ] **Instagram @bisonTCG: retomar después de terminar de listar la tienda en Google.** Confirmar cuenta profesional (Empresa o Creador), autorizar la aplicación de Meta mediante Instagram Login, configurar sus credenciales privadas en producción y comprobar la primera publicación y el funcionamiento diario. No activar la publicación antes de retomar esta tarea.
+- [x] Doce ofertas diarias, tres por categoría, y cuatro imágenes sin IA ya verificadas en producción. El panel `/ops/offers` permite descargar imágenes y copiar el texto; el cron sigue preparándolas sin publicar en Instagram. Implementación y evidencias: PR #81, #82 y #83; operación en [DAILY_OFFERS.md](DAILY_OFFERS.md).
+
 ## Prioridad alta
 
 ### Madrid y logo — 10/10/2026
