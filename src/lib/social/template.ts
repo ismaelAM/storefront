@@ -3,8 +3,8 @@ import "server-only";
 import type { LookupAddress } from "node:dns";
 import { lookup } from "node:dns/promises";
 import { request } from "node:https";
-import { createRequire } from "node:module";
 import { isIP } from "node:net";
+import { join } from "node:path";
 import sharp, { type OverlayOptions } from "sharp";
 
 export interface OfferSlideInput {
@@ -24,7 +24,11 @@ const WIDTH = 1080;
 const HEIGHT = 1350;
 const MAX_BYTES = 8 * 1024 * 1024;
 const MAX_PIXELS = 16_000_000;
-const FONT_FILE = createRequire(import.meta.url).resolve(
+// A filesystem asset, not a JS import: resolving .ttf as a module makes
+// Turbopack try to compile an unknown module type. Explicit tracing ships it.
+const FONT_FILE = join(
+  process.cwd(),
+  "node_modules",
   "next/dist/compiled/@vercel/og/Geist-Regular.ttf",
 );
 const BROWN = "#30271f";
