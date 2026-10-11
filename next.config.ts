@@ -41,14 +41,18 @@ const nextConfig: NextConfig = {
     "/api/internal/offers": [
       "./assets/fonts/Geist-Regular.ttf",
       "./assets/fonts/OFL.txt",
+      // libvips is loaded by the native addon via dlopen, outside JS tracing.
+      "./node_modules/.pnpm/@img+sharp-libvips-linux-x64@*/node_modules/@img/sharp-libvips-linux-x64/lib/**",
     ],
     "/api/internal/offers/image": [
       "./assets/fonts/Geist-Regular.ttf",
       "./assets/fonts/OFL.txt",
+      "./node_modules/.pnpm/@img+sharp-libvips-linux-x64@*/node_modules/@img/sharp-libvips-linux-x64/lib/**",
     ],
     "/api/cron/offers": [
       "./assets/fonts/Geist-Regular.ttf",
       "./assets/fonts/OFL.txt",
+      "./node_modules/.pnpm/@img+sharp-libvips-linux-x64@*/node_modules/@img/sharp-libvips-linux-x64/lib/**",
     ],
   },
   allowedDevOrigins: ["shop.lvh.me", "*.trycloudflare.com", "192.168.33.13"],
