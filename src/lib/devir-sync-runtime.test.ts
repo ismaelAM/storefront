@@ -22,6 +22,7 @@ const names = [
   "processCategories",
   "scheduledTcgFactoryTick",
   "runtimeMaintenanceTick",
+  "dueDailyOfferMaintenanceTick",
   "tcgFactoryTick",
   "tcgFactoryItemFailureDisposition",
   "tcgFactoryTextFetch",
@@ -69,6 +70,11 @@ function fixture(overrides: Record<string, unknown> = {}, entry = false) {
       setTimeout,
       clearTimeout,
       console,
+      dailyOfferState: async () => ({
+        day_key: "fixture-day",
+        last_rotated_at: "done",
+      }),
+      madridCommercialDay: () => ({ dayKey: "fixture-day", saturday: false }),
       ...overrides,
       __overrides: overrides,
       syncRuntime,
@@ -210,6 +216,47 @@ describe("Worker invocation budget", () => {
 });
 
 describe("Fair maintenance and checkpoint cleanup", () => {
+  it("gives only the daily lane 70 seconds and persists the next turn before deferral", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000);
+    const deadlines: number[] = [];
+    const turns: number[] = [];
+    const query = {
+      update: (row: { maintenance_turn: number }) => {
+        turns.push(row.maintenance_turn);
+        return query;
+      },
+      eq: async () => ({ error: null }),
+    };
+    const record = async (cfg: typeof config) => {
+      deadlines.push(cfg.request_budget.deadline_at);
+      expect(turns).toHaveLength(deadlines.length);
+      if (deadlines.length === 4)
+        throw Object.assign(new Error("budget"), { name: "SyncDeferred" });
+      return {};
+    };
+    const api = fixture({
+      supabase: { from: () => query },
+      reconcileStaleCatalogBatch: record,
+      reconcilePhysicalOnlyCatalogBatch: record,
+      refreshHumanReviewMarkersBatch: record,
+      rotateDailyOffers: record,
+    });
+    for (let turn = 0; turn < 4; turn++)
+      await api.maintenance({
+        maintenance_turn: turn,
+        request_budget: { deadline_at: 95_000 },
+      });
+    expect(deadlines).toEqual([26_000, 26_000, 26_000, 71_000]);
+    expect(turns).toEqual([1, 2, 3, 0]);
+    expect(
+      await api.maintenance({
+        maintenance_turn: 3,
+        request_budget: { deadline_at: 50_000 },
+      }),
+    ).toEqual({ lane: "daily", result: {} });
+    expect(deadlines.at(-1)).toBe(50_000);
+  });
   it("rotates exactly one bounded maintenance lane before supplier work", async () => {
     const calls: string[] = [];
     let turn = 0;
@@ -271,6 +318,157 @@ describe("Fair maintenance and checkpoint cleanup", () => {
       "catalog_claim_product_sync",
       "catalog_release_product_sync",
     ]);
+  });
+});
+
+function activeWorkerFixture(overrides: Record<string, unknown> = {}) {
+  const trace: string[] = [];
+  const writes: Record<string, unknown>[] = [];
+  const query = {
+    select: () => query,
+    eq: () => query,
+    update: (row: Record<string, unknown>) => {
+      writes.push(row);
+      return query;
+    },
+    single: async () => ({
+      data: {
+        ...config,
+        enabled: true,
+        phase: "products",
+        active_cycle_id: "cycle",
+        session_state: {},
+        worker_token_hash: "hash",
+        last_supplier_tick: "tcgfactory",
+      },
+      error: null,
+    }),
+    // biome-ignore lint/suspicious/noThenProperty: Fixture implements a Supabase thenable query.
+    then: (resolve: (value: unknown) => void) => resolve({ error: null }),
+  };
+  const api = fixture(
+    {
+      supabase: {
+        from: () => query,
+        rpc: async (name: string) => {
+          trace.push(name);
+          return { data: true, error: null };
+        },
+      },
+      sha256: async () => "hash",
+      crypto: { randomUUID: () => "lock" },
+      reconcileStaleCatalogBatch: async () => {
+        trace.push("stale");
+        return {};
+      },
+      processDevirCycleTick: async () => {
+        trace.push("devir");
+        return Response.json({ ok: true });
+      },
+      ...overrides,
+    },
+    true,
+  );
+  return {
+    api,
+    trace,
+    writes,
+    invoke: () =>
+      api.handler(
+        new Request("https://fixture.invalid", {
+          method: "POST",
+          headers: { "x-devir-worker-token": "token" },
+          body: "{}",
+        }),
+      ),
+  };
+}
+
+describe("Due daily offers during an active supplier crawl", () => {
+  it.each([
+    {
+      day_key: "yesterday",
+      last_rotated_at: "done",
+      spree_price_list_id: "old-list",
+    },
+    {
+      day_key: "fixture-day",
+      last_rotated_at: null,
+      spree_price_list_id: "pending-list",
+    },
+  ])("runs an overdue or pending rotation before stale and supplier work", async (state) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const f = activeWorkerFixture({
+      dailyOfferState: async () => state,
+      rotateDailyOffers: async (cfg: typeof config) => {
+        f.trace.push("daily");
+        expect(cfg.request_budget.deadline_at).toBe(70_000);
+        return { status: "rotated" };
+      },
+    });
+    expect((await f.invoke()).status).toBe(200);
+    expect(f.trace).toEqual([
+      "devir_sync_acquire_lock",
+      "daily",
+      "stale",
+      "devir",
+      "devir_sync_release_lock",
+    ]);
+    expect(f.writes).toContainEqual({ last_supplier_tick: "devir" });
+  });
+  it("bypasses completed offers on the current day", async () => {
+    const f = activeWorkerFixture({
+      rotateDailyOffers: async () => {
+        throw new Error("must not repeat daily offers");
+      },
+    });
+    expect((await f.invoke()).status).toBe(200);
+    expect(f.trace).toContain("devir");
+  });
+  it("returns a deferred result and releases the lock before supplier work when daily rotation yields", async () => {
+    const f = activeWorkerFixture({
+      dailyOfferState: async () => null,
+      rotateDailyOffers: async () => {
+        throw Object.assign(new Error("budget"), { name: "SyncDeferred" });
+      },
+    });
+    expect(await (await f.invoke()).json()).toMatchObject({
+      ok: true,
+      status: "deferred",
+      reason: "request_budget",
+    });
+    expect(f.trace).toEqual([
+      "devir_sync_acquire_lock",
+      "devir_sync_release_lock",
+    ]);
+    expect(f.writes).toEqual([]);
+  });
+  it("reserves 20 seconds for supplier work and does not start a crawl with an exhausted budget", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const f = activeWorkerFixture({
+      sha256: async () => {
+        vi.setSystemTime(30_000);
+        return "hash";
+      },
+      dailyOfferState: async () => null,
+      rotateDailyOffers: async (cfg: typeof config) => {
+        expect(cfg.request_budget.deadline_at).toBe(75_000);
+        vi.setSystemTime(75_000);
+        return { status: "rotated" };
+      },
+      reconcileStaleCatalogBatch: async () => {
+        vi.setSystemTime(90_000);
+        return {};
+      },
+    });
+    expect(await (await f.invoke()).json()).toMatchObject({
+      ok: true,
+      status: "deferred",
+    });
+    expect(f.trace).not.toContain("devir");
+    expect(f.writes).toEqual([]);
   });
 });
 

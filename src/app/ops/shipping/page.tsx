@@ -119,6 +119,12 @@ export default async function ShippingOperationsPage({
           <div className="flex flex-wrap gap-2">
             <a
               className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700"
+              href="/ops/offers"
+            >
+              Ofertas e Instagram
+            </a>
+            <a
+              className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700"
               href={puckEditorHref}
             >
               Abrir Puck

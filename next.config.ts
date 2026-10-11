@@ -37,6 +37,17 @@ function spreeImagePatterns(): RemotePattern[] {
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  outputFileTracingIncludes: {
+    "/api/internal/offers": [
+      "./node_modules/next/dist/compiled/@vercel/og/Geist-Regular.ttf",
+    ],
+    "/api/internal/offers/image": [
+      "./node_modules/next/dist/compiled/@vercel/og/Geist-Regular.ttf",
+    ],
+    "/api/cron/offers": [
+      "./node_modules/next/dist/compiled/@vercel/og/Geist-Regular.ttf",
+    ],
+  },
   allowedDevOrigins: ["shop.lvh.me", "*.trycloudflare.com", "192.168.33.13"],
   env: {
     NEXT_PUBLIC_SENTRY_DSN: process.env.SENTRY_DSN || "",
