@@ -24,13 +24,9 @@ const WIDTH = 1080;
 const HEIGHT = 1350;
 const MAX_BYTES = 8 * 1024 * 1024;
 const MAX_PIXELS = 16_000_000;
-// A filesystem asset, not a JS import: resolving .ttf as a module makes
-// Turbopack try to compile an unknown module type. Explicit tracing ships it.
-const FONT_FILE = join(
-  process.cwd(),
-  "node_modules",
-  "next/dist/compiled/@vercel/og/Geist-Regular.ttf",
-);
+// A regular repository asset avoids both Turbopack's TTF module parsing and
+// serverless packaging of pnpm's symlinked dependency directories.
+const FONT_FILE = join(process.cwd(), "assets/fonts/Geist-Regular.ttf");
 const BROWN = "#30271f";
 const CREAM = "#f5f0e6";
 const AMBER = "#edba62";

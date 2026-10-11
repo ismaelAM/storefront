@@ -39,13 +39,16 @@ const nextConfig: NextConfig = {
   output: "standalone",
   outputFileTracingIncludes: {
     "/api/internal/offers": [
-      "./node_modules/next/dist/compiled/@vercel/og/Geist-Regular.ttf",
+      "./assets/fonts/Geist-Regular.ttf",
+      "./assets/fonts/OFL.txt",
     ],
     "/api/internal/offers/image": [
-      "./node_modules/next/dist/compiled/@vercel/og/Geist-Regular.ttf",
+      "./assets/fonts/Geist-Regular.ttf",
+      "./assets/fonts/OFL.txt",
     ],
     "/api/cron/offers": [
-      "./node_modules/next/dist/compiled/@vercel/og/Geist-Regular.ttf",
+      "./assets/fonts/Geist-Regular.ttf",
+      "./assets/fonts/OFL.txt",
     ],
   },
   allowedDevOrigins: ["shop.lvh.me", "*.trycloudflare.com", "192.168.33.13"],

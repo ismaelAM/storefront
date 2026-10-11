@@ -148,5 +148,7 @@ export function buildHomeMerchandisingProducts(
     if (rotatingSales[index]) result.push(rotatingSales[index]);
   }
 
-  return dedupe(result).slice(0, 20);
+  // Each Puck block filters its lane before applying its own display limit.
+  // A shared cap here would let preorders crowd out valid daily offers.
+  return dedupe(result);
 }
