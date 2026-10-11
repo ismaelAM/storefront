@@ -9,6 +9,7 @@ El propietario pide continuar sin preguntas: doce ofertas diarias, tres por fami
 - Migración20261011005433_social_offer_publications aplicada. Tabla/RPC privadas para service_role, bucket público daily-offers soloJPEG, sin escritura anónima. Prueba SQL de exclusión mutua/lease y bloqueo de intento ambiguo pasó conROLLBACK, sin fixtures persistidos.
 - Cron Vercel a08:00UTC una vez al día; CRON_SECRET dedicado solo producción, sin imprimirlo ni duplicarlo. Sin credenciales Meta prepara imágenes. No hay INSTAGRAM_ACCOUNT_ID/ACCESS_TOKEN/API_VERSION configuradas ni se ha publicado a Instagram. No simular conexión ni elegir una versión API sin verificarla; autorización profesional y renovación de token pendientes.
 - Suite completa761 pruebas/75archivos verdes; regresión de Home demuestra que doce ofertas no se pierden al intercalar prerreservas. TypeScript y revisión independiente verdes. Consultar PR81 para build Vercel y generación JPEG real; no confundir los samples QA de datos ficticios con imágenes publicables. Checkout Stripe E2E sigue saltado por falta de claves de prueba.
+- PR81 integrada en dc93b40ce6c1c713ad864e49f2cb8cc46f5756de, producción READY dpl_4McSxs2WkVXLDaUYEu5BAJvwn1AV. Login ops200, pero primera prueba API500 antes del handler: libvips-cpp.so.8.18.3 no incluida en el paquete de sharp. Corrección y evidencia final en PR de fix/social-native-runtime: trazado explícito del archivo nativo real para las tres rutas sociales. No dar descargas por verificadas hasta comprobar HTTP y cuatro JPEG reales allí.
 
 ---
 
