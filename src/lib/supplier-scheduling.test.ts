@@ -17,9 +17,13 @@ const bodies = source.statements
       (ts.isExpressionStatement(node) &&
         node.getText(source).startsWith("Deno.serve(")) ||
       (ts.isFunctionDeclaration(node) &&
-        ["scheduledTcgFactoryTick", "syncDeferred", "isSyncDeferred"].includes(
-          node.name?.text ?? "",
-        )),
+        [
+          "scheduledTcgFactoryTick",
+          "syncDeferred",
+          "isSyncDeferred",
+          "canStartSyncWork",
+          "dueDailyOfferMaintenanceTick",
+        ].includes(node.name?.text ?? "")),
   )
   .map((node) => node.getText(source))
   .join("\n");
@@ -90,6 +94,11 @@ function fixture(
     sha256: async () => "fixture_hash",
     json: (body: unknown, status = 200) => Response.json(body, { status }),
     reconcileStaleCatalogBatch: guard,
+    dailyOfferState: async () => ({
+      day_key: "2026-10-09",
+      last_rotated_at: "2026-10-09T00:00:00Z",
+    }),
+    madridCommercialDay: () => ({ dayKey: "2026-10-09", saturday: false }),
     tcgFactoryTick: tcg,
     processDevirCycleTick: devir,
     tcgFactorySupplierRow: async () => ({ id: "supplier_tcg" }),

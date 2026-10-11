@@ -1,4 +1,18 @@
-# Continuidad — reservas y reembolso — 10/10/2026
+# Continuidad — doce ofertas y publicación social — 11/10/2026
+
+El propietario pide continuar sin preguntas: doce ofertas diarias, tres por familia, e imágenes/publicación automática para Instagram sin IA. Implementación y evidencia final de integración/deployment en PR81: https://github.com/ismaelAM/storefront/pull/81. Leer DAILY_OFFERS.md para operación y docs/social-instagram-api.md para la conexión de Meta.
+
+- Edge devir-sync v134 ACTIVE, desplegado 11/10 a00:58:56UTC. Los diez archivos del readback coinciden exactamente con la implementación revisada. La rotación tiene prioridad sobre crawls largos y preserva stock físico, márgenes, precios manuales y revisiones humanas.
+- Rotación real 11/10 terminada a00:59:33UTC /02:59Madrid, sin error: doce ofertas, tres TCG, tres juegos de mesa/rol, tres accesorios y tres merchandising. No forzar otra rotación para demostrar lo ya comprobado.
+- Home publicada: ProductGrid de ofertas ampliado8→12 mediante UPDATE condicionado por versión/valor anterior, con readback12. El pool conserva las ofertas hasta que cada bloque Puck aplica su filtro y límite; no truncar conjuntamente ofertas y prerreservas a20.
+- Panel privado /ops/offers usa la misma sesión/clave existente de /ops/shipping. Descarga cuatro JPEG1080×1350 y copia el texto. Cada oferta vuelve a validar precio público y variante reales de Spree; no contiene costes internos ni precios de cuenta. Fuente Geist copiada como asset regular con licencia OFL y trazado explícito para evitar compilación TTF y symlinks pnpm en Vercel.
+- Migración20261011005433_social_offer_publications aplicada. Tabla/RPC privadas para service_role, bucket público daily-offers soloJPEG, sin escritura anónima. Prueba SQL de exclusión mutua/lease y bloqueo de intento ambiguo pasó conROLLBACK, sin fixtures persistidos.
+- Cron Vercel a08:00UTC una vez al día; CRON_SECRET dedicado solo producción, sin imprimirlo ni duplicarlo. Sin credenciales Meta prepara imágenes. No hay INSTAGRAM_ACCOUNT_ID/ACCESS_TOKEN/API_VERSION configuradas ni se ha publicado a Instagram. No simular conexión ni elegir una versión API sin verificarla; autorización profesional y renovación de token pendientes.
+- Suite completa761 pruebas/75archivos verdes; regresión de Home demuestra que doce ofertas no se pierden al intercalar prerreservas. TypeScript y revisión independiente verdes. Consultar PR81 para build Vercel y generación JPEG real; no confundir los samples QA de datos ficticios con imágenes publicables. Checkout Stripe E2E sigue saltado por falta de claves de prueba.
+
+---
+
+# Historial — reservas y reembolso — 10/10/2026
 
 El propietario solicita añadir a la política de tienda que reservar no garantiza stock si el producto deja de estar disponible y que se reembolse lo pagado cuando no pueda suministrarse. Se añade a las condiciones españolas existentes (`src/lib/legal/spain.ts`), fuente prioritaria de `/es/es/policies/terms-of-service`; no duplicar este contenido en Spree. Incluye aviso al cliente, cancelación de la reserva afectada y reembolso íntegro sin demora indebida al mismo medio de pago, conservando los derechos de consumo. Referencia contrastada: artículo110 del RDL1/2007, https://www.boe.es/buscar/act.php?id=BOE-A-2007-20555#a110. No se añade una exclusión general de responsabilidad ni se tramita ningún reembolso real.
 

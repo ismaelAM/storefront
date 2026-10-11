@@ -40,6 +40,13 @@ import {
   rotatingOfferFloorMargin,
 } from "../_shared/commercial-pricing-policy.ts";
 import {
+  dailyOfferCategory,
+  DAILY_OFFERS_PER_CATEGORY,
+  DAILY_OFFER_TARGET_COUNT,
+  interleaveDailyOfferCandidates,
+  type DailyOfferCategory,
+} from "../_shared/daily-offer-selection.ts";
+import {
   supplierMinimumOrderRiskSurcharge,
   supplierVatRate,
 } from "../_shared/supplier-pricing-policy.ts";
@@ -4787,7 +4794,7 @@ function vatRateForSku(sku: string): number {
   return isBookSku(sku) ? 0.04 : 0.21;
 }
 
-function isBookProduct(product: DevirProduct, key: string): boolean {
+function isBookProduct(product: Pick<DevirProduct, "sku" | "name">, key: string): boolean {
   if (isBookSku(product.sku)) return true;
   if (!key.startsWith("rol/")) return false;
 
@@ -8128,6 +8135,11 @@ interface DailyOfferStateRow {
     productId: string;
     hadSale: boolean;
     hadFeatured: boolean;
+    // Optional for rotations persisted by the previous worker version.
+    variantId?: string;
+    amount?: number;
+    compareAtAmount?: number;
+    category?: DailyOfferCategory;
     profile?: string;
     tagged?: boolean;
     restored?: boolean;
@@ -8360,13 +8372,9 @@ async function rotateDailyOffersUnlocked(
         return [];
       }
       const name = String(row.product_name ?? productRow.name ?? "");
-      const storedKey = String(productRow.category_key ?? "").trim();
-      const key =
-        storedKey ||
-        inferDevirCategoryKey({
-          name,
-          url: String(row.source_url ?? ""),
-        });
+      const key = String(productRow.category_key ?? "").trim();
+      const category = dailyOfferCategory(key);
+      if (!category || isBookProduct({ sku: String(row.canonical_sku ?? ""), name }, key)) return [];
       const profile = commercialPricingProfile({
         name,
         categoryKey: key,
@@ -8381,6 +8389,7 @@ async function rotateDailyOffersUnlocked(
         {
           row,
           key,
+          category,
           profile,
           lastAutoPrice,
           stockOnHand,
@@ -8395,11 +8404,10 @@ async function rotateDailyOffersUnlocked(
     .sort(
       (left, right) =>
         Number(right.physicalStock) - Number(left.physicalStock) ||
-        left.score - right.score,
+        left.score - right.score ||
+        String(left.row.variant_id).localeCompare(String(right.row.variant_id)),
     );
 
-  const targetCount = calendar.saturday ? 16 : 8;
-  const perProfileCap = calendar.saturday ? 4 : 2;
   const selected: Array<{
     variantId: string;
     spreeVariantId: string;
@@ -8408,23 +8416,24 @@ async function rotateDailyOffersUnlocked(
     amount: number;
     compareAtAmount: number;
     profile: string;
+    category: DailyOfferCategory;
     discount: number;
     physicalStock: boolean;
     stockOnHand: number;
     hadSale: boolean;
     hadFeatured: boolean;
   }> = [];
-  const profileCounts = new Map<string, number>();
+  const categoryCounts = new Map<DailyOfferCategory, number>();
   const seenProducts = new Set<string>();
 
-  for (const candidate of ranked.slice(0, 120)) {
-    if (selected.length >= targetCount) break;
+  for (const candidate of interleaveDailyOfferCandidates(ranked)) {
+    if (selected.length >= DAILY_OFFER_TARGET_COUNT) break;
     const row = candidate.row;
     const productId = String(row.spree_product_id ?? "");
     const spreeVariantId = String(row.spree_variant_id ?? "");
     if (!productId || !spreeVariantId || seenProducts.has(productId)) continue;
-    const used = profileCounts.get(candidate.profile.code) ?? 0;
-    if (used >= perProfileCap) continue;
+    const used = categoryCounts.get(candidate.category) ?? 0;
+    if (used >= DAILY_OFFERS_PER_CATEGORY) continue;
 
     try {
       const [spreeProduct, spreeVariant, selectedSupply] = await Promise.all([
@@ -8446,7 +8455,7 @@ async function rotateDailyOffersUnlocked(
       if (
         spreeProduct.status !== "active" ||
         (spreeProduct.tags ?? []).some((tag) =>
-          ["REVISION-HUMANA", "NECESITA-TU-AYUDA", "catalog-review"].includes(tag),
+          ["REVISION-HUMANA", "NECESITA-TU-AYUDA", "catalog-review", "devir-review"].includes(tag),
         )
       ) {
         continue;
@@ -8454,11 +8463,27 @@ async function rotateDailyOffersUnlocked(
       const currentPrice = variantPrice(spreeVariant);
       if (
         currentPrice === null ||
+        !Number.isFinite(currentPrice) ||
+        currentPrice <= 0 ||
         Math.abs(currentPrice - candidate.lastAutoPrice) >= 0.005 ||
-        !selectedSupply?.supplier_code
+        !selectedSupply?.supplier_code ||
+        spreeVariant.purchasable === false ||
+        selectedSupply.fulfillment_mode === "disabled"
       ) {
         // A base price that differs from last_auto_price is an operator override.
         continue;
+      }
+
+      const liveStock = Number(spreeVariant.total_on_hand);
+      const stockOnHand = Number.isFinite(liveStock) ? Math.max(0, liveStock) : candidate.stockOnHand;
+      const physicalStock = stockOnHand > 0;
+      if (!physicalStock) {
+        if (selectedSupply.fulfillment_mode === "physical_only" || selectedSupply.availability !== "available" || selectedSupply.supplier_enabled === false) continue;
+        if (selectedSupply.last_seen_at && selectedSupply.supplier_stale_after_hours != null) {
+          const lastSeen = Date.parse(selectedSupply.last_seen_at);
+          const staleAfterMs = Number(selectedSupply.supplier_stale_after_hours) * 60 * 60 * 1000;
+          if (!Number.isFinite(lastSeen) || !Number.isFinite(staleAfterMs) || staleAfterMs <= 0 || Date.now() - lastSeen > staleAfterMs) continue;
+        }
       }
 
       const purchasePrice = Number(selectedSupply.normalized_cost);
@@ -8492,17 +8517,17 @@ async function rotateDailyOffersUnlocked(
         isBook: false,
       });
       const offerFloor = paymentAwareFloor(
-        purchasePrice + (candidate.physicalStock ? 0 : surchargeNet),
+        purchasePrice + (physicalStock ? 0 : surchargeNet),
         vatRate,
         rotatingOfferFloorMargin(
           candidate.profile,
-          candidate.physicalStock,
+          physicalStock,
         ),
       );
       const discount = rotatingOfferDiscount(
         candidate.profile,
         calendar.saturday,
-        candidate.physicalStock,
+        physicalStock,
       );
       const desired = currentPrice * (1 - discount);
       const amount = roundUpToProfessionalPrice(Math.max(offerFloor, desired));
@@ -8523,13 +8548,14 @@ async function rotateDailyOffersUnlocked(
         amount,
         compareAtAmount: currentPrice,
         profile: candidate.profile.code,
+        category: candidate.category,
         discount: realisedDiscount,
-        physicalStock: candidate.physicalStock,
-        stockOnHand: candidate.stockOnHand,
+        physicalStock,
+        stockOnHand,
         hadSale: (spreeProduct.tags ?? []).includes("sale"),
         hadFeatured: (spreeProduct.tags ?? []).includes("featured"),
       });
-      profileCounts.set(candidate.profile.code, used + 1);
+      categoryCounts.set(candidate.category, used + 1);
       seenProducts.add(productId);
     } catch (error) {
       if (isSyncDeferred(error)) throw error;
@@ -8550,7 +8576,7 @@ async function rotateDailyOffersUnlocked(
         : "Bison · Ofertas 24h · " + calendar.dayKey,
       description: calendar.saturday
         ? "Selección automática de sábado. Mantiene un suelo de contribución por perfil."
-        : "Selección automática diaria. Rota por perfil comercial y respeta precios manuales.",
+        : "Selección automática diaria de hasta 3 productos por categoría. Respeta precios manuales y suelos de contribución.",
       match_policy: "all",
       starts_at: new Date().toISOString(),
     },
@@ -8590,7 +8616,8 @@ async function rotateDailyOffersUnlocked(
     id: "primary", day_key: calendar.dayKey, spree_price_list_id: priceList.id,
     special: calendar.saturday, active_products: selected.map(offer => ({
       productId: offer.productId, hadSale: offer.hadSale, hadFeatured: offer.hadFeatured,
-      profile: offer.profile, tagged: false,
+      variantId: offer.spreeVariantId, amount: offer.amount, compareAtAmount: offer.compareAtAmount,
+      category: offer.category, profile: offer.profile, tagged: false,
     })), last_rotated_at: null, last_error: null,
   };
   const { error: stateError } = await supabase.from("catalog_daily_offer_state")
@@ -8605,8 +8632,10 @@ async function rotateDailyOffersUnlocked(
     priceListId: priceList.id,
     selected: selected.map((offer) => ({
       productId: offer.productId,
+      variantId: offer.spreeVariantId,
       sku: offer.sku,
       profile: offer.profile,
+      category: offer.category,
       amount: offer.amount,
       compareAtAmount: offer.compareAtAmount,
       discount: Math.round(offer.discount * 1000) / 10,
@@ -12005,7 +12034,7 @@ async function runtimeMaintenanceTick(config: ConfigRow): Promise<Record<string,
     .update({ maintenance_turn: (turn + 1) % 4 }).eq("id", "primary");
   if (error) throw error;
   const maintenanceConfig = { ...config, request_budget: {
-    deadline_at: Math.min(config.request_budget?.deadline_at ?? Infinity, Date.now() + 25_000),
+    deadline_at: Math.min(config.request_budget?.deadline_at ?? Infinity, Date.now() + (turn === 3 ? 70_000 : 25_000)),
   } };
   const lane = ["stale", "physical", "review", "daily"][turn];
   try {
@@ -12019,6 +12048,28 @@ async function runtimeMaintenanceTick(config: ConfigRow): Promise<Record<string,
     const message = error instanceof Error ? error.message : String(error);
     console.error("Catalog maintenance failed", lane, message);
     return { lane, status: "error", error: message };
+  }
+}
+
+async function dueDailyOfferMaintenanceTick(config: ConfigRow): Promise<Record<string, unknown> | null> {
+  try {
+    const state = await dailyOfferState();
+    const calendar = madridCommercialDay();
+    const pending = Boolean(state?.day_key && state.spree_price_list_id && !state.last_rotated_at);
+    if (!pending && state?.day_key === calendar.dayKey) return null;
+    // Daily publication must not wait for a multi-day supplier crawl. Keep a
+    // supplier-work reserve within the same invocation and retain the outer
+    // cleanup deadline for the existing activation/tag recovery checkpoints.
+    const dailyConfig = { ...config, request_budget: {
+      deadline_at: Math.min((config.request_budget?.deadline_at ?? Infinity) - 20_000, Date.now() + 70_000),
+    } };
+    if (!canStartSyncWork(dailyConfig)) throw syncDeferred();
+    return { lane: "daily", result: await rotateDailyOffers(dailyConfig) };
+  } catch (error) {
+    if (isSyncDeferred(error)) return { lane: "daily", status: "deferred", reason: "request_budget" };
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("Due daily offer rotation failed", message);
+    return { lane: "daily", status: "error", error: message };
   }
 }
 
@@ -12082,6 +12133,11 @@ Deno.serve((req) => syncRuntime.run({ database_budget: { deadline_at: Date.now()
       return json({ ok: false, skipped: "bootstrap_required" }, 409);
     }
 
+    const dailyMaintenance = await dueDailyOfferMaintenanceTick(config);
+    if (dailyMaintenance?.status === "deferred") {
+      return json({ ok: true, status: "deferred", reason: "request_budget", maintenance: dailyMaintenance });
+    }
+
     const runnableActiveCycle =
       Boolean(config.active_cycle_id) &&
       (config.phase === "categories" || config.phase === "products");
@@ -12106,6 +12162,7 @@ Deno.serve((req) => syncRuntime.run({ database_budget: { deadline_at: Date.now()
           error instanceof Error ? error.message : String(error),
         );
       }
+      if (!canStartSyncWork(config)) throw syncDeferred();
       // Persist the turn before work: a long request or timeout must still
       // leave the other distributor the next unlocked invocation.
       const recordSupplierTurn = async (code: string) => {

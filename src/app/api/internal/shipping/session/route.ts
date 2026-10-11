@@ -17,12 +17,14 @@ export async function POST(request: Request) {
 
   const formData = await request.formData();
   const action = formData.get("action");
+  // Exact allowlist: never treat a submitted path or URL as a redirect target.
+  const returnTo =
+    formData.get("returnTo") === "/ops/offers"
+      ? "/ops/offers"
+      : "/ops/shipping";
 
   if (action === "logout") {
-    const response = NextResponse.redirect(
-      new URL("/ops/shipping", request.url),
-      303,
-    );
+    const response = NextResponse.redirect(new URL(returnTo, request.url), 303);
     response.cookies.set(SHIPPING_OPERATIONS_SESSION_COOKIE, "", {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
@@ -40,7 +42,7 @@ export async function POST(request: Request) {
 
   if (!shippingOperationsTokenMatches(token)) {
     return NextResponse.redirect(
-      new URL("/ops/shipping?error=1", request.url),
+      new URL(`${returnTo}?error=1`, request.url),
       303,
     );
   }
@@ -52,10 +54,7 @@ export async function POST(request: Request) {
     });
   }
 
-  const response = NextResponse.redirect(
-    new URL("/ops/shipping", request.url),
-    303,
-  );
+  const response = NextResponse.redirect(new URL(returnTo, request.url), 303);
   response.cookies.set(SHIPPING_OPERATIONS_SESSION_COOKIE, session, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",

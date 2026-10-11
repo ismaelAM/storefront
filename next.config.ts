@@ -37,6 +37,20 @@ function spreeImagePatterns(): RemotePattern[] {
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  outputFileTracingIncludes: {
+    "/api/internal/offers": [
+      "./assets/fonts/Geist-Regular.ttf",
+      "./assets/fonts/OFL.txt",
+    ],
+    "/api/internal/offers/image": [
+      "./assets/fonts/Geist-Regular.ttf",
+      "./assets/fonts/OFL.txt",
+    ],
+    "/api/cron/offers": [
+      "./assets/fonts/Geist-Regular.ttf",
+      "./assets/fonts/OFL.txt",
+    ],
+  },
   allowedDevOrigins: ["shop.lvh.me", "*.trycloudflare.com", "192.168.33.13"],
   env: {
     NEXT_PUBLIC_SENTRY_DSN: process.env.SENTRY_DSN || "",
