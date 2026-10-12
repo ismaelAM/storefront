@@ -7,7 +7,7 @@ import {
 } from "@/i18n/markets";
 import { getMarkets } from "@/lib/data/markets";
 import { validateMetadataRoute } from "@/lib/metadata/validate-route";
-import { SOCIAL_IMAGE_PATH } from "@/lib/seo";
+import { normalizeOpenGraphLocale, SOCIAL_IMAGE_PATH } from "@/lib/seo";
 import {
   getStoreMetaDescription,
   getStoreName,
@@ -15,20 +15,20 @@ import {
   getStoreUrl,
 } from "@/lib/store";
 
-function normalizeOpenGraphLocale(locale: string): string {
-  const parts = locale.split(/[-_]/);
-  if (parts.length < 2) return locale;
-  return `${parts[0].toLowerCase()}_${parts[1].toUpperCase()}`;
-}
-
-function getPathSuffix(pathname: string | null, country: string, locale: string): string {
+function getPathSuffix(
+  pathname: string | null,
+  country: string,
+  locale: string,
+): string {
   if (!pathname) return "";
   const prefix = `/${country.toLowerCase()}/${locale.toLowerCase()}`;
   if (pathname.toLowerCase().startsWith(prefix)) {
     return pathname.slice(prefix.length) || "";
   }
 
-  const match = pathname.match(/^\/[a-z]{2}\/[a-z]{2,3}(?:-[a-z0-9]{2,8})*(\/.*)?$/i);
+  const match = pathname.match(
+    /^\/[a-z]{2}\/[a-z]{2,3}(?:-[a-z0-9]{2,8})*(\/.*)?$/i,
+  );
   return match?.[1] ?? "";
 }
 
@@ -42,19 +42,23 @@ async function buildLocaleAlternates(
     const pathname = requestHeaders.get("x-spree-request-pathname");
     const suffix = getPathSuffix(pathname, country, locale);
     const base = storeUrl.replace(/\/$/, "");
-    const markets = await getMarkets({ country, locale }).then((res) => res.data);
+    const markets = await getMarkets({ country, locale }).then(
+      (res) => res.data,
+    );
     const currentMarket = findMarketForCountry(markets, country);
 
     if (!currentMarket) return undefined;
 
     const languages: Record<string, string> = {};
     for (const marketLocale of getMarketLocales(currentMarket)) {
-      languages[marketLocale] = `${base}/${country.toLowerCase()}/${marketLocale}${suffix}`;
+      languages[marketLocale] =
+        `${base}/${country.toLowerCase()}/${marketLocale}${suffix}`;
     }
 
     const defaultTarget = getDefaultMarketLocaleTarget(markets);
     if (defaultTarget) {
-      languages["x-default"] = `${base}/${defaultTarget.country}/${defaultTarget.locale}${suffix}`;
+      languages["x-default"] =
+        `${base}/${defaultTarget.country}/${defaultTarget.locale}${suffix}`;
     }
 
     return {
@@ -81,6 +85,13 @@ export async function generateStoreMetadata({
   const metaDescription = getStoreMetaDescription();
   const metaKeywords = process.env.STORE_META_KEYWORDS;
   const twitter = process.env.STORE_TWITTER;
+  const googleVerification = process.env.GOOGLE_SITE_VERIFICATION?.trim();
+  const socialImage = {
+    url: SOCIAL_IMAGE_PATH,
+    width: 1200,
+    height: 630,
+    alt: getStoreName(),
+  };
 
   let metadataBaseSpread: Partial<{ metadataBase: URL }> = {};
   if (storeUrl) {
@@ -99,19 +110,30 @@ export async function generateStoreMetadata({
     ...metadataBaseSpread,
     ...(alternates ? { alternates } : {}),
     title: {
-      template: `%s | ${storeName}`,
+      template: `%s | ${getStoreName()}`,
       default: storeName,
     },
     description: metaDescription,
     ...(metaKeywords ? { keywords: metaKeywords } : {}),
+    ...(googleVerification
+      ? { verification: { google: googleVerification } }
+      : {}),
+    robots: { googleBot: { "max-image-preview": "large" } },
+    icons: {
+      icon: [{ url: "/bison-icon.png", sizes: "192x192", type: "image/png" }],
+      apple: [
+        { url: "/bison-apple-icon.png", sizes: "180x180", type: "image/png" },
+      ],
+    },
     openGraph: {
       siteName: getStoreName(),
-      locale: normalizeOpenGraphLocale(locale),
+      locale: normalizeOpenGraphLocale(locale, country),
       type: "website",
-      images: [SOCIAL_IMAGE_PATH],
+      images: [socialImage],
     },
     twitter: {
       card: "summary_large_image",
+      images: [socialImage],
       ...(twitter
         ? {
             site: twitter.startsWith("@") ? twitter : `@${twitter}`,

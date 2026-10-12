@@ -13,7 +13,11 @@ export const PRODUCT_PAGE_EXPAND = [
   // catalog-managed products. Load breadcrumb categories separately instead.
 ];
 
-export const PRODUCT_METADATA_EXPAND = ["primary_media", "default_variant"];
+export const PRODUCT_METADATA_EXPAND = [
+  "primary_media",
+  "default_variant",
+  "variants",
+];
 
 /** Minimal fields used by cards, analytics and the Puck product filters. */
 export const PRODUCT_CARD_FIELDS = [

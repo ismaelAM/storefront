@@ -1,17 +1,23 @@
 import type { MetadataRoute } from "next";
-import { DEFAULT_LOCALE, resolveSupportedLocale } from "@/i18n/locales";
+import {
+  DEFAULT_LOCALE,
+  resolveSupportedLocale,
+  type SupportedLocale,
+} from "@/i18n/locales";
 import {
   getMarketLocaleTargets,
   type MarketLocaleTarget,
 } from "@/i18n/markets";
 import {
   getSitemapCategoryPage,
+  getSitemapFallbackFingerprints,
   getSitemapMarkets,
   getSitemapProductPage,
   getSitemapResourceCount,
   type SitemapCategory,
   type SitemapProduct,
 } from "@/lib/data/sitemap";
+import { hashSitemapResource } from "@/lib/data/sitemap-fingerprint";
 import { getDefaultCountry, getDefaultLocale, getStoreUrl } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
@@ -32,11 +38,13 @@ interface LocaleCatalog extends LocaleOptions {
 interface PageCaches {
   products: Map<string, Promise<SitemapProduct[]>>;
   categories: Map<string, Promise<SitemapCategory[]>>;
+  fallbackFingerprints: Map<string, Promise<Record<string, string>>>;
 }
 
 /**
- * Google permits 50,000 URLs, but 10,000 keeps each request below roughly 100
- * Store API pages and avoids long-running sitemap responses on large catalogs.
+ * Google permits 50,000 URLs, but 10,000 bounds each shard's own URL pages to
+ * roughly 100. The remote-cached translation baseline has a separate cold
+ * generation limit of 1,000 pages per Market/resource/default locale.
  */
 const URLS_PER_SITEMAP = 10_000;
 const STATIC_PAGES_PER_LOCALE = 1;
@@ -102,7 +110,7 @@ function catalogKey(target: { marketId: string; locale: string }): string {
  */
 export async function generateSitemaps(): Promise<Array<{ id: number }>> {
   try {
-    const countryLocales = await resolveCountryLocales();
+    const { countryLocales } = await resolveCountryLocales();
     const catalogs = await resolveLocaleCatalogs(countryLocales);
     const totalUrls = countryLocales.reduce((total, target) => {
       const catalog = catalogs.get(catalogKey(target));
@@ -128,10 +136,11 @@ export default async function sitemap(props: {
   if (!baseUrl) return [];
 
   let countryLocales: CountryLocale[];
+  let contentDefaultLocale: SupportedLocale | undefined;
   let catalogs: Map<string, LocaleCatalog>;
 
   try {
-    countryLocales = await resolveCountryLocales();
+    ({ countryLocales, contentDefaultLocale } = await resolveCountryLocales());
     catalogs = await resolveLocaleCatalogs(countryLocales);
   } catch (error) {
     console.error("Sitemap generation failed: API unavailable.", error);
@@ -144,6 +153,7 @@ export default async function sitemap(props: {
   const pageCaches: PageCaches = {
     products: new Map(),
     categories: new Map(),
+    fallbackFingerprints: new Map(),
   };
   let targetStart = 0;
 
@@ -198,8 +208,29 @@ export default async function sitemap(props: {
         : Promise.resolve([]),
     ]);
 
+    const [canonicalProducts, canonicalCategories] = await Promise.all([
+      products.status === "fulfilled"
+        ? filterCanonicalResources(
+            products.value,
+            "products",
+            catalog,
+            contentDefaultLocale,
+            pageCaches,
+          )
+        : Promise.resolve([]),
+      categories.status === "fulfilled"
+        ? filterCanonicalResources(
+            categories.value,
+            "categories",
+            catalog,
+            contentDefaultLocale,
+            pageCaches,
+          )
+        : Promise.resolve([]),
+    ]);
+
     if (products.status === "fulfilled") {
-      appendProductEntries(entries, basePath, products.value);
+      appendProductEntries(entries, basePath, canonicalProducts);
     } else {
       console.error(
         `Sitemap: skipping products for ${target.country}/${target.locale}.`,
@@ -207,7 +238,7 @@ export default async function sitemap(props: {
       );
     }
     if (categories.status === "fulfilled") {
-      appendCategoryEntries(entries, basePath, categories.value);
+      appendCategoryEntries(entries, basePath, canonicalCategories);
     } else {
       console.error(
         `Sitemap: skipping categories for ${target.country}/${target.locale}.`,
@@ -302,7 +333,6 @@ function appendCategoryEntries(
   categories: SitemapCategory[],
 ): void {
   for (const category of categories) {
-    if (category.is_root) continue;
     entries.push({
       url: `${basePath}/c/${category.permalink}`,
       ...(category.updated_at
@@ -315,21 +345,76 @@ function appendCategoryEntries(
 }
 
 /** Resolve every valid country/locale URL exposed by configured Markets. */
-async function resolveCountryLocales(): Promise<CountryLocale[]> {
+async function resolveCountryLocales(): Promise<{
+  countryLocales: CountryLocale[];
+  contentDefaultLocale: SupportedLocale | undefined;
+}> {
   const localeOptions = getDefaultLocaleOptions();
   const markets = await getSitemapMarkets(localeOptions);
   const targets = getMarketLocaleTargets(markets);
 
-  return targets.length > 0
-    ? targets
-    : [
-        {
-          marketId: "default",
-          country: localeOptions.country,
-          locale:
-            resolveSupportedLocale(localeOptions.locale) ?? DEFAULT_LOCALE,
-        },
-      ];
+  const countryLocales =
+    targets.length > 0
+      ? targets
+      : [
+          {
+            marketId: "default",
+            country: localeOptions.country,
+            locale:
+              resolveSupportedLocale(localeOptions.locale) ?? DEFAULT_LOCALE,
+          },
+        ];
+  const defaultMarket = markets.find((market) => market.default) ?? markets[0];
+  return {
+    countryLocales,
+    // Match metadata's detection of Spree's untranslated Store-locale fallback.
+    contentDefaultLocale: resolveSupportedLocale(defaultMarket?.default_locale),
+  };
+}
+
+/** Compare stable IDs using batch payloads, never one request per resource. */
+async function filterCanonicalResources<
+  T extends SitemapProduct | SitemapCategory,
+>(
+  resources: T[],
+  resource: "products" | "categories",
+  catalog: LocaleCatalog,
+  contentDefaultLocale: SupportedLocale | undefined,
+  pageCaches: PageCaches,
+): Promise<T[]> {
+  if (
+    !resources.length ||
+    !contentDefaultLocale ||
+    catalog.locale === contentDefaultLocale
+  ) {
+    return resources;
+  }
+
+  const fallbackTarget = { ...catalog, locale: contentDefaultLocale };
+  const key = `${catalogKey(fallbackTarget)}:${resource}`;
+  let fingerprints = pageCaches.fallbackFingerprints.get(key);
+  if (!fingerprints) {
+    fingerprints = getSitemapFallbackFingerprints(resource, catalog.marketId, {
+      country: catalog.country,
+      locale: contentDefaultLocale,
+    });
+    pageCaches.fallbackFingerprints.set(key, fingerprints);
+  }
+
+  try {
+    const fallbackById = await fingerprints;
+    return resources.filter(
+      (item) => fallbackById[item.id] !== hashSitemapResource(item),
+    );
+  } catch (error) {
+    // A failed comparison cannot safely advertise untranslated duplicate URLs.
+    // Keep the other resources/locales available and retry next request.
+    console.error(
+      `Sitemap: cannot verify ${resource} translations for ${catalog.country}/${catalog.locale}.`,
+      error,
+    );
+    return [];
+  }
 }
 
 async function buildLocaleCatalog(
@@ -340,6 +425,15 @@ async function buildLocaleCatalog(
     getSitemapResourceCount("products", target.marketId, localeOptions),
     getSitemapResourceCount("categories", target.marketId, localeOptions),
   ]);
+
+  if (
+    productCount > MAX_FETCHABLE_ITEMS ||
+    categoryCount > MAX_FETCHABLE_ITEMS
+  ) {
+    console.warn(
+      `Sitemap: catalog exceeds the ${MAX_FETCHABLE_ITEMS}-item pagination limit for ${target.country}/${target.locale}.`,
+    );
+  }
 
   return {
     marketId: target.marketId,

@@ -19,16 +19,7 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
       {
         userAgent: "*",
         allow: "/",
-        disallow: [
-          "/*/account",
-          "/*/account/*",
-          "/*/cart",
-          "/*/checkout",
-          "/*/checkout/*",
-          "/*?*sort=*",
-          "/*?*page=*",
-          "/*?*filter*=*",
-        ],
+        disallow: ["/*?*sort=*", "/*?*page=*", "/*?*filter*=*"],
       },
     ],
     ...(baseUrl

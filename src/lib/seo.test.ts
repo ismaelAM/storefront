@@ -69,7 +69,7 @@ describe("product SEO", () => {
     );
   });
 
-  it("adds identifiers, brand and variant offers without inventing reviews", () => {
+  it("adds identifiers, brand and the initial offer without inventing reviews", () => {
     vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://bisontcg.example");
     vi.stubEnv("NEXT_PUBLIC_STORE_NAME", "BisonTCG");
     const schema = buildProductJsonLd(
@@ -149,34 +149,148 @@ describe("product SEO", () => {
       gtin13: "5706569110024",
       brand: { "@type": "Brand", name: "Dragon Shield" },
       category: "Accesorios para cartas",
-      offers: [
-        {
-          "@type": "Offer",
-          sku: "BLACK-100",
-          price: "9.95",
-          priceCurrency: "EUR",
-          availability: "https://schema.org/PreOrder",
-          itemCondition: "https://schema.org/NewCondition",
-          seller: {
-            "@id": "https://bisontcg.example#organization",
-            name: "BisonTCG",
-          },
+      offers: {
+        "@type": "Offer",
+        sku: "BLACK-100",
+        price: "9.95",
+        priceCurrency: "EUR",
+        availability: "https://schema.org/PreOrder",
+        itemCondition: "https://schema.org/NewCondition",
+        seller: {
+          "@id": "https://bisontcg.example#organization",
+          name: "BisonTCG",
         },
-      ],
+      },
     });
     expect(schema).not.toHaveProperty("review");
     expect(schema).not.toHaveProperty("aggregateRating");
   });
+
+  it("does not turn a distributor SKU into a global identifier", () => {
+    const schema = buildProductJsonLd(
+      product({
+        default_variant: {
+          sku: "DIST-5706569110024",
+        } as Product["default_variant"],
+      }),
+      "https://example.com/product",
+    );
+    expect(schema).not.toHaveProperty("gtin13");
+    expect(schema.sku).toBe("DIST-5706569110024");
+  });
+
+  it("rejects GTIN fields containing letters instead of stripping them", () => {
+    const schema = buildProductJsonLd(
+      product({
+        custom_fields: [
+          {
+            key: "gtin",
+            value: "DIST-5706569110024",
+          },
+        ] as Product["custom_fields"],
+      }),
+      "https://example.com/product",
+    );
+    expect(schema).not.toHaveProperty("gtin13");
+  });
+
+  it("keeps a validated explicit ISBN-10 separate from GTIN", () => {
+    const schema = buildProductJsonLd(
+      product({
+        custom_fields: [
+          {
+            key: "isbn",
+            value: "0-8044-2957-X",
+          },
+        ] as Product["custom_fields"],
+      }),
+      "https://example.com/product",
+    );
+    expect(schema.isbn).toBe("080442957X");
+    expect(schema["@type"]).toEqual(["Product", "Book"]);
+    expect(schema).not.toHaveProperty("gtin13");
+  });
+
+  it.each([
+    "-1",
+    "NaN",
+    "Infinity",
+    "",
+    " ",
+  ])("omits an invalid actual price %j", (amount) => {
+    const schema = buildProductJsonLd(
+      product({ price: { ...product().price!, amount } }),
+      "https://example.com/product",
+    );
+    expect(schema).not.toHaveProperty("offers");
+  });
+
+  it("uses default variant price and actual backorder status", () => {
+    const schema = buildProductJsonLd(
+      product({
+        default_variant: {
+          sku: "default",
+          price: { ...product().price!, amount: "12.95" },
+          purchasable: true,
+          in_stock: false,
+          preorder: false,
+          backorderable: true,
+        } as Product["default_variant"],
+      }),
+      "https://example.com/product",
+    );
+    expect(schema.offers).toMatchObject({
+      price: "12.95",
+      availability: "https://schema.org/BackOrder",
+    });
+  });
+
+  it("uses the displayed product price fallback when default price is absent", () => {
+    const schema = buildProductJsonLd(
+      product({
+        default_variant: {
+          sku: "default",
+          price: null,
+          purchasable: true,
+          in_stock: true,
+        } as unknown as Product["default_variant"],
+      }),
+      "https://example.com/product",
+    );
+    expect(schema.offers).toMatchObject({ price: "9.95", sku: "default" });
+  });
+
+  it.each([
+    { preorder: true },
+    { backorderable: true },
+  ])("does not advertise ordering for a nonpurchasable product %j", (state) => {
+    const schema = buildProductJsonLd(
+      product({ ...state, purchasable: false, in_stock: false }),
+      "https://example.com/product",
+    );
+    expect(schema.offers).toMatchObject({
+      availability: "https://schema.org/OutOfStock",
+    });
+  });
 });
 
 describe("store SEO", () => {
+  it("uses the root origin when deriving a site URL from the canonical homepage", () => {
+    vi.stubEnv("NEXT_PUBLIC_SITE_URL", "");
+    vi.stubEnv("NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL", "");
+    vi.stubEnv("NODE_ENV", "test");
+    expect(buildWebSiteJsonLd("https://bisontcg.example/es/es", "es").url).toBe(
+      "https://bisontcg.example",
+    );
+  });
+
   it("links WebSite and Organization with stable identifiers", () => {
     vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://bisontcg.example");
     vi.stubEnv("NEXT_PUBLIC_STORE_NAME", "BisonTCG");
     vi.stubEnv("NEXT_PUBLIC_STORE_DESCRIPTION", "Juegos y coleccionables.");
 
     expect(buildOrganizationJsonLd()).toMatchObject({
-      "@type": "Organization",
+      "@type": "OnlineStore",
       "@id": "https://bisontcg.example#organization",
       name: "BisonTCG",
       description: "Juegos y coleccionables.",
@@ -186,9 +300,32 @@ describe("store SEO", () => {
     ).toMatchObject({
       "@type": "WebSite",
       "@id": "https://bisontcg.example#website",
-      url: "https://bisontcg.example/es/es",
+      url: "https://bisontcg.example",
       inLanguage: "es",
       publisher: { "@id": "https://bisontcg.example#organization" },
+    });
+  });
+
+  it("uses the resolved logo and links to the actual return policy", () => {
+    vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://bisontcg.example");
+    const schema = buildOrganizationJsonLd({
+      logoUrl: "/bison-logo.png",
+      returnPolicyUrl: "https://bisontcg.example/es/es/policies/returns-policy",
+    });
+    expect(schema.logo).toBe("https://bisontcg.example/bison-logo.png");
+    expect(schema.hasMerchantReturnPolicy).toEqual({
+      "@type": "MerchantReturnPolicy",
+      merchantReturnLink:
+        "https://bisontcg.example/es/es/policies/returns-policy",
+    });
+    expect(schema).not.toHaveProperty("address");
+  });
+
+  it("uses the same verified email fallback as the visible legal identity", () => {
+    vi.stubEnv("STORE_SUPPORT_EMAIL", "");
+    vi.stubEnv("LEGAL_CONTACT_EMAIL", "support@bisontcg.example");
+    expect(buildOrganizationJsonLd()).toMatchObject({
+      contactPoint: { email: "support@bisontcg.example" },
     });
   });
 });

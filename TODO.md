@@ -4,6 +4,14 @@ Rama principal: `main`
 
 Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras. Tras cada edición relevante del proyecto, actualizaré este documento con lo hecho y cualquier comprobación nueva que haya quedado pendiente.
 
+## Google y SEO — 12/10/2026
+
+- [x] Auditados canonical, hreflang, sitemap, JSON-LD y metadatos públicos. Preparadas correcciones de dominio final, categorías omitidas, idiomas sin traducción, disponibilidad/precio, marca y noindex privado. Ver GOOGLE_SEARCH.md.
+- [x] Configuración pública Vercel actualizada a `https://www.bisontcg.com`, título/descripción BisonTCG, soporte `ayuda@bisontcg.com` y perfil Instagram indicado por el propietario. Conservados targets/tipos y secretos; requiere deployment para aplicar.
+- [ ] Verificar integración/deployment y muestras públicas; evidencia final en la PR de `fix/google-search-readiness`.
+- [ ] **Alta Search Console pendiente:** el navegador remoto terminó en timeout sin devolver página; no hubo creación/verificación ni envío del sitemap. Obtener el token público de etiqueta HTML y completar los pasos documentados en GOOGLE_SEARCH.md.
+- [ ] Observar indexación real y errores de Google tras verificar la propiedad; no prometer aparición inmediata ni activar Instagram por dar el SEO por preparado.
+
 ## Ofertas por correo — 12/10/2026
 
 - [x] Correo de prueba a `ayuda@bisontcg.com` enviado con las cuatro imágenes JPEG del 12/10/2026.

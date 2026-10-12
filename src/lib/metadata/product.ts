@@ -5,9 +5,16 @@ import {
   buildLocalizedAlternates,
   translationFingerprint,
 } from "@/lib/metadata/alternates";
-import { buildProductShortDescription } from "@/lib/seo";
+import {
+  buildProductShortDescription,
+  getProductOfferSource,
+  normalizeOpenGraphLocale,
+  SOCIAL_IMAGE_PATH,
+  schemaAvailability,
+  validOfferPrice,
+} from "@/lib/seo";
 import { DEFAULT_SURFACE } from "@/lib/spree";
-import { getStoreUrl } from "@/lib/store";
+import { getStoreName, getStoreUrl } from "@/lib/store";
 
 interface ProductMetadataParams {
   country: string;
@@ -65,16 +72,21 @@ export async function generateProductMetadata({
     primaryMedia?.original_url ||
     product.thumbnail_url ||
     null;
-  const ogImage =
-    ogSrc && storeUrl
-      ? {
-          url: `${storeUrl}/_next/image?url=${encodeURIComponent(ogSrc)}&w=1200&q=75`,
-          ...(primaryMedia?.og_image_url ? { width: 1200, height: 630 } : {}),
-          alt: primaryMedia?.alt || product.name,
-        }
-      : ogSrc
-        ? { url: ogSrc, alt: primaryMedia?.alt || product.name }
-        : null;
+  const ogImage = ogSrc
+    ? {
+        url: ogSrc,
+        ...(primaryMedia?.og_image_url ? { width: 1200, height: 630 } : {}),
+        alt: primaryMedia?.alt || product.name,
+      }
+    : { url: SOCIAL_IMAGE_PATH, width: 1200, height: 630, alt: getStoreName() };
+  const offerSource = getProductOfferSource(product);
+  const price = validOfferPrice(offerSource.price) ? offerSource.price : null;
+  const availability = {
+    "https://schema.org/PreOrder": "preorder",
+    "https://schema.org/InStock": "in stock",
+    "https://schema.org/BackOrder": "backorder",
+    "https://schema.org/OutOfStock": "out of stock",
+  }[schemaAvailability(offerSource)];
 
   return {
     title,
@@ -91,6 +103,8 @@ export async function generateProductMetadata({
     openGraph: {
       title,
       description,
+      siteName: getStoreName(),
+      locale: normalizeOpenGraphLocale(locale, country),
       ...(localizedAlternates ? { url: localizedAlternates.canonical } : {}),
       type: "website",
       ...(ogImage ? { images: [ogImage] } : {}),
@@ -102,19 +116,15 @@ export async function generateProductMetadata({
       ...(ogImage ? { images: [ogImage] } : {}),
     },
     other: {
-      ...(product.price?.amount
-        ? { "product:price:amount": product.price.amount }
+      ...(price
+        ? {
+            "product:price:amount": price.amount,
+            "product:price:currency": price.currency,
+          }
         : {}),
-      ...(product.price?.currency
-        ? { "product:price:currency": product.price.currency }
-        : {}),
-      "product:availability": product.preorder
-        ? "preorder"
-        : product.purchasable
-          ? "in stock"
-          : "out of stock",
-      ...(product.default_variant?.sku
-        ? { "product:retailer_item_id": product.default_variant.sku }
+      "product:availability": availability,
+      ...("sku" in offerSource && offerSource.sku
+        ? { "product:retailer_item_id": offerSource.sku }
         : {}),
     },
   };

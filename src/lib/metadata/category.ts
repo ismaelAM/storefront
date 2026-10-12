@@ -5,7 +5,8 @@ import {
   buildLocalizedAlternates,
   translationFingerprint,
 } from "@/lib/metadata/alternates";
-import { getStoreUrl } from "@/lib/store";
+import { normalizeOpenGraphLocale, SOCIAL_IMAGE_PATH } from "@/lib/seo";
+import { getStoreName, getStoreUrl } from "@/lib/store";
 
 export interface CategoryMetadataParams {
   country: string;
@@ -34,7 +35,10 @@ export async function generateCategoryMetadata({
   const description =
     category.meta_description ||
     category.description ||
-    `Browse ${category.name} products.`;
+    categoryDescriptionFallback(category.name, locale);
+  const socialImage = category.image_url
+    ? { url: category.image_url, alt: category.name }
+    : { url: SOCIAL_IMAGE_PATH, width: 1200, height: 630, alt: getStoreName() };
 
   const storeUrl = getStoreUrl();
   const localizedAlternates = storeUrl
@@ -73,19 +77,36 @@ export async function generateCategoryMetadata({
     openGraph: {
       title,
       description,
+      siteName: getStoreName(),
+      locale: normalizeOpenGraphLocale(locale, country),
       ...(localizedAlternates ? { url: localizedAlternates.canonical } : {}),
       type: "website",
-      ...(category.image_url
-        ? { images: [{ url: category.image_url, alt: category.name }] }
-        : {}),
+      images: [socialImage],
     },
     twitter: {
       card: "summary_large_image",
       title,
       description,
-      ...(category.image_url ? { images: [category.image_url] } : {}),
+      images: [socialImage],
     },
   };
+}
+
+function categoryDescriptionFallback(name: string, locale: string): string {
+  switch (locale.toLowerCase().split(/[-_]/)[0]) {
+    case "es":
+      return `Explora los productos de ${name}.`;
+    case "fr":
+      return `Découvrez les produits de ${name}.`;
+    case "pt":
+      return `Explore os produtos de ${name}.`;
+    case "de":
+      return `Entdecke die Produkte von ${name}.`;
+    case "pl":
+      return `Przeglądaj produkty z kategorii ${name}.`;
+    default:
+      return `Browse ${name} products.`;
+  }
 }
 
 function categoryTranslationFingerprint(category: {
