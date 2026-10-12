@@ -10,7 +10,9 @@ La rotación usa el día de Madrid y tiene prioridad sobre los rastreos largos d
 
 ## Horario
 
-`vercel.json` programa `/api/cron/offers` cada día a las 08:00 UTC: 10:00 en verano y 09:00 en invierno en Madrid. En Hobby puede ejecutarse dentro de esa hora. `CRON_SECRET` protege la llamada; la credencial está solo en producción. Si falta conectar Instagram, prepara imágenes para descarga. Un reparto incompleto impide el carrusel automático, aunque se puedan descargar categorías disponibles desde el panel.
+`vercel.json` programa `/api/cron/offers` cada día a las 04:00 UTC: 06:00 en verano y 05:00 en invierno en Madrid. En Hobby puede ejecutarse dentro de esa hora; se deja margen para preparar las imágenes antes del correo de las 08:00. `CRON_SECRET` protege la llamada; la credencial está solo en producción. Si falta conectar Instagram, prepara imágenes para descarga. Un reparto incompleto impide el carrusel automático, aunque se puedan descargar categorías disponibles desde el panel.
+
+El propietario ha autorizado el correo con las cuatro imágenes a `ayuda@bisontcg.com`. Una automatización de ChatGPT usa Gmail y consultas de solo lectura a Supabase, a las **08:00 Europe/Madrid**, desde el 13/10/2026. Adjunta las imágenes del día y sus enlaces; comprueba los correos enviados para evitar duplicados. Si faltan imágenes actuales, informa del fallo sin enviar fotos de otro día. La publicación en Instagram sigue pendiente y manual.
 
 Las imágenes públicas de publicación se guardan en el bucket `daily-offers` con fecha y hash inmutable. Solo contienen catálogo público. La tabla `social_offer_publications` y sus checkpoints son privados y solo el servidor puede escribirlos. Cada cuenta publica como máximo una vez al día. Ante una respuesta ambigua se bloquean reenvíos; primero debe comprobarse Instagram.
 
