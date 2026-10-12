@@ -4,6 +4,13 @@ Rama principal: `main`
 
 Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras. Tras cada edición relevante del proyecto, actualizaré este documento con lo hecho y cualquier comprobación nueva que haya quedado pendiente.
 
+## Ofertas por correo — 12/10/2026
+
+- [x] Correo de prueba a `ayuda@bisontcg.com` enviado con las cuatro imágenes JPEG del 12/10/2026.
+- [x] Envío recurrente autorizado por el propietario a las **08:00, Europe/Madrid**, desde el 13/10/2026; automatización de ChatGPT con Gmail/Supabase y control de duplicados. Ver DAILY_OFFERS.md.
+- [ ] Confirmar el primer envío programado; no se ha ejecutado todavía.
+- [ ] Adelantar el cron de imágenes a **04:00 UTC** y verificar su despliegue antes de atribuir el nuevo horario a producción. Evidencia de integración y deployment en la PR de `fix/daily-offers-before-eight-am`.
+
 ## Prioridad alta
 
 ### Madrid y logo — 10/10/2026
