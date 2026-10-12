@@ -1,4 +1,16 @@
-# Continuidad — doce ofertas y publicación social — 11/10/2026
+# Continuidad — Google y correo de ofertas — 12/10/2026
+
+Este bloque prevalece sobre el historial. El propietario solicita dar de alta la web en Google y completar metadatos, manteniendo autorización de cambios revisados y publicación. Rama `fix/google-search-readiness`, base main `24bbbffea2fbbe9cf73da126df3d8a70f138d66e`. Estado y límites en GOOGLE_SEARCH.md; evidencia final de CI/deployment/HTTP en la PR de esta rama.
+
+- Preparadas correcciones SEO: sitemap incluye categorías superiores y omite recursos sin traducción real, noindex en cuenta/carrito/checkout, descripciones localizadas, precio/disponibilidad de variante inicial, identificadores explícitos validados, ISBN con Product/Book, OnlineStore con logo y enlace de devoluciones. Imagen social/iconos/favicons BisonTCG derivados del logo real sin IA; token opcional Google solo si está configurado.
+- Vercel conserva proyecto/equipo y targets/tipos existentes. Configuración pública actualizada: dominio `https://www.bisontcg.com`, título/descripción, soporte `ayuda@bisontcg.com` y perfil `https://www.instagram.com/bisontcg/`. Se aplicará en el siguiente deployment; no recuperar secretos para esta tarea.
+- **Search Console NO completada:** dos navegaciones remotas terminaron en timeout antes de devolver página. No hubo propiedad verificada, sitemap enviado ni solicitud de indexación. No atribuir ese fallo a credenciales o bot detection sin evidencia. La web queda preparada para incorporar el token público de la etiqueta HTML cuando se obtenga de la cuenta propietaria.
+- El correo de ofertas ya se programó a08:00 Europe/Madrid desde13/10 mediante automatización de ChatGPT/Gmail/Supabase; tarea anterior11:00 pausada. PR85 publicada en producción READY `dpl_mskFAZkpY7c2r3uE3zx1JQcAqbur`, cron de imágenes04:00UTC. No alterar estas tareas ni publicar a Instagram al terminar SEO; conexión profesional de Meta sigue aplazada.
+- Pruebas de regresión observadas en rojo/verde y revisión independiente realizadas; verificar la suite final y publicación en la PR antes de dar el cambio por publicado. Checkout E2E sigue dependiendo de claves de prueba y no acredita una compra real.
+
+---
+
+# Historial — doce ofertas y publicación social — 11/10/2026
 
 El propietario pide continuar sin preguntas: doce ofertas diarias, tres por familia, e imágenes/publicación automática para Instagram sin IA. Implementación y evidencia final de integración/deployment en PR81: https://github.com/ismaelAM/storefront/pull/81. Leer DAILY_OFFERS.md para operación y docs/social-instagram-api.md para la conexión de Meta.
 

@@ -7,10 +7,18 @@ import {
 } from "@/lib/store";
 
 /**
- * Default social image path (stored in public/).
- * Replace public/social-image.png with your own 1200x630 OG image.
+ * Branded social image path (stored in public/), 1200x630.
  */
-export const SOCIAL_IMAGE_PATH = "/social-image.webp";
+export const SOCIAL_IMAGE_PATH = "/bison-social-image.webp";
+
+export function normalizeOpenGraphLocale(
+  locale: string,
+  country: string,
+): string {
+  const parts = locale.split(/[-_]/);
+  const region = parts[1]?.length === 2 ? parts[1] : country;
+  return `${parts[0].toLowerCase()}_${region.toUpperCase()}`;
+}
 
 /**
  * Build a full canonical URL from a store URL and a relative path.
@@ -135,12 +143,32 @@ function validGtin(value: string): boolean {
 
 function productIdentifiers(product: Product): Record<string, string> {
   const identifiers: Record<string, string> = {};
-  const customGtin = customFieldText(product, ["gtin", "ean", "isbn"]);
-  const sku = product.default_variant?.sku?.trim();
-  const gtinCandidate = (customGtin || sku || "").replace(/[^0-9]/g, "");
+  const customGtin = customFieldText(product, [
+    "gtin",
+    "ean",
+    "gtin8",
+    "gtin12",
+    "gtin13",
+    "gtin14",
+  ]);
+  const gtinCandidate = (customGtin || "").replace(/[\s-]/g, "");
 
   if (validGtin(gtinCandidate)) {
     identifiers[`gtin${gtinCandidate.length}`] = gtinCandidate;
+  }
+
+  const isbn = (customFieldText(product, ["isbn", "isbn10", "isbn13"]) || "")
+    .replace(/[\s-]/g, "")
+    .toUpperCase();
+  if (/^\d{9}[\dX]$/.test(isbn)) {
+    const sum = [...isbn].reduce(
+      (total, digit, index) =>
+        total + (digit === "X" ? 10 : Number(digit)) * (10 - index),
+      0,
+    );
+    if (sum % 11 === 0) identifiers.isbn = isbn;
+  } else if (/^97[89]\d{10}$/.test(isbn) && validGtin(isbn)) {
+    identifiers.isbn = isbn;
   }
 
   const mpn = customFieldText(product, [
@@ -153,18 +181,44 @@ function productIdentifiers(product: Product): Record<string, string> {
   return identifiers;
 }
 
-function schemaAvailability(product: {
+export function schemaAvailability(product: {
   preorder?: boolean;
   purchasable?: boolean;
   in_stock?: boolean;
   backorderable?: boolean;
-}): string {
+}): `https://schema.org/${"OutOfStock" | "PreOrder" | "InStock" | "BackOrder"}` {
+  if (!product.purchasable) return "https://schema.org/OutOfStock";
   if (product.preorder) return "https://schema.org/PreOrder";
   if (product.purchasable && product.in_stock) {
     return "https://schema.org/InStock";
   }
   if (product.backorderable) return "https://schema.org/BackOrder";
   return "https://schema.org/OutOfStock";
+}
+
+/** Match ProductDetails' initial variant selection and displayed price fallback. */
+export function getProductOfferSource(product: Product) {
+  const variant =
+    product.default_variant ||
+    product.variants?.find((entry) => entry.purchasable) ||
+    product.variants?.[0];
+  return {
+    ...(variant ?? product),
+    price: variant?.price ?? product.price,
+  };
+}
+
+export function validOfferPrice(
+  price: Product["price"] | undefined,
+): price is Product["price"] & { amount: string; currency: string } {
+  const amount = price?.amount?.trim();
+  return Boolean(
+    amount &&
+      price?.currency?.trim() &&
+      /^\d+(?:\.\d+)?$/.test(amount) &&
+      Number.isFinite(Number(amount)) &&
+      Number(amount) >= 0,
+  );
 }
 
 function buildOffer(
@@ -178,7 +232,7 @@ function buildOffer(
   },
   canonicalUrl: string,
 ): Record<string, unknown> | null {
-  if (!source.price?.amount || !source.price.currency) return null;
+  if (!validOfferPrice(source.price) || !source.price) return null;
   const storeUrl = getStoreUrl();
   return {
     "@type": "Offer",
@@ -210,14 +264,15 @@ export function buildProductJsonLd(
   const description =
     options.description ??
     buildProductShortDescription(product, options.locale ?? "en");
+  const identifiers = productIdentifiers(product);
   const schema: Record<string, unknown> = {
     "@context": "https://schema.org",
-    "@type": "Product",
+    "@type": identifiers.isbn ? ["Product", "Book"] : "Product",
     "@id": `${canonicalUrl}#product`,
     name: product.name,
     url: canonicalUrl,
     description,
-    ...productIdentifiers(product),
+    ...identifiers,
   };
 
   if (product.default_variant?.sku) {
@@ -246,14 +301,7 @@ export function buildProductJsonLd(
     schema.image = imageUrls;
   }
 
-  const variantOffers = (product.variants ?? [])
-    .map((variant) => buildOffer(variant, canonicalUrl))
-    .filter((offer): offer is Record<string, unknown> => offer !== null);
-  const defaultOffer = buildOffer(
-    product.default_variant ?? product,
-    canonicalUrl,
-  );
-  const offers = variantOffers.length > 0 ? variantOffers : defaultOffer;
+  const offers = buildOffer(getProductOfferSource(product), canonicalUrl);
   if (offers) schema.offers = offers;
 
   return schema;
@@ -264,12 +312,12 @@ export function buildWebSiteJsonLd(
   canonicalUrl: string,
   locale: string,
 ): Record<string, unknown> {
-  const storeUrl = getStoreUrl()?.replace(/\/$/, "") ?? canonicalUrl;
+  const storeUrl = new URL(getStoreUrl() ?? canonicalUrl).origin;
   return {
     "@context": "https://schema.org",
     "@type": "WebSite",
     "@id": `${storeUrl}#website`,
-    url: canonicalUrl,
+    url: storeUrl,
     name: getStoreName(),
     description: getStoreDescription(),
     inLanguage: locale,
@@ -362,18 +410,22 @@ export function buildBreadcrumbJsonLd(
  * Build JSON-LD Organization schema from environment variables.
  * https://schema.org/Organization
  */
-export function buildOrganizationJsonLd(): Record<string, unknown> {
+export function buildOrganizationJsonLd(
+  options: { logoUrl?: string | null; returnPolicyUrl?: string } = {},
+): Record<string, unknown> {
   const storeName = getStoreName();
   const storeUrl = getStoreUrl();
-  const logoUrl = process.env.STORE_LOGO_URL;
+  const logoUrl = options.logoUrl ?? process.env.STORE_LOGO_URL;
   const facebook = process.env.STORE_FACEBOOK;
   const twitter = process.env.STORE_TWITTER;
   const instagram = process.env.STORE_INSTAGRAM;
-  const supportEmail = process.env.STORE_SUPPORT_EMAIL;
+  const supportEmail =
+    process.env.STORE_SUPPORT_EMAIL?.trim() ||
+    process.env.LEGAL_CONTACT_EMAIL?.trim();
 
   const schema: Record<string, unknown> = {
     "@context": "https://schema.org",
-    "@type": "Organization",
+    "@type": "OnlineStore",
     ...(storeUrl
       ? { "@id": `${storeUrl.replace(/\/$/, "")}#organization` }
       : {}),
@@ -383,7 +435,18 @@ export function buildOrganizationJsonLd(): Record<string, unknown> {
   };
 
   if (logoUrl) {
-    schema.logo = logoUrl;
+    try {
+      schema.logo = new URL(logoUrl, storeUrl).href;
+    } catch {
+      // Relative logos need a configured public origin.
+    }
+  }
+
+  if (options.returnPolicyUrl) {
+    schema.hasMerchantReturnPolicy = {
+      "@type": "MerchantReturnPolicy",
+      merchantReturnLink: options.returnPolicyUrl,
+    };
   }
 
   const sameAs: string[] = [];

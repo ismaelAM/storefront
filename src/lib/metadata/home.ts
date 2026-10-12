@@ -1,9 +1,14 @@
 import type { Metadata } from "next";
 import { buildHreflangLanguages } from "@/lib/metadata/alternates";
 import { validateMetadataRoute } from "@/lib/metadata/validate-route";
-import { buildCanonicalUrl, SOCIAL_IMAGE_PATH } from "@/lib/seo";
+import {
+  buildCanonicalUrl,
+  normalizeOpenGraphLocale,
+  SOCIAL_IMAGE_PATH,
+} from "@/lib/seo";
 import {
   getStoreMetaDescription,
+  getStoreName,
   getStoreSeoTitle,
   getStoreUrl,
 } from "@/lib/store";
@@ -49,7 +54,29 @@ export async function generateHomeMetadata({
       description,
       ...(canonicalUrl ? { url: canonicalUrl } : {}),
       type: "website",
-      images: [SOCIAL_IMAGE_PATH],
+      siteName: getStoreName(),
+      locale: normalizeOpenGraphLocale(locale, country),
+      images: [
+        {
+          url: SOCIAL_IMAGE_PATH,
+          width: 1200,
+          height: 630,
+          alt: getStoreName(),
+        },
+      ],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: storeName,
+      description,
+      images: [
+        {
+          url: SOCIAL_IMAGE_PATH,
+          width: 1200,
+          height: 630,
+          alt: getStoreName(),
+        },
+      ],
     },
   };
 }

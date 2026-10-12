@@ -28,9 +28,10 @@ import {
   REQUEST_SEARCH_HEADER,
 } from "@/i18n/routing";
 import { getMarkets } from "@/lib/data/markets";
+import { cachedGetStoreLogo } from "@/lib/data/store-logo";
 import { generateStoreMetadata } from "@/lib/metadata/store";
-import { buildOrganizationJsonLd } from "@/lib/seo";
-import { getDefaultCountry, getDefaultLocale } from "@/lib/store";
+import { buildCanonicalUrl, buildOrganizationJsonLd } from "@/lib/seo";
+import { getDefaultCountry, getDefaultLocale, getStoreUrl } from "@/lib/store";
 
 interface CountryLocaleLayoutProps {
   children: React.ReactNode;
@@ -184,13 +185,21 @@ interface CountryLocaleProvidersProps {
   messages: IntlMessages;
 }
 
-function CountryLocaleProviders({
+async function CountryLocaleProviders({
   children,
   country,
   locale,
   markets,
   messages,
 }: CountryLocaleProvidersProps) {
+  const logoUrl = await cachedGetStoreLogo();
+  const storeUrl = getStoreUrl();
+  const returnPolicyUrl = storeUrl
+    ? buildCanonicalUrl(
+        storeUrl,
+        `/${country}/${locale}/policies/returns-policy`,
+      )
+    : undefined;
   return (
     <NextIntlClientProvider messages={messages} locale={locale}>
       <StoreProvider
@@ -200,7 +209,9 @@ function CountryLocaleProviders({
       >
         <AuthProvider>
           <CartProvider>
-            <JsonLd data={buildOrganizationJsonLd()} />
+            <JsonLd
+              data={buildOrganizationJsonLd({ logoUrl, returnPolicyUrl })}
+            />
             {children}
             <CartDrawer />
             <Toaster />
