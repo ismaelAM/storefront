@@ -11,7 +11,9 @@ Dominio público preferido: **https://www.bisontcg.com**. El dominio sin `www` r
 - Sitemap con categorías públicas de nivel superior y productos. Las traducciones que Spree sustituye por el contenido de otro idioma no se anuncian como páginas canónicas distintas. Se comparan los mismos campos traducidos que en los metadatos, por ID estable y Market.
 - Carrito, cuenta y todo el grupo de checkout tienen noindex. Se permite leer esa directiva a los rastreadores; los controles de acceso a información privada siguen en servidor.
 
-Los cambios de configuración pública en Vercel se aplican al siguiente deployment. La evidencia final de integración, CI y comprobaciones HTTP se registra en la PR de `fix/google-search-readiness`.
+Los cambios de código y configuración pública están desplegados en producción mediante [PR86](https://github.com/ismaelAM/storefront/pull/86), main `808d5254f6eab801dfd4b3cd487b2b397372ea2b`, deployment READY `dpl_FB5SLqTY6v6gtPxrvrpmMwquGbAX`. CI verde: 812 pruebas/80 archivos, TypeScript, lint, paridad y regresiones de bots/PPR con Turbopack y Webpack. Checkout E2E se saltó por falta de claves de prueba; no hubo compra real.
+
+Comprobación pública Googlebot: home, categoría, producto, carrito, robots, imagen/iconos y sitemap devolvieron 200; canonical al dominio final, marca y noindex privados correctos. Sitemap 2321 URLs únicas, siete categorías principales y sin producto inglés duplicado. Home y política de devoluciones también 200 con InspectionTool. La generación del sitemap tarda 75 s en primera lectura y 53 s en segunda: optimización pendiente, aunque ambas respuestas fueron válidas. Los índices comparativos se cachean en bloques de hasta 10.000 recursos y guardia de tamaño 1,9 MB.
 
 ## Alta en Search Console: pendiente
 

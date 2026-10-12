@@ -7,8 +7,9 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 ## Google y SEO — 12/10/2026
 
 - [x] Auditados canonical, hreflang, sitemap, JSON-LD y metadatos públicos. Preparadas correcciones de dominio final, categorías omitidas, idiomas sin traducción, disponibilidad/precio, marca y noindex privado. Ver GOOGLE_SEARCH.md.
-- [x] Configuración pública Vercel actualizada a `https://www.bisontcg.com`, título/descripción BisonTCG, soporte `ayuda@bisontcg.com` y perfil Instagram indicado por el propietario. Conservados targets/tipos y secretos; requiere deployment para aplicar.
-- [ ] Verificar integración/deployment y muestras públicas; evidencia final en la PR de `fix/google-search-readiness`.
+- [x] Configuración pública Vercel aplicada en producción a `https://www.bisontcg.com`, título/descripción BisonTCG, soporte `ayuda@bisontcg.com` y perfil Instagram indicado por el propietario. Conservados targets/tipos y secretos.
+- [x] PR86 integrada, CI verde y producción READY `dpl_FB5SLqTY6v6gtPxrvrpmMwquGbAX` sobre main `808d5254f6eab801dfd4b3cd487b2b397372ea2b`. 812 pruebas/80 archivos, TypeScript, lint, paridad y ambas pruebas de bots/PPR pasan. Muestras públicas Googlebot/InspectionTool 200, marca y canonical correctos; carrito noindex. Sitemap 200 con 2321 URLs, siete categorías principales, sin duplicados ni URLs privadas. Evidencia en https://github.com/ismaelAM/storefront/pull/86.
+- [ ] Optimizar la latencia del sitemap: primera lectura pública75s y segunda 53 s, ambas 200. Los índices de comparación ya se guardan por bloques de hasta 10.000 recursos con límite1,9MB; no atribuir un timeout a un fallo persistente sin comprobar la respuesta final.
 - [ ] **Alta Search Console pendiente:** el navegador remoto terminó en timeout sin devolver página; no hubo creación/verificación ni envío del sitemap. Obtener el token público de etiqueta HTML y completar los pasos documentados en GOOGLE_SEARCH.md.
 - [ ] Observar indexación real y errores de Google tras verificar la propiedad; no prometer aparición inmediata ni activar Instagram por dar el SEO por preparado.
 
@@ -17,7 +18,7 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [x] Correo de prueba a `ayuda@bisontcg.com` enviado con las cuatro imágenes JPEG del 12/10/2026.
 - [x] Envío recurrente autorizado por el propietario a las **08:00, Europe/Madrid**, desde el 13/10/2026; automatización de ChatGPT con Gmail/Supabase y control de duplicados. Ver DAILY_OFFERS.md.
 - [ ] Confirmar el primer envío programado; no se ha ejecutado todavía.
-- [ ] Adelantar el cron de imágenes a **04:00 UTC** y verificar su despliegue antes de atribuir el nuevo horario a producción. Evidencia de integración y deployment en la PR de `fix/daily-offers-before-eight-am`.
+- [x] Cron de imágenes adelantado a **04:00 UTC**, publicado y verificado en producción en PR85. Ver DAILY_OFFERS.md y https://github.com/ismaelAM/storefront/pull/85.
 
 ## Prioridad alta
 
