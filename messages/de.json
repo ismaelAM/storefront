@@ -268,7 +268,11 @@
     "policyConsentRequired": "Sie müssen den Geschäftsrichtlinien zustimmen, bevor Sie Ihre Bestellung aufgeben",
     "iAgreeToThe": "Ich stimme zu",
     "policySeparatorComma": ", ",
-    "policySeparatorAnd": " und "
+    "policySeparatorAnd": " und ",
+    "orderConfirmationPending": "Deine Bestellung wird bestätigt",
+    "paymentAccepted": "Zahlung akzeptiert. Wir bestätigen deine Bestellung.",
+    "orderConfirmationDelayed": "Die Bestätigung dauert länger als erwartet. Du kannst erneut nachsehen, ohne nochmals zu bezahlen.",
+    "retryOrderConfirmation": "Bestellung prüfen"
   },
   "address": {
     "firstName": "Vorname",
@@ -420,7 +424,8 @@
     "standardShipping": "Standardversand",
     "payment": "Zahlung",
     "giftCard": "Geschenkkarte",
-    "confirmationSentTo": "Bestätigung gesendet an"
+    "confirmationSentTo": "Bestätigung gesendet an",
+    "orderSuccess": "Bestellung erfolgreich aufgegeben"
   },
   "coupon": {
     "placeholder": "Geschenkkarte oder Rabattcode",

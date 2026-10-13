@@ -268,7 +268,11 @@
     "policyConsentRequired": "Tem de aceitar as políticas da loja antes de efetuar a encomenda",
     "iAgreeToThe": "Aceito as",
     "policySeparatorComma": ", ",
-    "policySeparatorAnd": " e "
+    "policySeparatorAnd": " e ",
+    "orderConfirmationPending": "A confirmar o seu pedido",
+    "paymentAccepted": "Pagamento aceite. Estamos a confirmar o seu pedido.",
+    "orderConfirmationDelayed": "A confirmação está a demorar mais do que o previsto. Pode verificar novamente sem repetir o pagamento.",
+    "retryOrderConfirmation": "Verificar pedido"
   },
   "address": {
     "firstName": "Nome",
@@ -420,7 +424,8 @@
     "standardShipping": "Envio normal",
     "payment": "Pagamento",
     "giftCard": "Cartão-presente",
-    "confirmationSentTo": "Confirmação enviada para"
+    "confirmationSentTo": "Confirmação enviada para",
+    "orderSuccess": "Pedido realizado com sucesso"
   },
   "coupon": {
     "placeholder": "Cartão-presente ou código de desconto",

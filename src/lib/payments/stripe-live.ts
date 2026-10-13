@@ -113,7 +113,9 @@ export async function createOrUpdateStripePaymentIntent(params: {
     if (existing.metadata.spree_cart_id !== params.cartId) {
       throw new Error("PaymentIntent no pertenece a este carrito");
     }
-    if (["succeeded", "canceled", "requires_capture"].includes(existing.status)) {
+    if (
+      ["succeeded", "canceled", "requires_capture"].includes(existing.status)
+    ) {
       return existing;
     }
     // Preserve Stripe's normal automatic_async behavior below the threshold.
@@ -262,7 +264,9 @@ async function getOrCreateSpreePaymentForStripe(
       (recordedPaymentId && recordedPaymentId !== recordedPayment.id) ||
       Math.round(Number(recordedPayment.amount) * 100) !== paymentIntent.amount
     ) {
-      throw new Error("No se pudo identificar de forma inequívoca el pago de Spree");
+      throw new Error(
+        "No se pudo identificar de forma inequívoca el pago de Spree",
+      );
     }
   }
 
@@ -354,29 +358,77 @@ export async function reconcileStripePaymentToSpree(
     );
   }
 
-  const { order, payment } =
-    await getOrCreateSpreePaymentForStripe(paymentIntent);
-  const cartId = paymentIntent.metadata.spree_cart_id;
+  try {
+    const { order, payment } =
+      await getOrCreateSpreePaymentForStripe(paymentIntent);
+    const cartId = paymentIntent.metadata.spree_cart_id;
 
-  if (order.status === "complete" || order.state === "complete") {
-    const paymentStatus = payment.status ?? payment.state;
-    if (paymentStatus !== "completed") {
-      await spreeAdminRequest(
-        "PATCH",
-        `/orders/${encodeURIComponent(cartId)}/payments/${encodeURIComponent(payment.id)}/capture`,
+    if (order.status === "complete" || order.state === "complete") {
+      const paymentStatus = payment.status ?? payment.state;
+      if (paymentStatus !== "completed") {
+        await spreeAdminRequest(
+          "PATCH",
+          `/orders/${encodeURIComponent(cartId)}/payments/${encodeURIComponent(payment.id)}/capture`,
+        );
+      }
+      return await spreeAdminRequest<AdminOrder>(
+        "GET",
+        `/orders/${encodeURIComponent(cartId)}`,
       );
     }
-    return spreeAdminRequest<AdminOrder>(
-      "GET",
-      `/orders/${encodeURIComponent(cartId)}`,
-    );
-  }
 
-  return spreeAdminRequest<AdminOrder>(
-    "PATCH",
-    `/orders/${encodeURIComponent(cartId)}/complete`,
-    { payment_pending: false, notify_customer: true },
+    return await spreeAdminRequest<AdminOrder>(
+      "PATCH",
+      `/orders/${encodeURIComponent(cartId)}/complete`,
+      { payment_pending: false, notify_customer: true },
+    );
+  } catch (error) {
+    // The webhook can finish between our order/payment reads, or before a
+    // completion response reaches us. Recover with fresh, read-only evidence
+    // of this exact settled payment; never retry a charge or assume success.
+    const completedOrder = await getVerifiedCompletedStripeOrder(
+      paymentIntent,
+    ).catch(() => null);
+    if (completedOrder) return completedOrder;
+    throw error;
+  }
+}
+
+async function getVerifiedCompletedStripeOrder(
+  intent: StripePaymentIntent,
+): Promise<AdminOrder | null> {
+  const cartId = intent.metadata.spree_cart_id;
+  if (!cartId) return null;
+  const order = await spreeAdminRequest<AdminOrder>(
+    "GET",
+    `/orders/${encodeURIComponent(cartId)}`,
   );
+  const paymentId = order.metadata?.stripe_spree_payment_id;
+  if (
+    order.id !== cartId ||
+    ![order.status, order.state].includes("complete") ||
+    order.currency?.toLowerCase() !== intent.currency.toLowerCase() ||
+    order.metadata?.stripe_payment_intent_id !== intent.id ||
+    typeof paymentId !== "string" ||
+    !Number.isSafeInteger(intent.amount) ||
+    intent.amount <= 0 ||
+    (order.amount_due != null && Number(order.amount_due) !== 0)
+  )
+    return null;
+
+  const payments = await spreeAdminRequest<{ data?: AdminPayment[] }>(
+    "GET",
+    `/orders/${encodeURIComponent(cartId)}/payments?limit=100`,
+  );
+  const settledPayment = payments.data?.find(
+    (payment) =>
+      payment.id === paymentId &&
+      (payment.payment_method_id === EXTERNAL_PAYMENT_METHOD_ID ||
+        payment.payment_method?.id === EXTERNAL_PAYMENT_METHOD_ID) &&
+      (payment.status ?? payment.state) === "completed" &&
+      Math.round(Number(payment.amount) * 100) === intent.amount,
+  );
+  return settledPayment ? order : null;
 }
 
 /**

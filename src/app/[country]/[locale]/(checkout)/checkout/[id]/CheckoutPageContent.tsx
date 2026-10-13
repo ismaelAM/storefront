@@ -46,7 +46,6 @@ import {
   completeCheckoutOrder,
   completeCheckoutPaymentSession,
 } from "@/lib/data/payment";
-import { finalizeStripeLivePayment } from "@/lib/data/stripe-live";
 import { extractBasePath } from "@/lib/utils/path";
 import { CheckoutSidebar } from "./CheckoutSidebar";
 import type { CheckoutInitialData } from "./page";
@@ -442,24 +441,11 @@ function CheckoutPageContentInner({
 
       try {
         if (result.type === "stripe_live") {
-          const stripeResult = await finalizeStripeLivePayment(
-            currentOrder.id,
-            result.paymentIntentId,
+          // Leave the payment form immediately. The URL preserves the intent
+          // across reloads; this page only reconciles it, never charges again.
+          routerRef.current.replace(
+            `${basePath}/confirm-payment/${currentOrder.id}?stripe_live=1&payment_intent=${encodeURIComponent(result.paymentIntentId)}`,
           );
-          if (!stripeResult.success) {
-            setError(stripeResult.error || tRef.current("paymentError"));
-            setProcessing(false);
-            return;
-          }
-
-          if (stripeResult.order) {
-            const { cacheCompletedOrder } = await import(
-              "@/lib/utils/completed-order-cache"
-            );
-            cacheCompletedOrder(currentOrder.id, stripeResult.order);
-          }
-
-          routerRef.current.push(`${basePath}/order-placed/${currentOrder.id}`);
           return;
         }
 
@@ -570,6 +556,21 @@ function CheckoutPageContentInner({
       return;
     }
     setCart(freshOrder);
+
+    // A webhook may have completed this checkout while the page was open.
+    if (
+      freshOrder.current_step === "complete" ||
+      ("completed_at" in freshOrder &&
+        typeof freshOrder.completed_at === "string" &&
+        freshOrder.completed_at)
+    ) {
+      const { cacheCompletedOrder } = await import(
+        "@/lib/utils/completed-order-cache"
+      );
+      cacheCompletedOrder(cart.id, freshOrder);
+      routerRef.current.push(`${basePath}/order-placed/${cart.id}`);
+      return;
+    }
 
     // Check requirements — skip "payment" since we handle that via
     // the PaymentSection imperative submit (payment is created at confirmation time)

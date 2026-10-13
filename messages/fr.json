@@ -268,7 +268,11 @@
     "policyConsentRequired": "Vous devez accepter les politiques du magasin avant de passer votre commande",
     "iAgreeToThe": "J'accepte les",
     "policySeparatorComma": ", ",
-    "policySeparatorAnd": " et "
+    "policySeparatorAnd": " et ",
+    "orderConfirmationPending": "Confirmation de votre commande",
+    "paymentAccepted": "Paiement accepté. Nous confirmons votre commande.",
+    "orderConfirmationDelayed": "La confirmation prend plus de temps que prévu. Vous pouvez vérifier à nouveau sans renouveler le paiement.",
+    "retryOrderConfirmation": "Vérifier la commande"
   },
   "address": {
     "firstName": "Prenom",
@@ -420,7 +424,8 @@
     "standardShipping": "Livraison standard",
     "payment": "Paiement",
     "giftCard": "Carte cadeau",
-    "confirmationSentTo": "Confirmation envoyee a"
+    "confirmationSentTo": "Confirmation envoyee a",
+    "orderSuccess": "Commande passée avec succès"
   },
   "coupon": {
     "placeholder": "Carte cadeau ou code de reduction",

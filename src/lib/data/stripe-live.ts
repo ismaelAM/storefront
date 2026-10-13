@@ -51,7 +51,9 @@ export async function finalizeStripeLivePayment(
   cartId: string,
   paymentIntentId: string,
 ) {
-  return actionResult(async () => {
+  let paymentAccepted = false;
+  let paymentFailed = false;
+  const result = await actionResult(async () => {
     const cart = await getCheckoutOrder(cartId);
     if (!cart || cart.id !== cartId) {
       throw new Error("No se pudo validar el pedido");
@@ -61,6 +63,10 @@ export async function finalizeStripeLivePayment(
     if (intent.metadata.spree_cart_id !== cartId) {
       throw new Error("El pago no pertenece a este pedido");
     }
+    paymentAccepted = ["succeeded", "requires_capture"].includes(intent.status);
+    paymentFailed = ["requires_payment_method", "canceled"].includes(
+      intent.status,
+    );
 
     // Reconciliation validates the authoritative Admin order and its recorded
     // payments. The storefront balance may already be zero after a webhook.
@@ -70,4 +76,7 @@ export async function finalizeStripeLivePayment(
         : await reconcileStripePaymentToSpree(intent);
     return { order };
   }, "No se pudo reconciliar el pago con Spree");
+  return result.success
+    ? result
+    : { ...result, paymentAccepted, paymentFailed };
 }

@@ -129,11 +129,15 @@ export function CartProvider({
 
   // Re-fetch cart on navigation (e.g., after checkout completes, the stale
   // cart token will be cleared by getCart and the cart state will update).
-  // On the order-placed page, skip refreshCart to avoid a race condition:
+  // On confirmation pages, skip refreshCart to avoid a race condition:
   // getCart() auto-clears the cart token cookie on error (completed order
   // is no longer a cart), which removes the only auth token guest users
   // have before getCheckoutOrder() can use it.
   useEffect(() => {
+    if (pathname.includes("/confirm-payment/")) {
+      setLoading(false);
+      return;
+    }
     if (pathname.includes("/order-placed/")) {
       setCart(null);
       setLoading(false);

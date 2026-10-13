@@ -275,6 +275,92 @@ describe("Stripe reconciliation", () => {
     expect(new Headers(creates[0].options.headers).get("Idempotency-Key")).toBeTruthy();
   });
 
+  it.each([
+    false,
+    true,
+  ])("recovers when the webhook settles between the order and payment reads (linked=%s)", async (alreadyLinked) => {
+    const metadata = {
+      stripe_payment_intent_id: intent.id,
+      stripe_spree_payment_id: "py_paid",
+      stripe_payment_status: "succeeded",
+    };
+    if (alreadyLinked) order.metadata = metadata;
+    fetchMock.mockImplementationOnce(async () => {
+      const staleResponse = Response.json(order);
+      order = { ...order, status: "complete", amount_due: "0.00", metadata };
+      payments = [
+        {
+          id: "py_paid",
+          status: "completed",
+          amount: "70.00",
+          payment_method_id: "pm_8aKR0I7fEb",
+        },
+      ];
+      return staleResponse;
+    });
+
+    await expect(reconcileStripePaymentToSpree(intent)).resolves.toMatchObject({
+      id: "cart-1",
+      status: "complete",
+    });
+    expect(writes).toEqual([]);
+  });
+
+  it("recovers a completion response failure only after verifying the settled order", async () => {
+    const handler = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (url: string, options: RequestInit) => {
+      const response = await handler(url, options);
+      return url.endsWith("/complete")
+        ? Response.json({ error: "Order already completed" }, { status: 422 })
+        : response;
+    });
+
+    await expect(reconcileStripePaymentToSpree(intent)).resolves.toMatchObject({
+      status: "complete",
+    });
+    expect(
+      writes.filter((write) => write.url.endsWith("/payments")),
+    ).toHaveLength(1);
+    expect(
+      writes.filter((write) => write.url.endsWith("/complete")),
+    ).toHaveLength(1);
+  });
+
+  it.each([
+    "another intent",
+    "wrong amount",
+    "unsettled payment",
+    "outstanding balance",
+  ])("does not recover a completed order with %s", async (invalid) => {
+    order = {
+      ...order,
+      status: "complete",
+      amount_due: invalid === "outstanding balance" ? "1.00" : "0.00",
+      metadata: {
+        stripe_payment_intent_id:
+          invalid === "another intent" ? "pi_other" : intent.id,
+        stripe_spree_payment_id: "py_paid",
+        stripe_payment_status: "succeeded",
+      },
+    };
+    payments = [
+      {
+        id: "py_paid",
+        status: invalid === "unsettled payment" ? "checkout" : "completed",
+        amount: invalid === "wrong amount" ? "69.00" : "70.00",
+        payment_method_id: "pm_8aKR0I7fEb",
+      },
+    ];
+    const handler = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (url: string, options: RequestInit) =>
+      options.method === "GET"
+        ? handler(url, options)
+        : Response.json({ error: "Conflict" }, { status: 409 }),
+    );
+
+    await expect(reconcileStripePaymentToSpree(intent)).rejects.toThrow();
+  });
+
   it("does not mistake a failed payment for a recorded charge", async () => {
     order.total = "70.00";
     payments.push({ id: "py_failed", amount: "70.00", status: "failed", payment_method_id: "pm_8aKR0I7fEb" });

@@ -3,7 +3,8 @@
 import { Loader2 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { use, useEffect, useRef } from "react";
+import { use, useEffect, useRef, useState } from "react";
+import { useCheckout } from "@/contexts/CheckoutContext";
 import { confirmPaymentAndCompleteCart } from "@/lib/data/payment";
 import { finalizeStripeLivePayment } from "@/lib/data/stripe-live";
 import { extractBasePath } from "@/lib/utils/path";
@@ -23,7 +24,9 @@ interface ConfirmPaymentPageProps {
  * Adyen Klarna/iDEAL), the payment webhook may not have arrived yet. This page:
  * 1. Tries to complete the payment session (tells Spree to check with the provider)
  * 2. If successful, completes the order and redirects to order-placed
- * 3. If failed, redirects back to checkout with an error
+ * 3. Stripe Live stays here on delayed confirmation, so retries and reloads
+ *    cannot submit the accepted payment again. Other gateways return errors
+ *    to checkout.
  */
 export default function ConfirmPaymentPage({
   params,
@@ -34,11 +37,17 @@ export default function ConfirmPaymentPage({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const basePath = extractBasePath(pathname);
-  const attemptedRef = useRef(false);
+  const { setSummaryContent } = useCheckout();
+  const [attempt, setAttempt] = useState(0);
+  const [checking, setChecking] = useState(true);
+  const [confirmationFailed, setConfirmationFailed] = useState(false);
+  const [paymentAccepted, setPaymentAccepted] = useState(false);
+  const attemptedRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (attemptedRef.current) return;
-    attemptedRef.current = true;
+    if (attemptedRef.current === attempt) return;
+    attemptedRef.current = attempt;
+    setSummaryContent(null);
 
     // Stripe: ?session={spreeSessionId}
     // Adyen:  ?sessionId={adyenSessionId}&redirectResult=...
@@ -51,25 +60,36 @@ export default function ConfirmPaymentPage({
 
     async function confirmAndRedirect() {
       if (stripeLive && stripePaymentIntentId) {
-        const liveResult = await finalizeStripeLivePayment(
-          cartId,
-          stripePaymentIntentId,
-        );
-        if (liveResult.success) {
-          if (liveResult.order) {
-            const { cacheCompletedOrder } = await import(
-              "@/lib/utils/completed-order-cache"
+        try {
+          const liveResult = await finalizeStripeLivePayment(
+            cartId,
+            stripePaymentIntentId,
+          );
+          if (liveResult.success) {
+            if (liveResult.order) {
+              const { cacheCompletedOrder } = await import(
+                "@/lib/utils/completed-order-cache"
+              );
+              cacheCompletedOrder(cartId, liveResult.order);
+            }
+            router.replace(`${basePath}/order-placed/${cartId}`);
+          } else if (liveResult.paymentFailed) {
+            // Only a server-verified unsuccessful payment may return to the
+            // payment form. Unknown failures must remain confirmation-only.
+            const errorMessage = encodeURIComponent(
+              liveResult.error || t("paymentError"),
             );
-            cacheCompletedOrder(cartId, liveResult.order);
+            router.replace(
+              `${basePath}/checkout/${cartId}?payment_error=${errorMessage}`,
+            );
+          } else {
+            setPaymentAccepted(liveResult.paymentAccepted);
+            setConfirmationFailed(true);
+            setChecking(false);
           }
-          router.replace(`${basePath}/order-placed/${cartId}`);
-        } else {
-          const errorMessage = encodeURIComponent(
-            liveResult.error || t("paymentError"),
-          );
-          router.replace(
-            `${basePath}/checkout/${cartId}?payment_error=${errorMessage}`,
-          );
+        } catch {
+          setConfirmationFailed(true);
+          setChecking(false);
         }
         return;
       }
@@ -103,7 +123,40 @@ export default function ConfirmPaymentPage({
     }
 
     confirmAndRedirect();
-  }, [cartId, searchParams, basePath, router, t]);
+  }, [cartId, searchParams, basePath, router, t, attempt, setSummaryContent]);
+
+  if (confirmationFailed || paymentAccepted) {
+    return (
+      <div className="rounded-xl border border-gray-200 bg-gray-50 p-6 text-center">
+        <div role="status" className="space-y-2">
+          <h1 className="text-xl font-semibold text-gray-900">
+            {t("orderConfirmationPending")}
+          </h1>
+          {paymentAccepted && (
+            <p className="text-sm text-gray-700">{t("paymentAccepted")}</p>
+          )}
+        </div>
+        {confirmationFailed && (
+          <p role="alert" className="mt-4 text-sm text-gray-700">
+            {t("orderConfirmationDelayed")}
+          </p>
+        )}
+        <button
+          type="button"
+          className="mt-6 inline-flex items-center justify-center gap-2 rounded-lg bg-black px-5 py-3 text-sm font-semibold text-white disabled:opacity-50"
+          disabled={checking}
+          onClick={() => {
+            setChecking(true);
+            setConfirmationFailed(false);
+            setAttempt((value) => value + 1);
+          }}
+        >
+          {checking && <Loader2 className="h-4 w-4 animate-spin" />}
+          {checking ? t("confirmingPayment") : t("retryOrderConfirmation")}
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col items-center justify-center py-20 gap-4">

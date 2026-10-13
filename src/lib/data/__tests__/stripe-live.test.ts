@@ -1,4 +1,4 @@
-import { beforeEach, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   cart: vi.fn(),
@@ -63,4 +63,75 @@ it("places a manually authorized payment without reconciling it as captured", as
   });
   expect(mocks.authorize).toHaveBeenCalledWith(authorizedIntent);
   expect(mocks.reconcile).not.toHaveBeenCalled();
+});
+
+describe("Stripe acceptance before order confirmation", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mocks.cart.mockResolvedValue({ id: "cart-1" });
+    mocks.intent.mockResolvedValue({
+      id: "pi_paid",
+      status: "succeeded",
+      metadata: { spree_cart_id: "cart-1" },
+    });
+    mocks.reconcile.mockRejectedValue(new Error("Spree unavailable"));
+    mocks.authorize.mockRejectedValue(new Error("Spree unavailable"));
+  });
+
+  it("preserves verified acceptance when reconciliation is delayed", async () => {
+    expect(await finalizeStripeLivePayment("cart-1", "pi_paid")).toEqual({
+      success: false,
+      error: "Spree unavailable",
+      paymentAccepted: true,
+      paymentFailed: false,
+    });
+  });
+
+  it("preserves authorization without claiming it was captured", async () => {
+    mocks.intent.mockResolvedValue({
+      id: "pi_authorized",
+      status: "requires_capture",
+      metadata: { spree_cart_id: "cart-1" },
+    });
+    expect(
+      await finalizeStripeLivePayment("cart-1", "pi_authorized"),
+    ).toMatchObject({ success: false, paymentAccepted: true });
+    expect(mocks.reconcile).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "unauthorized cart",
+    "another cart",
+    "failed payment",
+  ])("does not claim acceptance for %s", async (failure) => {
+    if (failure === "unauthorized cart") mocks.cart.mockResolvedValue(null);
+    if (failure === "another cart")
+      mocks.intent.mockResolvedValue({
+        status: "succeeded",
+        metadata: { spree_cart_id: "cart-other" },
+      });
+    if (failure === "failed payment")
+      mocks.intent.mockResolvedValue({
+        status: "requires_payment_method",
+        metadata: { spree_cart_id: "cart-1" },
+      });
+    expect(await finalizeStripeLivePayment("cart-1", "pi_paid")).toMatchObject({
+      success: false,
+      paymentAccepted: false,
+    });
+  });
+  it.each([
+    "requires_payment_method",
+    "canceled",
+  ])("identifies a verified %s payment as safe to retry in checkout", async (status) => {
+    mocks.intent.mockResolvedValue({
+      status,
+      metadata: { spree_cart_id: "cart-1" },
+    });
+    expect(await finalizeStripeLivePayment("cart-1", "pi_paid")).toMatchObject({
+      success: false,
+      paymentAccepted: false,
+      paymentFailed: true,
+    });
+  });
 });

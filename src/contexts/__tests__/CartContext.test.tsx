@@ -2,6 +2,12 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+let mockPathname = "/us/en";
+vi.mock("next/navigation", () => ({
+  usePathname: () => mockPathname,
+  useRouter: () => ({ refresh: vi.fn() }),
+}));
+
 vi.mock("@/lib/data/cart", () => ({
   getCart: vi.fn(),
   addToCart: vi.fn(),
@@ -56,6 +62,7 @@ function wrapper({ children }: { children: ReactNode }) {
 describe("CartContext", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockPathname = "/us/en";
     mockGetCart.mockResolvedValue(mockCart);
   });
 
@@ -84,6 +91,22 @@ describe("CartContext", () => {
     });
 
     expect(result.current.itemCount).toBe(3); // 2 + 1
+  });
+
+  it("preserves guest credentials while a completed cart is being confirmed", async () => {
+    mockPathname = "/es/es/confirm-payment/cart-1";
+    // biome-ignore lint/suspicious/noDocumentCookie: jsdom fixture for the server-side guest credential
+    document.cookie = "guest_order_token=fake_guest_token; path=/";
+    mockGetCart.mockImplementation(async () => {
+      // biome-ignore lint/suspicious/noDocumentCookie: simulate getCart clearing guest credentials after a completed-cart 404
+      document.cookie = "guest_order_token=; Max-Age=0; path=/";
+      return null;
+    });
+    const { result } = renderHook(() => useCart(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(document.cookie).toContain("guest_order_token=fake_guest_token");
+    // biome-ignore lint/suspicious/noDocumentCookie: clear the jsdom fixture
+    document.cookie = "guest_order_token=; Max-Age=0; path=/";
   });
 
   it("sets cart to null when initial load fails", async () => {

@@ -268,7 +268,11 @@
     "policyConsentRequired": "You must agree to the store policies before placing your order",
     "iAgreeToThe": "I agree to the",
     "policySeparatorComma": ", ",
-    "policySeparatorAnd": " and "
+    "policySeparatorAnd": " and ",
+    "orderConfirmationPending": "Confirming your order",
+    "paymentAccepted": "Payment accepted. We are confirming your order.",
+    "orderConfirmationDelayed": "Confirmation is taking longer than expected. You can check again without repeating the payment.",
+    "retryOrderConfirmation": "Check order"
   },
   "address": {
     "firstName": "First name",
@@ -420,7 +424,8 @@
     "standardShipping": "Standard Shipping",
     "payment": "Payment",
     "giftCard": "Gift Card",
-    "confirmationSentTo": "Confirmation sent to"
+    "confirmationSentTo": "Confirmation sent to",
+    "orderSuccess": "Order placed successfully"
   },
   "coupon": {
     "placeholder": "Gift card or discount code",

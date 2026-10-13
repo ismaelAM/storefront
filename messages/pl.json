@@ -268,7 +268,11 @@
     "policyConsentRequired": "Musisz zaakceptować regulamin sklepu przed złożeniem zamówienia",
     "iAgreeToThe": "Zgadzam się z",
     "policySeparatorComma": ", ",
-    "policySeparatorAnd": " i "
+    "policySeparatorAnd": " i ",
+    "orderConfirmationPending": "Potwierdzamy Twoje zamówienie",
+    "paymentAccepted": "Płatność zaakceptowana. Potwierdzamy Twoje zamówienie.",
+    "orderConfirmationDelayed": "Potwierdzenie trwa dłużej niż oczekiwano. Możesz sprawdzić ponownie bez ponawiania płatności.",
+    "retryOrderConfirmation": "Sprawdź zamówienie"
   },
   "address": {
     "firstName": "Imię",
@@ -420,7 +424,8 @@
     "standardShipping": "Wysyłka standardowa",
     "payment": "Płatność",
     "giftCard": "Karta podarunkowa",
-    "confirmationSentTo": "Potwierdzenie wysłane do"
+    "confirmationSentTo": "Potwierdzenie wysłane do",
+    "orderSuccess": "Zamówienie zostało złożone pomyślnie"
   },
   "coupon": {
     "placeholder": "Karta podarunkowa lub kod rabatowy",

@@ -130,6 +130,13 @@ export default function OrderPlacedPage({ params }: OrderPlacedPageProps) {
   return (
     <div className="py-8 max-w-2xl mx-auto">
       {/* Success Header */}
+      <div
+        role="status"
+        className="mb-6 flex items-center justify-center gap-3 rounded-xl border border-green-200 bg-green-50 px-5 py-4 text-green-800"
+      >
+        <CircleCheckBig className="h-6 w-6 shrink-0" aria-hidden="true" />
+        <p className="text-base font-semibold">{t("orderSuccess")}</p>
+      </div>
       <div className="text-center mb-10">
         <CircleCheckBig className="w-16 h-16 text-green-500 mx-auto mb-4" />
         <h1 className="text-2xl font-bold text-gray-900 mb-2">
