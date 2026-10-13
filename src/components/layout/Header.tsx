@@ -74,7 +74,7 @@ export async function Header({ basePath, locale, mobileNavigation, appearance }:
         left={mobileNavigation}
         center={
           <Link href={basePath || "/"} className="flex items-center min-w-0" style={{ color: colors.headerText }}>
-            <StoreLogo />
+            <StoreLogo variant="header" />
           </Link>
         }
         rightStart={
