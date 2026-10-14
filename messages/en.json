@@ -406,7 +406,10 @@
     "orderTitle": "Order #{number}",
     "shipmentCanceledRefund": "Shipment canceled — a refund has been issued.",
     "shippingMethodUnavailable": "Unavailable",
-    "totalColumn": "Total"
+    "totalColumn": "Total",
+    "completed": "Completed",
+    "completedDescription": "All items in your order have been delivered.",
+    "orderStatus": "Order status"
   },
   "orderPlaced": {
     "thanksForOrder": "Thanks for your order, {name}!",

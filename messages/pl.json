@@ -406,7 +406,10 @@
     "shipmentCanceledRefund": "Przesyłka anulowana — zwrot został wystawiony.",
     "shippingMethodUnavailable": "Niedostępna",
     "totalColumn": "Suma",
-    "trackingNumber": "Numer przesyłki"
+    "trackingNumber": "Numer przesyłki",
+    "completed": "Zakończone",
+    "completedDescription": "Wszystkie produkty z Twojego zamówienia zostały dostarczone.",
+    "orderStatus": "Status zamówienia"
   },
   "orderPlaced": {
     "thanksForOrder": "Dziękujemy za zamówienie, {name}!",

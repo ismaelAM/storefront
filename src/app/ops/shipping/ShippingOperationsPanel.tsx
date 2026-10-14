@@ -15,6 +15,13 @@ interface FulfillmentList {
   data?: Fulfillment[];
 }
 
+interface OrderDetails extends FulfillmentList {
+  orderId: string;
+  number: string;
+  completed: boolean;
+  canComplete: boolean;
+}
+
 type MutationAction =
   | "spree-save-tracking"
   | "spree-fulfill"
@@ -51,6 +58,8 @@ export function ShippingOperationsPanel() {
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirmation, setConfirmation] = useState<MutationAction | null>(null);
+  const [orderDetails, setOrderDetails] = useState<OrderDetails | null>(null);
+  const [completionConfirmation, setCompletionConfirmation] = useState(false);
 
   const selected = useMemo(
     () => fulfillments.find((item) => item.id === fulfillmentId),
@@ -74,11 +83,16 @@ export function ShippingOperationsPanel() {
 
     setBusy(true);
     setMessage("");
+    setOrderDetails(null);
+    setFulfillments([]);
+    setConfirmation(null);
+    setCompletionConfirmation(false);
     try {
       const result = (await shippingAction({
-        action: "spree-list-fulfillments",
+        action: "spree-order-details",
         orderId: value,
-      })) as FulfillmentList;
+      })) as unknown as OrderDetails;
+      setOrderDetails(result);
       const items = Array.isArray(result.data) ? result.data : [];
       setFulfillments(items);
 
@@ -103,7 +117,7 @@ export function ShippingOperationsPanel() {
   }
 
   async function runMutation(action: MutationAction, confirmed = false) {
-    if (!orderId.trim() || !fulfillmentId) {
+    if (!orderDetails || !fulfillmentId) {
       setMessage("Carga un pedido y selecciona un fulfillment.");
       return;
     }
@@ -127,7 +141,7 @@ export function ShippingOperationsPanel() {
     try {
       await shippingAction({
         action,
-        orderId: orderId.trim(),
+        orderId: orderDetails.orderId,
         fulfillmentId,
         ...(tracking.trim() ? { tracking: tracking.trim() } : {}),
         ...(trackingCarrier.trim()
@@ -154,6 +168,27 @@ export function ShippingOperationsPanel() {
     }
   }
 
+  async function toggleOrderCompletion() {
+    if (!orderDetails) return;
+    setBusy(true);
+    setCompletionConfirmation(false);
+    setMessage("");
+    try {
+      const result = await shippingAction({
+        action: "spree-set-order-completed",
+        orderId: orderDetails.orderId,
+        completed: !orderDetails.completed,
+      }) as unknown as OrderDetails;
+      setOrderDetails(result);
+      setFulfillments(result.data ?? []);
+      setMessage(result.completed ? "Pedido completado. El cliente ya puede verlo como Completado." : "Cierre retirado. El cliente vuelve a ver el estado de envío.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "No se pudo cambiar el cierre del pedido.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
@@ -166,7 +201,14 @@ export function ShippingOperationsPanel() {
           <input
             className="min-w-0 flex-1 rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-neutral-900"
             value={orderId}
-            onChange={(event) => setOrderId(event.target.value)}
+            disabled={busy}
+            onChange={(event) => {
+              setOrderId(event.target.value);
+              setOrderDetails(null);
+              setFulfillments([]);
+              setConfirmation(null);
+              setCompletionConfirmation(false);
+            }}
             placeholder="Ej. R123456789"
             autoComplete="off"
           />
@@ -180,6 +222,36 @@ export function ShippingOperationsPanel() {
           </button>
         </div>
       </section>
+
+      {orderDetails && (
+        <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+          <h2 className="text-lg font-semibold text-neutral-950">Cierre del pedido {orderDetails.number}</h2>
+          <p className="mt-2 text-sm text-neutral-600">
+            {orderDetails.completed ? "Completado: has confirmado la entrega de todos los artículos." : "Márcalo como completado cuando el cliente haya recibido todos los artículos, también si los entregas en mano."}
+          </p>
+          <p className="mt-2 text-xs text-neutral-500">También puedes editar «Pedido completado» en Spree → pedido → ⋯ → Metacampos.</p>
+          {!orderDetails.canComplete && !orderDetails.completed && (
+            <p className="mt-3 text-sm text-amber-800">Primero debe estar pagado y con todos sus envíos enviados.</p>
+          )}
+          <button
+            type="button"
+            className="mt-4 rounded-lg bg-neutral-950 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            disabled={busy || (!orderDetails.completed && !orderDetails.canComplete)}
+            onClick={() => setCompletionConfirmation(true)}
+          >
+            {orderDetails.completed ? "Reabrir pedido" : "Marcar pedido completado"}
+          </button>
+          {completionConfirmation && (
+            <div role="alert" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
+              <p className="text-sm text-amber-950">{orderDetails.completed ? "¿Retirar la marca de Completado? El pago y los envíos se mantienen." : "¿Confirmas que el cliente ha recibido todos los artículos? Se mostrará Completado en su cuenta."}</p>
+              <div className="mt-3 flex gap-2">
+                <button type="button" className="rounded-lg bg-neutral-950 px-3 py-2 text-sm text-white" disabled={busy} onClick={toggleOrderCompletion}>Confirmar cierre</button>
+                <button type="button" className="rounded-lg border border-neutral-300 px-3 py-2 text-sm" onClick={() => setCompletionConfirmation(false)}>Cancelar</button>
+              </div>
+            </div>
+          )}
+        </section>
+      )}
 
       {fulfillments.length > 0 ? (
         <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">

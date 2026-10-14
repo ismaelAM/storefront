@@ -406,7 +406,10 @@
     "orderTitle": "Commande #{number}",
     "shipmentCanceledRefund": "Expedition annulee — un remboursement a ete emis.",
     "shippingMethodUnavailable": "Indisponible",
-    "totalColumn": "Total"
+    "totalColumn": "Total",
+    "completed": "Terminé",
+    "completedDescription": "Tous les articles de votre commande ont été livrés.",
+    "orderStatus": "Statut de la commande"
   },
   "orderPlaced": {
     "thanksForOrder": "Merci pour votre commande, {name} !",

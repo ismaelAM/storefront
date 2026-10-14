@@ -1,7 +1,7 @@
-import type { Order } from "@spree/sdk";
 import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 import { Button } from "@/components/ui/button";
+import { type CustomerOrder, isOrderCompleted } from "@/lib/utils/order-completion";
 import {
   formatDate,
   getFulfillmentStatusColor,
@@ -23,7 +23,7 @@ function getStatusLabel(
 }
 
 interface OrderListProps {
-  orders: Order[];
+  orders: CustomerOrder[];
   basePath: string;
   locale: string;
 }
@@ -50,7 +50,7 @@ export async function OrderList({ orders, basePath, locale }: OrderListProps) {
                 {t("payment")}
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                {t("shipment")}
+                {t("orderStatus")}
               </th>
               <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                 {t("totalColumn")}
@@ -86,9 +86,9 @@ export async function OrderList({ orders, basePath, locale }: OrderListProps) {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <span
-                    className={`inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-medium capitalize ${getFulfillmentStatusColor(order.fulfillment_status)}`}
+                    className={`inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-medium capitalize ${getFulfillmentStatusColor(isOrderCompleted(order) ? "delivered" : order.fulfillment_status)}`}
                   >
-                    {getStatusLabel(order.fulfillment_status ?? null, t)}
+                    {isOrderCompleted(order) ? t("completed") : getStatusLabel(order.fulfillment_status ?? null, t)}
                   </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right">

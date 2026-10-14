@@ -406,7 +406,10 @@
     "shipmentCanceledRefund": "Sendung storniert — eine Rückerstattung wurde veranlasst.",
     "shippingMethodUnavailable": "Nicht verfügbar",
     "totalColumn": "Gesamt",
-    "trackingNumber": "Sendungsnummer"
+    "trackingNumber": "Sendungsnummer",
+    "completed": "Abgeschlossen",
+    "completedDescription": "Alle Artikel deiner Bestellung wurden zugestellt.",
+    "orderStatus": "Bestellstatus"
   },
   "orderPlaced": {
     "thanksForOrder": "Vielen Dank für Ihre Bestellung, {name}!",

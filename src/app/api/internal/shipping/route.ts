@@ -7,6 +7,7 @@ import {
   getCorreosConfigurationStatus,
 } from "@/lib/shipping/correos";
 import { isShippingOperationsAuthorized } from "@/lib/shipping/operations-auth";
+import { getOrderCompletionDetails, setOrderCompleted } from "@/lib/shipping/order-completion";
 import {
   fulfillFulfillment,
   getSpreeShippingConfigurationStatus,
@@ -52,6 +53,17 @@ export async function POST(request: Request) {
 
   try {
     const action = requiredString(body, "action");
+
+    if (action === "spree-order-details") {
+      return NextResponse.json(await getOrderCompletionDetails(requiredString(body, "orderId")));
+    }
+
+    if (action === "spree-set-order-completed") {
+      if (typeof body.completed !== "boolean") {
+        return NextResponse.json({ error: "completed debe ser boolean" }, { status: 400 });
+      }
+      return NextResponse.json(await setOrderCompleted(requiredString(body, "orderId"), body.completed));
+    }
 
     if (action === "spree-list-fulfillments") {
       return NextResponse.json(

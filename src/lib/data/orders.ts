@@ -1,6 +1,8 @@
 "use server";
 
-import type { OrderListParams } from "@spree/sdk";
+import type { Order, OrderListParams } from "@spree/sdk";
+import { readOrderCompleted } from "@/lib/shipping/order-completion";
+import { canCompleteOrder, type CustomerOrder } from "@/lib/utils/order-completion";
 import {
   DEFAULT_SURFACE,
   getCartOptions,
@@ -11,6 +13,20 @@ import {
 } from "@/lib/spree";
 import { withFallback } from "./utils";
 
+// Only accept orders already authorized by the customer-facing Store API.
+// Never return Admin order data, private fields or credentials to the client.
+async function withCompletion(order: Order): Promise<CustomerOrder> {
+  if (!canCompleteOrder(order)) return order;
+  try {
+    return await readOrderCompleted(order.id, { timeoutMs: 3000 })
+      ? { ...order, manually_completed: true }
+      : order;
+  } catch {
+    // Completion is optional; an Admin outage must not hide order history.
+    return order;
+  }
+}
+
 export async function getOrders(params?: OrderListParams) {
   const expandedParams = {
     expand: ["fulfillments"],
@@ -20,7 +36,8 @@ export async function getOrders(params?: OrderListParams) {
   return withFallback(
     async () => {
       return withAuthRefresh(async (options) => {
-        return getClient().customer.orders.list(expandedParams, options);
+        const result = await getClient().customer.orders.list(expandedParams, options);
+        return { ...result, data: await Promise.all(result.data.map(withCompletion)) };
       });
     },
     {
@@ -64,6 +81,7 @@ export async function getOrder(
       ],
       ...(params ?? {}),
     };
-    return getClientForSurface(surface).orders.get(id, expandedParams, options);
+    const order = await getClientForSurface(surface).orders.get(id, expandedParams, options);
+    return withCompletion(order);
   }, null);
 }

@@ -99,6 +99,7 @@ export async function spreeShippingRequest<T>(
   options: {
     env?: SpreeAdminEnvironment;
     fetcher?: typeof fetch;
+    timeoutMs?: number;
   } = {},
 ): Promise<T> {
   const { baseUrl, apiKey } = spreeAdminConfig(options.env);
@@ -127,7 +128,7 @@ export async function spreeShippingRequest<T>(
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     cache: "no-store",
     redirect: "error",
-    signal: AbortSignal.timeout(30_000),
+    signal: AbortSignal.timeout(options.timeoutMs ?? 30_000),
   });
 
   if (!response.ok) {

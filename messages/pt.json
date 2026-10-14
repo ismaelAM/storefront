@@ -406,7 +406,10 @@
     "orderTitle": "Encomenda #{number}",
     "shipmentCanceledRefund": "Envio cancelado — foi emitido um reembolso.",
     "shippingMethodUnavailable": "Indisponível",
-    "totalColumn": "Total"
+    "totalColumn": "Total",
+    "completed": "Concluído",
+    "completedDescription": "Todos os artigos da tua encomenda foram entregues.",
+    "orderStatus": "Estado da encomenda"
   },
   "orderPlaced": {
     "thanksForOrder": "Obrigado pela sua encomenda, {name}!",

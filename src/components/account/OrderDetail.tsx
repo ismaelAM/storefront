@@ -1,5 +1,4 @@
-import type { Order } from "@spree/sdk";
-import { ChevronLeft } from "lucide-react";
+import { CheckCircle2, ChevronLeft } from "lucide-react";
 import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 import { AddressBlock } from "@/components/order/AddressBlock";
@@ -8,9 +7,10 @@ import { LineItemCard } from "@/components/order/LineItemCard";
 import { OrderTotals } from "@/components/order/OrderTotals";
 import { PaymentInfo } from "@/components/order/PaymentInfo";
 import { formatDateTime } from "@/lib/utils/format";
+import { type CustomerOrder, isOrderCompleted } from "@/lib/utils/order-completion";
 
 interface OrderDetailProps {
-  order: Order;
+  order: CustomerOrder;
   basePath: string;
   locale: string;
 }
@@ -42,6 +42,16 @@ export async function OrderDetail({
       <p className="text-sm text-gray-500 mt-1 mb-6">
         {t("placedOn", { date: formatDateTime(order.completed_at, locale) })}
       </p>
+
+      {isOrderCompleted(order) && (
+        <div role="status" className="mb-6 flex items-start gap-3 rounded-xl border border-green-200 bg-green-50 p-4 text-green-900">
+          <CheckCircle2 aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0" />
+          <div>
+            <p className="font-semibold">{t("completed")}</p>
+            <p className="mt-1 text-sm">{t("completedDescription")}</p>
+          </div>
+        </div>
+      )}
 
       {hasFulfillments ? (
         order.fulfillments.map((fulfillment) => {
