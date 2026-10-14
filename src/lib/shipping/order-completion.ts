@@ -39,6 +39,12 @@ async function listAll<T>(path: string, options?: Options): Promise<T[]> {
 }
 
 export async function ensureOrderCompletionField(options?: Options): Promise<Definition> {
+  // Definitions use settings scopes; order reads/writes keep the order credential.
+  const env = options?.env ?? process.env;
+  const settingsKey = env.DEVIR_B2B_SPREE_ADMIN_API_KEY?.trim();
+  if (settingsKey?.startsWith("sk_")) {
+    options = { ...options, env: { ...env, SPREE_ADMIN_API_KEY: settingsKey } };
+  }
   const definitions = await listAll<Definition>("/custom_field_definitions", options);
   const existing = definitions.find(d =>
     d.resource_type === "Spree::Order" && `${d.namespace}.${d.key}` === ORDER_COMPLETION_FIELD,
@@ -118,8 +124,8 @@ export async function setOrderCompleted(input: string, completed: boolean, optio
     throw new Error("El pedido debe estar pagado y todos sus envíos enviados antes de completarlo");
   }
   const fields = await orderFields(order.id, options);
-  const definition = await ensureOrderCompletionField(options);
-  const current = fields.find(f => f.custom_field_definition_id === definition.id);
+  const current = fields.find(f => f.key === ORDER_COMPLETION_FIELD && f.field_type === "boolean");
+  const definition = current ? { id: current.custom_field_definition_id } : await ensureOrderCompletionField(options);
   if (!current || completedValue([current]) !== completed) {
     await spreeShippingRequest(
       current ? "PATCH" : "POST",

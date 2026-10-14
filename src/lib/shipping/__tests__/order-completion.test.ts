@@ -39,6 +39,24 @@ function api(initialOrder = order, initialFields = [field], initialDefinitions =
 }
 
 describe("Spree manual completion storage", () => {
+  it("updates an existing order field without requiring settings permissions", async () => {
+    const { options } = api();
+    const fetcher: typeof fetch = (input, init) => String(input).includes("custom_field_definitions")
+      ? Promise.resolve(Response.json({}, { status: 403 }))
+      : options.fetcher(input, init);
+    expect(await setOrderCompleted("or_1", true, { ...options, fetcher })).toMatchObject({ completed: true });
+  });
+
+  it("uses the existing configuration credential only for definitions", async () => {
+    const { options } = api(order, [], []);
+    const fetcher: typeof fetch = (input, init) => {
+      const key = new Headers(init?.headers).get("X-Spree-Api-Key");
+      const expected = String(input).includes("custom_field_definitions") ? "sk_test_configuration" : "sk_test_shipping";
+      return key === expected ? options.fetcher(input, init) : Promise.resolve(Response.json({}, { status: 403 }));
+    };
+    expect(await setOrderCompleted("or_1", true, { ...options, env: { ...env, DEVIR_B2B_SPREE_ADMIN_API_KEY: "sk_test_configuration" }, fetcher })).toMatchObject({ completed: true });
+  });
+
   it("does not report success if Spree has not persisted the requested value", async () => {
     const { options } = api();
     const fetcher: typeof fetch = (input, init) => init?.method === "PATCH"
