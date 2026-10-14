@@ -110,6 +110,36 @@ describe("localized sitemap generation", () => {
     );
   });
 
+  it("includes the Spanish buying guides without hiding catalog URLs", async () => {
+    api.marketsList.mockResolvedValue({
+      data: [
+        {
+          id: "market-es",
+          default: true,
+          default_locale: "es",
+          supported_locales: ["es"],
+          countries: [{ iso: "ES" }],
+        },
+      ],
+    });
+    mockCatalog(2, 1);
+    const { default: sitemap } = await import("@/app/sitemap");
+    const urls = (await sitemap({ id: Promise.resolve("0") })).map(
+      (entry) => entry.url,
+    );
+    expect(urls).toEqual(
+      expect.arrayContaining([
+        "https://store.example/es/es/guias",
+        "https://store.example/es/es/guias/como-empezar-pokemon-tcg",
+        "https://store.example/es/es/guias/como-elegir-fundas-cartas",
+        "https://store.example/es/es/guias/como-elegir-juego-mesa-dos",
+        "https://store.example/es/es/products/p-0",
+        "https://store.example/es/es/products/p-1",
+      ]),
+    );
+    expect(new Set(urls).size).toBe(urls.length);
+  });
+
   it("reuses translated catalog pages across countries with the same locale", async () => {
     api.marketsList.mockResolvedValue({ data: marketCountries("US", "CA") });
     mockCatalog(2, 1);

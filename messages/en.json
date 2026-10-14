@@ -63,7 +63,8 @@
     "cart": "Cart",
     "policies": "Policies",
     "wholesale": "Trade & Wholesale",
-    "rightsReserved": "All rights reserved."
+    "rightsReserved": "All rights reserved.",
+    "guides": "Buying guides"
   },
   "home": {
     "welcome": "{storeName}",

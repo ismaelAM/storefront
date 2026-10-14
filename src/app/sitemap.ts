@@ -18,6 +18,7 @@ import {
   type SitemapProduct,
 } from "@/lib/data/sitemap";
 import { hashSitemapResource } from "@/lib/data/sitemap-fingerprint";
+import { BUYING_GUIDES, isBuyingGuideRoute } from "@/lib/guides/content";
 import { getDefaultCountry, getDefaultLocale, getStoreUrl } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
@@ -47,7 +48,6 @@ interface PageCaches {
  * generation limit of 1,000 pages per Market/resource/default locale.
  */
 const URLS_PER_SITEMAP = 10_000;
-const STATIC_PAGES_PER_LOCALE = 1;
 const ITEMS_PER_PAGE = 100;
 const MAX_PAGES = 1000;
 const MAX_CONCURRENT_PAGE_REQUESTS = 8;
@@ -114,7 +114,7 @@ export async function generateSitemaps(): Promise<Array<{ id: number }>> {
     const catalogs = await resolveLocaleCatalogs(countryLocales);
     const totalUrls = countryLocales.reduce((total, target) => {
       const catalog = catalogs.get(catalogKey(target));
-      return total + (catalog ? catalogSize(catalog) : 0);
+      return total + (catalog ? catalogSize(catalog, target) : 0);
     }, 0);
     const sitemapCount = Math.max(1, Math.ceil(totalUrls / URLS_PER_SITEMAP));
 
@@ -161,7 +161,7 @@ export default async function sitemap(props: {
     const catalog = catalogs.get(catalogKey(target));
     if (!catalog) continue;
 
-    const targetEnd = targetStart + catalogSize(catalog);
+    const targetEnd = targetStart + catalogSize(catalog, target);
     if (targetEnd <= chunkStart) {
       targetStart = targetEnd;
       continue;
@@ -169,9 +169,17 @@ export default async function sitemap(props: {
     if (targetStart >= chunkEnd) break;
 
     const basePath = `${baseUrl}/${target.country}/${target.locale}`;
-    appendStaticEntries(entries, basePath, targetStart, chunkStart, chunkEnd);
+    const staticPaths = staticPathsForTarget(target);
+    appendStaticEntries(
+      entries,
+      basePath,
+      staticPaths,
+      targetStart,
+      chunkStart,
+      chunkEnd,
+    );
 
-    const productStart = targetStart + STATIC_PAGES_PER_LOCALE;
+    const productStart = targetStart + staticPaths.length;
     const productEnd = productStart + catalog.productCount;
     const categoryStart = productEnd;
     const categoryEnd = categoryStart + catalog.categoryCount;
@@ -271,8 +279,21 @@ function resolveBaseUrl(): string | undefined {
   }
 }
 
-function catalogSize(catalog: LocaleCatalog): number {
-  return STATIC_PAGES_PER_LOCALE + catalog.productCount + catalog.categoryCount;
+function staticPathsForTarget(target: LocaleOptions): string[] {
+  return [
+    "",
+    ...(isBuyingGuideRoute(target.country, target.locale)
+      ? ["/guias", ...BUYING_GUIDES.map((guide) => `/guias/${guide.slug}`)]
+      : []),
+  ];
+}
+
+function catalogSize(catalog: LocaleCatalog, target: LocaleOptions): number {
+  return (
+    staticPathsForTarget(target).length +
+    catalog.productCount +
+    catalog.categoryCount
+  );
 }
 
 function intersectRange(
@@ -289,13 +310,16 @@ function intersectRange(
 function appendStaticEntries(
   entries: MetadataRoute.Sitemap,
   basePath: string,
+  paths: string[],
   targetStart: number,
   chunkStart: number,
   chunkEnd: number,
 ): void {
-  const staticEntries: MetadataRoute.Sitemap = [
-    { url: basePath, changeFrequency: "daily", priority: 1 },
-  ];
+  const staticEntries: MetadataRoute.Sitemap = paths.map((path) => ({
+    url: `${basePath}${path}`,
+    changeFrequency: path ? "monthly" : "daily",
+    priority: path ? 0.5 : 1,
+  }));
 
   for (const [offset, entry] of staticEntries.entries()) {
     const position = targetStart + offset;
