@@ -319,6 +319,30 @@ describe("product SEO", () => {
 });
 
 describe("store SEO", () => {
+  it("identifies the spaced, joined and Bisonte names as the same store", () => {
+    vi.stubEnv("NEXT_PUBLIC_STORE_NAME", "BisonTCG");
+    const alternateName = [
+      "Bison TCG",
+      "Bisontcg",
+      "Bisonte TCG",
+      "Bisontetcg",
+    ];
+    expect(
+      buildWebSiteJsonLd("https://bisontcg.example/es/es", "es"),
+    ).toMatchObject({ name: "BisonTCG", alternateName });
+    expect(buildOrganizationJsonLd()).toMatchObject({
+      name: "BisonTCG",
+      alternateName,
+    });
+  });
+
+  it("does not assign BisonTCG aliases to another configured store", () => {
+    vi.stubEnv("NEXT_PUBLIC_STORE_NAME", "Another Store");
+    expect(
+      buildWebSiteJsonLd("https://example.com/es/es", "es"),
+    ).not.toHaveProperty("alternateName");
+    expect(buildOrganizationJsonLd()).not.toHaveProperty("alternateName");
+  });
   it("uses the root origin when deriving a site URL from the canonical homepage", () => {
     vi.stubEnv("NEXT_PUBLIC_SITE_URL", "");
     vi.stubEnv("NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL", "");

@@ -11,6 +11,21 @@ import {
  */
 export const SOCIAL_IMAGE_PATH = "/bison-social-image.webp";
 
+function storeAlternateNames(): Record<string, string[]> {
+  const name = getStoreName();
+  if (!/^bison(?:te)?tcg$/i.test(name.replace(/\s+/g, ""))) return {};
+  // Google searches are case-insensitive; retain meaningful spelling/spacing aliases.
+  return {
+    alternateName: [
+      "BisonTCG",
+      "Bison TCG",
+      "Bisontcg",
+      "Bisonte TCG",
+      "Bisontetcg",
+    ].filter((alias) => alias !== name),
+  };
+}
+
 export function normalizeOpenGraphLocale(
   locale: string,
   country: string,
@@ -335,6 +350,7 @@ export function buildWebSiteJsonLd(
     "@id": `${storeUrl}#website`,
     url: storeUrl,
     name: getStoreName(),
+    ...storeAlternateNames(),
     description: getStoreDescription(),
     inLanguage: locale,
     publisher: {
@@ -446,6 +462,7 @@ export function buildOrganizationJsonLd(
       ? { "@id": `${storeUrl.replace(/\/$/, "")}#organization` }
       : {}),
     name: storeName,
+    ...storeAlternateNames(),
     description: getStoreDescription(),
     ...(storeUrl ? { url: storeUrl } : {}),
   };
