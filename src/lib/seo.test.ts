@@ -49,6 +49,50 @@ afterEach(() => {
 });
 
 describe("product SEO", () => {
+  it("uses the exact catalog variant GTIN rather than a group identifier", () => {
+    const schema = buildProductJsonLd(
+      product({
+        custom_fields: [
+          { key: "ean", value: "5706569110024" },
+        ] as Product["custom_fields"],
+      }),
+      "https://example.com/es/es/products/item",
+      { gtin: "3665361138648" },
+    );
+    expect(schema.gtin13).toBe("3665361138648");
+  });
+
+  it.each([
+    "DIST-3665361138648",
+    "3665361138649",
+    "",
+    "s",
+  ])("rejects invalid catalog GTIN %j", (gtin) => {
+    const schema = buildProductJsonLd(
+      product(),
+      "https://example.com/product",
+      { gtin },
+    );
+    expect(schema).not.toHaveProperty("gtin13");
+    expect(schema).not.toHaveProperty("brand");
+  });
+
+  it("references the same return policy identifier as the store markup", () => {
+    const returnPolicyUrl = "https://example.com/es/es/policies/returns-policy";
+    const schema = buildProductJsonLd(
+      product(),
+      "https://example.com/es/es/products/item",
+      { returnPolicyUrl },
+    );
+    const organization = buildOrganizationJsonLd({ returnPolicyUrl });
+    expect(schema.offers).toMatchObject({
+      hasMerchantReturnPolicy: { "@id": `${returnPolicyUrl}#policy` },
+    });
+    expect(organization.hasMerchantReturnPolicy).toMatchObject({
+      "@id": `${returnPolicyUrl}#policy`,
+      merchantReturnLink: returnPolicyUrl,
+    });
+  });
   it("uses authored content and strips HTML for the concise description", () => {
     expect(
       buildProductShortDescription(
@@ -275,6 +319,30 @@ describe("product SEO", () => {
 });
 
 describe("store SEO", () => {
+  it("identifies the spaced, joined and Bisonte names as the same store", () => {
+    vi.stubEnv("NEXT_PUBLIC_STORE_NAME", "BisonTCG");
+    const alternateName = [
+      "Bison TCG",
+      "Bisontcg",
+      "Bisonte TCG",
+      "Bisontetcg",
+    ];
+    expect(
+      buildWebSiteJsonLd("https://bisontcg.example/es/es", "es"),
+    ).toMatchObject({ name: "BisonTCG", alternateName });
+    expect(buildOrganizationJsonLd()).toMatchObject({
+      name: "BisonTCG",
+      alternateName,
+    });
+  });
+
+  it("does not assign BisonTCG aliases to another configured store", () => {
+    vi.stubEnv("NEXT_PUBLIC_STORE_NAME", "Another Store");
+    expect(
+      buildWebSiteJsonLd("https://example.com/es/es", "es"),
+    ).not.toHaveProperty("alternateName");
+    expect(buildOrganizationJsonLd()).not.toHaveProperty("alternateName");
+  });
   it("uses the root origin when deriving a site URL from the canonical homepage", () => {
     vi.stubEnv("NEXT_PUBLIC_SITE_URL", "");
     vi.stubEnv("NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL", "");
@@ -315,6 +383,7 @@ describe("store SEO", () => {
     expect(schema.logo).toBe("https://bisontcg.example/bison-logo.png");
     expect(schema.hasMerchantReturnPolicy).toEqual({
       "@type": "MerchantReturnPolicy",
+      "@id": "https://bisontcg.example/es/es/policies/returns-policy#policy",
       merchantReturnLink:
         "https://bisontcg.example/es/es/policies/returns-policy",
     });
