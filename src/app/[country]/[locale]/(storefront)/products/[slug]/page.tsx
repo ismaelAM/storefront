@@ -6,6 +6,7 @@ import { Breadcrumbs } from "@/components/navigation/Breadcrumbs";
 import { ProductPuckRenderer } from "@/components/puck/ProductPuckRenderer";
 import { JsonLd } from "@/components/seo/JsonLd";
 import { getLegacyGroupedSpreeProductId } from "@/lib/catalog/legacy-product";
+import { getCatalogGtin } from "@/lib/catalog/seo-identifiers";
 import {
   getCachedCategory,
   getCachedProduct,
@@ -18,6 +19,7 @@ import {
   buildCanonicalUrl,
   buildProductJsonLd,
   buildProductShortDescription,
+  getProductOfferSource,
 } from "@/lib/seo";
 import { getStoreUrl } from "@/lib/store";
 import { legacyGroupedProductSlug } from "@/lib/utils/product-slug";
@@ -123,6 +125,12 @@ export default async function ProductPage({
         `/${country}/${locale}/products/${product.slug}`,
       )
     : undefined;
+  const returnPolicyUrl = storeUrl
+    ? buildCanonicalUrl(storeUrl, `${basePath}/policies/returns-policy`)
+    : undefined;
+  const gtin = canonicalUrl
+    ? await getCatalogGtin(product.id, getProductOfferSource(product).id)
+    : undefined;
 
   let breadcrumbCategory: Category | undefined;
   if (category_id) {
@@ -148,6 +156,8 @@ export default async function ProductPage({
           data={buildProductJsonLd(product, canonicalUrl, {
             description: shortDescription,
             locale,
+            gtin,
+            returnPolicyUrl,
           })}
         />
       )}

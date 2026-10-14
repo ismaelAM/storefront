@@ -49,6 +49,50 @@ afterEach(() => {
 });
 
 describe("product SEO", () => {
+  it("uses the exact catalog variant GTIN rather than a group identifier", () => {
+    const schema = buildProductJsonLd(
+      product({
+        custom_fields: [
+          { key: "ean", value: "5706569110024" },
+        ] as Product["custom_fields"],
+      }),
+      "https://example.com/es/es/products/item",
+      { gtin: "3665361138648" },
+    );
+    expect(schema.gtin13).toBe("3665361138648");
+  });
+
+  it.each([
+    "DIST-3665361138648",
+    "3665361138649",
+    "",
+    "s",
+  ])("rejects invalid catalog GTIN %j", (gtin) => {
+    const schema = buildProductJsonLd(
+      product(),
+      "https://example.com/product",
+      { gtin },
+    );
+    expect(schema).not.toHaveProperty("gtin13");
+    expect(schema).not.toHaveProperty("brand");
+  });
+
+  it("references the same return policy identifier as the store markup", () => {
+    const returnPolicyUrl = "https://example.com/es/es/policies/returns-policy";
+    const schema = buildProductJsonLd(
+      product(),
+      "https://example.com/es/es/products/item",
+      { returnPolicyUrl },
+    );
+    const organization = buildOrganizationJsonLd({ returnPolicyUrl });
+    expect(schema.offers).toMatchObject({
+      hasMerchantReturnPolicy: { "@id": `${returnPolicyUrl}#policy` },
+    });
+    expect(organization.hasMerchantReturnPolicy).toMatchObject({
+      "@id": `${returnPolicyUrl}#policy`,
+      merchantReturnLink: returnPolicyUrl,
+    });
+  });
   it("uses authored content and strips HTML for the concise description", () => {
     expect(
       buildProductShortDescription(
@@ -315,6 +359,7 @@ describe("store SEO", () => {
     expect(schema.logo).toBe("https://bisontcg.example/bison-logo.png");
     expect(schema.hasMerchantReturnPolicy).toEqual({
       "@type": "MerchantReturnPolicy",
+      "@id": "https://bisontcg.example/es/es/policies/returns-policy#policy",
       merchantReturnLink:
         "https://bisontcg.example/es/es/policies/returns-policy",
     });

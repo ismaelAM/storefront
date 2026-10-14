@@ -141,7 +141,10 @@ function validGtin(value: string): boolean {
   return (10 - (sum % 10)) % 10 === checkDigit;
 }
 
-function productIdentifiers(product: Product): Record<string, string> {
+function productIdentifiers(
+  product: Product,
+  catalogGtin?: string,
+): Record<string, string> {
   const identifiers: Record<string, string> = {};
   const customGtin = customFieldText(product, [
     "gtin",
@@ -151,7 +154,7 @@ function productIdentifiers(product: Product): Record<string, string> {
     "gtin13",
     "gtin14",
   ]);
-  const gtinCandidate = (customGtin || "").replace(/[\s-]/g, "");
+  const gtinCandidate = (catalogGtin ?? customGtin ?? "").replace(/[\s-]/g, "");
 
   if (validGtin(gtinCandidate)) {
     identifiers[`gtin${gtinCandidate.length}`] = gtinCandidate;
@@ -231,6 +234,7 @@ function buildOffer(
     backorderable?: boolean;
   },
   canonicalUrl: string,
+  returnPolicyUrl?: string,
 ): Record<string, unknown> | null {
   if (!validOfferPrice(source.price) || !source.price) return null;
   const storeUrl = getStoreUrl();
@@ -242,6 +246,9 @@ function buildOffer(
     availability: schemaAvailability(source),
     itemCondition: "https://schema.org/NewCondition",
     ...(source.sku ? { sku: source.sku } : {}),
+    ...(returnPolicyUrl
+      ? { hasMerchantReturnPolicy: { "@id": `${returnPolicyUrl}#policy` } }
+      : {}),
     seller: {
       "@type": "Organization",
       ...(storeUrl
@@ -259,12 +266,17 @@ function buildOffer(
 export function buildProductJsonLd(
   product: Product,
   canonicalUrl: string,
-  options: { description?: string; locale?: string } = {},
+  options: {
+    description?: string;
+    locale?: string;
+    gtin?: string;
+    returnPolicyUrl?: string;
+  } = {},
 ): Record<string, unknown> {
   const description =
     options.description ??
     buildProductShortDescription(product, options.locale ?? "en");
-  const identifiers = productIdentifiers(product);
+  const identifiers = productIdentifiers(product, options.gtin);
   const schema: Record<string, unknown> = {
     "@context": "https://schema.org",
     "@type": identifiers.isbn ? ["Product", "Book"] : "Product",
@@ -301,7 +313,11 @@ export function buildProductJsonLd(
     schema.image = imageUrls;
   }
 
-  const offers = buildOffer(getProductOfferSource(product), canonicalUrl);
+  const offers = buildOffer(
+    getProductOfferSource(product),
+    canonicalUrl,
+    options.returnPolicyUrl,
+  );
   if (offers) schema.offers = offers;
 
   return schema;
@@ -445,6 +461,7 @@ export function buildOrganizationJsonLd(
   if (options.returnPolicyUrl) {
     schema.hasMerchantReturnPolicy = {
       "@type": "MerchantReturnPolicy",
+      "@id": `${options.returnPolicyUrl}#policy`,
       merchantReturnLink: options.returnPolicyUrl,
     };
   }
