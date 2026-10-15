@@ -10,6 +10,7 @@ import { buildHomeMerchandisingProducts } from "@/lib/puck/home-merchandising";
 import { buildCanonicalUrl, buildWebSiteJsonLd } from "@/lib/seo";
 import { getAccessToken } from "@/lib/spree";
 import { getStoreUrl } from "@/lib/store";
+import { madridCommercialDay } from "../../../../../supabase/functions/_shared/commercial-pricing-policy";
 
 interface HomePageProps {
   params: Promise<{
@@ -30,6 +31,8 @@ export default async function HomePage({ params }: HomePageProps) {
   const { country, locale } = await params;
   const basePath = `/${country}/${locale}`;
   const userToken = await getAccessToken();
+  const now = new Date();
+  const dayKey = madridCommercialDay(now).dayKey;
 
   let products: Product[] = [];
 
@@ -39,7 +42,7 @@ export default async function HomePage({ params }: HomePageProps) {
         {
           limit: 40,
           fields: PRODUCT_CARD_FIELDS,
-          tags_name_in: ["sale"],
+          tags_name_in: [`offer-date:${dayKey}`],
         },
         { locale, country },
         "dtc",
@@ -60,6 +63,7 @@ export default async function HomePage({ params }: HomePageProps) {
     products = buildHomeMerchandisingProducts(
       saleResponse.data ?? [],
       preorderResponse.data ?? [],
+      now,
     );
   } catch (error) {
     console.error(

@@ -16,6 +16,9 @@ function product(id: string, preorder = false, inStock = false): Product {
     purchasable: true,
     in_stock: inStock,
     preorder,
+    tags: preorder
+      ? ["devir-preorder"]
+      : ["daily-offer", "offer-date:2026-10-11"],
     preorder_ships_at: preorder ? "2026-10-20" : null,
     price: {
       amount: "24.90",
@@ -51,6 +54,41 @@ function gridNames(
 }
 
 describe("Home merchandising pools consumed by Puck", () => {
+  it("shows today's social offers without old daily tags or unrelated sales crowding them out", () => {
+    const today = Array.from({ length: 12 }, (_, index) =>
+      product(`today-${index}`),
+    );
+    const stale = {
+      ...product("yesterday"),
+      tags: ["sale", "daily-offer", "offer-date:2026-10-10"],
+    };
+    const ordinary = { ...product("ordinary-sale"), tags: ["sale"] };
+    const pool = buildHomeMerchandisingProducts(
+      [stale, ordinary, ...today],
+      [],
+      now,
+    );
+    expect(pool).toHaveLength(12);
+    expect(gridNames(pool, "sale").sort()).toEqual(
+      today.map((item) => item.name).sort(),
+    );
+  });
+  it("uses the Madrid commercial day and supports Saturday's special offers", () => {
+    const nextDay = new Date("2026-10-16T22:15:00Z");
+    const saturday = {
+      ...product("saturday"),
+      tags: ["saturday-special", "offer-date:2026-10-17"],
+    };
+    const expired = {
+      ...product("friday"),
+      tags: ["daily-offer", "offer-date:2026-10-16"],
+    };
+    expect(
+      buildHomeMerchandisingProducts([expired, saturday], [], nextDay).map(
+        (item) => item.id,
+      ),
+    ).toEqual(["saturday"]);
+  });
   it.each([
     false,
     true,
