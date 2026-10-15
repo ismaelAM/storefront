@@ -4,7 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GET, maxDuration } from "./route";
 
 const mocks = vi.hoisted(() => ({ catalog: vi.fn(), gtins: vi.fn() }));
-vi.mock("@/lib/merchant/data", () => ({
+vi.mock("@/lib/merchant/data", async () => ({
+  ...(await vi.importActual<typeof import("@/lib/merchant/data")>(
+    "@/lib/merchant/data",
+  )),
   getMerchantCatalog: mocks.catalog,
   getMerchantGtins: mocks.gtins,
 }));
@@ -63,6 +66,7 @@ describe("public Merchant feed route", () => {
     expect(body).not.toContain("secret private backend details");
     expect(console.error).toHaveBeenCalledWith("Merchant feed unavailable", {
       stage: dependency === "catalog" ? "market/catalogue" : "identifiers",
+      reason: "upstream_unavailable",
     });
   });
   it("rejects an empty eligible feed", async () => {

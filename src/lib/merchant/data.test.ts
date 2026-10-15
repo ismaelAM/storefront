@@ -72,13 +72,22 @@ describe("public Merchant catalogue", () => {
     }
   });
   it.each([
-    { data: [] },
-    { data: [{ ...market, currency: "USD" }] },
-    { data: [{ ...market, tax_inclusive: false }] },
-    { data: [{ ...market, default_locale: "en", supported_locales: ["en"] }] },
-  ])("rejects unavailable or incompatible ES markets: %j", async ({ data }) => {
+    { data: [], code: "market_missing" },
+    { data: [{ ...market, currency: "USD" }], code: "market_currency" },
+    {
+      data: [{ ...market, tax_inclusive: false }],
+      code: "market_tax_inclusive",
+    },
+    {
+      data: [{ ...market, default_locale: "en", supported_locales: ["en"] }],
+      code: "market_locale",
+    },
+  ])("rejects unavailable or incompatible ES markets: %j", async ({
+    data,
+    code,
+  }) => {
     mocks.markets.mockResolvedValue({ data });
-    await expect(getMerchantCatalog()).rejects.toThrow(/market/i);
+    await expect(getMerchantCatalog()).rejects.toMatchObject({ code });
   });
   it("rejects a catalogue beyond 5,000 products", async () => {
     mocks.products.mockResolvedValue(page(1, 5001));
@@ -90,7 +99,17 @@ describe("public Merchant catalogue", () => {
         ? Promise.reject(new Error("backend failed"))
         : Promise.resolve(page(p, 203)),
     );
-    await expect(getMerchantCatalog()).rejects.toThrow();
+    await expect(getMerchantCatalog()).rejects.toMatchObject({
+      code: "catalogue_fetch_failed",
+    });
+  });
+  it("identifies the precise safe pagination field that failed", async () => {
+    const response = page(1, 203);
+    response.meta.from = 0;
+    mocks.products.mockResolvedValue(response);
+    await expect(getMerchantCatalog()).rejects.toMatchObject({
+      code: "pagination_from",
+    });
   });
   it.each([
     "changed-count",

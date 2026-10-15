@@ -8,6 +8,21 @@ This URL becomes available after the branch containing the route is deployed to
 production. Code and tests alone do not register a Merchant Center account or
 activate listings.
 
+## Current activation blocker
+
+The ES market returned `tax_inclusive: false` in the Vercel Preview checked on
+2026-10-14. The feed therefore returns **503**, with the safe diagnostic code
+`market_tax_inclusive`, before reading or publishing product offers. The guides
+and product-summary improvements can be deployed independently of activation.
+
+Before registering the feed, reconcile the Spanish market's tax setting with
+the actual catalogue prices and checkout totals in Spree. Confirm whether the
+stored prices already include VAT and verify the applicable product tax rates;
+do not simply toggle the flag or add a blanket percentage to the feed. Once the
+backend accurately declares VAT-inclusive consumer prices, repeat the complete
+live feed validation below. No successful live catalogue export has yet been
+verified for this branch.
+
 ## Account setup
 
 1. In Merchant Center, complete the real business details and verify/claim

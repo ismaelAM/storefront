@@ -1,5 +1,9 @@
 import { connection } from "next/server";
-import { getMerchantCatalog, getMerchantGtins } from "@/lib/merchant/data";
+import {
+  getMerchantCatalog,
+  getMerchantGtins,
+  MerchantDataError,
+} from "@/lib/merchant/data";
 import { buildMerchantFeed } from "@/lib/merchant/feed";
 import { getStoreUrl } from "@/lib/store";
 
@@ -44,9 +48,15 @@ export async function GET() {
         "X-Merchant-Skipped-Count": String(skippedCount),
       },
     });
-  } catch {
+  } catch (error) {
     // Only fixed stage names: no upstream payload, catalogue or credentials.
-    console.error("Merchant feed unavailable", { stage });
+    console.error("Merchant feed unavailable", {
+      stage,
+      reason:
+        error instanceof MerchantDataError
+          ? error.code
+          : "upstream_unavailable",
+    });
     return new Response(
       "Merchant feed temporarily unavailable; no catalogue update was generated.",
       {
