@@ -85,6 +85,14 @@ to prevent forwarding the bearer token to another destination.
 
 ## Request sequence
 
+The shared caption generator appends stable hashtags automatically. A complete
+four-category carousel ends with
+`#BisonTCG #TCG #JuegosDeMesa #AccesoriosTCG #Merchandising`.
+Partial downloads include the brand plus only the categories present, with no
+duplicate tags. The same caption is used by the private offers panel and by the
+server publisher; it requires no daily assistant interaction. The separate
+ChatGPT email automation includes the same five-tag block for manual copying.
+
 The deterministic renderer supplies exactly four publicly accessible HTTPS JPEG
 URLs, one per category (three real offers each), and a caption of at most 2200
 Unicode code points. The client does not generate media or fetch product data.
