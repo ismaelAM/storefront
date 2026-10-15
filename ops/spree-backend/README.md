@@ -4,6 +4,8 @@ Este directorio es el root del proyecto Vercel `bisontcg-spree`. Es una
 reconstrucción independiente, no una restauración de clientes/pedidos del
 sandbox. La imagen oficial Spree 5.6.1 está fijada por digest amd64 y su
 configuración OCI confirma Ruby 4.0.1, `/rails` y usuario `1000:1000`.
+`vercel.json` fija expresamente `framework: container`: el proyecto vacío
+creado desde el panel heredó Other y produjo un despliegue sin construir Rails.
 
 ## Conexión privada pendiente
 
