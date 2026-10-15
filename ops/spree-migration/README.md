@@ -11,9 +11,12 @@ El 15/10/2026, Supabase conserva 5.000 productos canónicos, 5.015 variantes,
 proyecto. Esos datos permiten recuperar parte del catálogo, pero no acreditan
 la conservación de clientes, pedidos, precios finales, stock o archivos de Spree.
 
-La herramienta `get_cost` del conector devuelve `UNAVAILABLE`; por tanto todavía
-no se ha creado ni cobrado un proyecto de destino. No sustituir ese paso por
-otra cuenta ni asumir un precio. No hay credenciales de la base de origen,
+El usuario ha creado el destino `dtrospakebdiqihhcrub` (BisonTCG Spree), en
+Bisontcg, Irlanda y plan gratuito, con Data API desactivada. El SQL responde.
+Se han copiado 15.097 registros del checkpoint a `spree_recovery.source_records`:
+5.000 productos, 5.015 variantes y 5.082 ofertas. Los checksums de contenido
+coinciden por tabla. Es staging privado, todavía no productos importados a Spree.
+No hay credenciales de la base de origen,
 dump, archivos originales ni versión exacta del backend disponibles aquí.
 
 Se ha creado una copia interna de las 18 tablas públicas existentes en el esquema
@@ -24,7 +27,7 @@ ni sobrescribir el esquema existente. Esta copia contiene datos, no índices,
 constraints, secuencias, funciones o archivos de Storage. Está en el mismo
 proyecto y **no sustituye un backup independiente ni copia el backend de Spree**.
 
-## Primero, conseguir el paquete de origen
+## Recuperación completa, si aparece el paquete de origen
 
 Pedir al proveedor una copia coherente del mismo instante, incluyendo:
 
@@ -92,10 +95,10 @@ La comparación con el inventario original se ejecuta **una sola vez antes del
 corte**, con `./bin/rails runner ./migration-inventory.rb`. No se impone al
 arranque normal: pedidos o altas posteriores cambiarán legítimamente las cifras.
 
-## Restauración en destino: pendiente de datos y aprovisionamiento
+## Restauración completa en destino: pendiente del paquete original
 
-1. Crear el proyecto separado en Bisontcg, preferiblemente cerca de Irlanda,
-   después de obtener y aceptar su coste real. El proyecto actual del catálogo
+1. Comprobar el proyecto separado de destino y no sobrescribir staging sin
+   guardar su copia. El proyecto actual del catálogo
    es `ikglqbjlbkbaronbiryl`: no restaurar Spree sobre él.
 2. Ajustar versión de PostgreSQL y extensiones a la copia. Usar una conexión
    dedicada con TLS y mantener las tablas Spree fuera del acceso público del
@@ -148,7 +151,9 @@ apuntar de nuevo a él no sería por sí solo un rollback operativo.
 
 ## Límites de esta entrega
 
-No se ha restaurado ni trasladado ningún dato de Spree, creado el proyecto de
-destino, desplegado Rails, conectado medios, configurado workers ni cambiado DNS
-o producción. Este entorno no tiene Docker, Ruby o PostgreSQL CLI; el candidato
-requiere build y pruebas reales cuando se obtenga la imagen y el backup.
+No se ha restaurado ningún dato del Spree original. El destino sí está creado y
+contiene una copia privada verificada del catálogo canónico. El bucket privado
+`spree-media` está creado, todavía sin imágenes. El runtime nuevo está en
+`../spree-backend`; necesita secretos, inicialización y pruebas reales. No se han
+configurado workers ni cambiado DNS o tráfico de producción. Este entorno no
+tiene Docker, Ruby o PostgreSQL CLI; no presentar tests Node como un build Rails.

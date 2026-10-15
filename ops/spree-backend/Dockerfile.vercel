@@ -1,0 +1,10 @@
+# Official Spree 5.6.1, linux/amd64; upstream revision 86aff8be595f326da2144909cfb5b080a7525e55.
+FROM ghcr.io/spree/spree@sha256:b62cb3973a9bb8db1363344597963fa7e212fd2a86d0e9796bbcb1d892048645
+WORKDIR /rails
+COPY --chown=1000:1000 --chmod=644 start.sh target.rb ./
+COPY --chown=1000:1000 config/database.yml config/storage.yml ./config/
+COPY --chown=1000:1000 config/initializers/bisontcg.rb ./config/initializers/
+RUN ruby -c target.rb && ruby -c config/initializers/bisontcg.rb && sh -n start.sh
+ENV RAILS_ENV=production PORT=3000 RAILS_MAX_THREADS=3 SOLID_QUEUE_IN_PUMA=false PIDFILE=/tmp/spree.pid TARGET_SUPABASE_PROJECT_REF=dtrospakebdiqihhcrub
+# Bypass upstream entrypoint: it runs db:prepare on each web startup.
+ENTRYPOINT ["/bin/sh", "/rails/start.sh"]

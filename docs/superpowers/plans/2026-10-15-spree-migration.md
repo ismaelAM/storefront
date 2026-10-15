@@ -30,7 +30,7 @@ en Bisontcg, frontend actual en Vercel; corte bloqueado hasta restauración real
 - [x] Revisar main, tablas de Supabase, DNS y requisitos oficiales.
 - [x] Ejecutar suite base: 887 pruebas pasan.
 - [x] Confirmar organización de destino: Bisontcg, proyecto separado.
-- [ ] Crear proyecto: bloqueado, `get_cost` no está disponible en el servidor MCP.
+- [x] Proyecto creado por el usuario mediante navegador; SQL de destino verificado.
 - [x] Crear checkpoint privado de las 18 tablas de Supabase y verificar acceso.
 
 ## Task 2: Paquete verificable y servidor preparado
@@ -68,3 +68,27 @@ Files: `ops/spree-migration/migration.mjs`,
   durante la comprobación. Las dos pruebas Ruby siguen pendientes de ejecución;
   no se presentan como pasadas. El preview Vercel falla con el ENOTFOUND del
   backend original; esta entrega todavía no cambia su dirección.
+
+## Continuación: reconstrucción autorizada
+
+Ruling: el usuario pide seguir sin el backup original; la instalación nueva usa
+Spree 5.6.1 sin fingir que sea la versión del sandbox. Coste si difiere: revisar
+compatibilidad del contrato API antes de conectar el storefront.
+
+- [x] Destino nuevo creado por el usuario y SQL comprobado.
+- [x] Runtime oficial fijado y configuración de guardas/S3 preparada; build pendiente.
+- [x] Copiar catálogo a staging privado y verificar checksums (15.097 registros).
+- [ ] Conectar credenciales por canal privado, migrar esquema Rails y configurar tienda.
+- [ ] Importar borradores, verificar medios y reconciliar nuevas correspondencias.
+- [ ] Validar jobs durables y compra antes de tráfico.
+
+No reemplazar el plan de restauración si posteriormente aparece el dump.
+
+Verificación: 887 pruebas existentes pasan, TypeScript sin errores; 14 pruebas
+Node de migración/arranque pasan y 2 de Ruby se omiten por falta de runtime local.
+Los tres checksums de staging coinciden con el checkpoint de las 13:54:21 UTC.
+Los tres roles API no tienen acceso al esquema ni SELECT; el advisor solo
+informa RLS sin policies en las dos tablas privadas (denegación intencionada).
+Revisión independiente: sin hallazgos Critical/Important en la preparación.
+El host de medios se toma de RAILS_HOST o VERCEL_URL; queda documentado y
+pendiente de verificación en un despliegue real.

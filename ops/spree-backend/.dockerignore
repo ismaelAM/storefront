@@ -1,0 +1,6 @@
+*
+!Dockerfile.vercel
+!start.sh
+!target.rb
+!config/
+!config/**
