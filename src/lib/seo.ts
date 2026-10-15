@@ -96,7 +96,8 @@ export function buildProductShortDescription(
   product: Pick<
     Product,
     "name" | "meta_description" | "description" | "description_html"
-  >,
+  > &
+    Partial<Pick<Product, "custom_fields" | "default_variant" | "variants">>,
   locale: string,
 ): string {
   const authored =
@@ -107,16 +108,30 @@ export function buildProductShortDescription(
   }
 
   const language = locale.toLowerCase().split(/[-_]/)[0];
+  const specifications = productSpecificationSummary(product, language);
+  if (specifications.length) {
+    return truncateAtWord(`${product.name}. ${specifications.join(". ")}.`);
+  }
   const template =
     PRODUCT_DESCRIPTION_TEMPLATES[language] ?? PRODUCT_DESCRIPTION_TEMPLATES.en;
   return truncateAtWord(template(product.name, getStoreName()));
 }
 
+function isInternalProductField(
+  field: NonNullable<Product["custom_fields"]>[number],
+): boolean {
+  const namespace = String((field as { namespace?: string }).namespace ?? "");
+  return [namespace, String(field.key ?? "")].some((key) =>
+    /^(?:devir|pricing|sourcing)(?:[._-]|$)/i.test(key),
+  );
+}
+
 function customFieldText(
-  product: Product,
+  product: Pick<Product, "custom_fields">,
   aliases: string[],
 ): string | undefined {
   for (const field of product.custom_fields ?? []) {
+    if (isInternalProductField(field)) continue;
     const key = String(field.key ?? "");
     const identifiers = [key, key.split(/[._-]/).at(-1), field.label]
       .map((value) =>
@@ -140,6 +155,122 @@ function customFieldText(
   return undefined;
 }
 
+const SPECIFICATION_FIELDS = [
+  ["brand", ["brand", "marca", "manufacturer", "fabricante"]],
+  ["language", ["language", "idioma"]],
+  ["edition", ["edition", "edicion", "edición"]],
+  ["size", ["size", "tamano", "tamaño"]],
+  ["color", ["color", "colour"]],
+  ["volume", ["volume", "tomo"]],
+  [
+    "players",
+    ["players", "jugadores", "numero de jugadores", "número de jugadores"],
+  ],
+  ["age", ["age", "edad", "edad minima", "edad mínima"]],
+  ["duration", ["play time", "playing time", "duracion", "duración"]],
+] as const;
+
+const SPECIFICATION_LABELS: Record<string, readonly string[]> = {
+  es: [
+    "Marca",
+    "Idioma",
+    "Edición",
+    "Tamaño",
+    "Color",
+    "Tomo",
+    "Jugadores",
+    "Edad",
+    "Duración",
+  ],
+  en: [
+    "Brand",
+    "Language",
+    "Edition",
+    "Size",
+    "Color",
+    "Volume",
+    "Players",
+    "Age",
+    "Playing time",
+  ],
+  de: [
+    "Marke",
+    "Sprache",
+    "Ausgabe",
+    "Größe",
+    "Farbe",
+    "Band",
+    "Spieler",
+    "Alter",
+    "Spieldauer",
+  ],
+  fr: [
+    "Marque",
+    "Langue",
+    "Édition",
+    "Taille",
+    "Couleur",
+    "Tome",
+    "Joueurs",
+    "Âge",
+    "Durée",
+  ],
+  pl: [
+    "Marka",
+    "Język",
+    "Wydanie",
+    "Rozmiar",
+    "Kolor",
+    "Tom",
+    "Gracze",
+    "Wiek",
+    "Czas gry",
+  ],
+  pt: [
+    "Marca",
+    "Idioma",
+    "Edição",
+    "Tamanho",
+    "Cor",
+    "Volume",
+    "Jogadores",
+    "Idade",
+    "Duração",
+  ],
+};
+
+function productSpecificationSummary(
+  product: Partial<
+    Pick<Product, "custom_fields" | "default_variant" | "variants">
+  >,
+  language: string,
+): string[] {
+  const variant =
+    product.default_variant ??
+    product.variants?.find((item) => item.purchasable) ??
+    product.variants?.[0];
+  const labels = SPECIFICATION_LABELS[language] ?? SPECIFICATION_LABELS.en;
+  return SPECIFICATION_FIELDS.flatMap(([, aliases], index) => {
+    const option = variant?.option_values?.find((item) =>
+      [item.option_type_name, item.option_type_label].some((key) =>
+        aliases.some(
+          (alias) =>
+            alias.toLowerCase() ===
+            String(key ?? "")
+              .toLowerCase()
+              .trim(),
+        ),
+      ),
+    );
+    const raw =
+      option?.label ||
+      option?.name ||
+      customFieldText({ custom_fields: product.custom_fields }, [...aliases]);
+    const value = raw ? stripHtml(raw).trim() : "";
+    return value ? [`${labels[index]}: ${value}`] : [];
+  }).slice(0, 4);
+}
+
 function validGtin(value: string): boolean {
   if (![8, 12, 13, 14].includes(value.length) || !/^\d+$/.test(value)) {
     return false;
@@ -161,19 +292,26 @@ function productIdentifiers(
   catalogGtin?: string,
 ): Record<string, string> {
   const identifiers: Record<string, string> = {};
-  const customGtin = customFieldText(product, [
-    "gtin",
-    "ean",
-    "gtin8",
-    "gtin12",
-    "gtin13",
-    "gtin14",
-  ]);
+  // Parent metadata does not identify a particular language/edition variant.
+  const hasMultipleVariants =
+    product.variant_count > 1 || (product.variants?.length ?? 0) > 1;
+  const customGtin = hasMultipleVariants
+    ? undefined
+    : customFieldText(product, [
+        "gtin",
+        "ean",
+        "gtin8",
+        "gtin12",
+        "gtin13",
+        "gtin14",
+      ]);
   const gtinCandidate = (catalogGtin ?? customGtin ?? "").replace(/[\s-]/g, "");
 
   if (validGtin(gtinCandidate)) {
     identifiers[`gtin${gtinCandidate.length}`] = gtinCandidate;
   }
+
+  if (hasMultipleVariants) return identifiers;
 
   const isbn = (customFieldText(product, ["isbn", "isbn10", "isbn13"]) || "")
     .replace(/[\s-]/g, "")

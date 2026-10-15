@@ -63,7 +63,8 @@
     "cart": "Carrinho",
     "policies": "Políticas",
     "wholesale": "Comércio e venda por grosso",
-    "rightsReserved": "Todos os direitos reservados."
+    "rightsReserved": "Todos os direitos reservados.",
+    "guides": "Guias de compra"
   },
   "home": {
     "welcome": "{storeName}",

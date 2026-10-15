@@ -3,6 +3,7 @@ import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 import type { ReactNode } from "react";
 import { POLICY_LINKS } from "@/lib/constants/policies";
+import { isBuyingGuideRoute } from "@/lib/guides/content";
 import { isWholesaleEnabled } from "@/lib/spree";
 import { getSiteAppearance, type SiteAppearance } from "@/lib/puck/get-site-appearance";
 import { getStoreName } from "@/lib/store";
@@ -40,6 +41,8 @@ export async function Footer({ basePath, locale, categoryLinks, appearance }: Fo
 
   const linkStyle = { color: colors.footerText };
   const headingStyle = { color: colors.footerHeading };
+  const routeParts = basePath.split("/").filter(Boolean);
+  const showGuides = isBuyingGuideRoute(routeParts[0] ?? "", locale);
 
   return (
     <footer style={{ backgroundColor: colors.footerBackground, color: colors.footerText }}>
@@ -54,6 +57,7 @@ export async function Footer({ basePath, locale, categoryLinks, appearance }: Fo
             <h3 className="text-sm font-medium" style={headingStyle}>{t("shop")}</h3>
             <ul className="mt-4 space-y-3">
               {categoryLinks}
+              {showGuides && <li><Link href={`${basePath}/guias`} className="text-sm transition-colors" style={linkStyle}>{t("guides")}</Link></li>}
             </ul>
           </div>
 

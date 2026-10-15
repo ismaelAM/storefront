@@ -63,7 +63,8 @@
     "cart": "Panier",
     "policies": "Politiques",
     "wholesale": "Professionnels & vente en gros",
-    "rightsReserved": "Tous droits réservés."
+    "rightsReserved": "Tous droits réservés.",
+    "guides": "Guides d’achat"
   },
   "home": {
     "welcome": "{storeName}",

@@ -49,6 +49,103 @@ afterEach(() => {
 });
 
 describe("product SEO", () => {
+  it("requires a variant-matched GTIN for products with multiple variants", () => {
+    const item = product({
+      variant_count: 2,
+      custom_fields: [
+        { key: "gtin", value: "5706569110024" },
+        { key: "isbn", value: "9780306406157" },
+        { key: "mpn", value: "PARENT-REF" },
+      ] as Product["custom_fields"],
+    });
+    const schema = buildProductJsonLd(item, "https://example.com/product");
+    expect(schema).not.toHaveProperty("gtin13");
+    expect(schema).not.toHaveProperty("isbn");
+    expect(schema).not.toHaveProperty("mpn");
+    expect(
+      buildProductJsonLd(item, "https://example.com/product", {
+        gtin: "8436017227239",
+      }),
+    ).toHaveProperty("gtin13", "8436017227239");
+  });
+  it("never treats internal fields as public brand or GTIN based on their labels", () => {
+    const schema = buildProductJsonLd(
+      product({
+        custom_fields: [
+          { key: "sourcing.manufacturer", label: "Marca", value: "PRIVATE" },
+          { key: "devir.identifier", label: "EAN", value: "5706569110024" },
+        ] as Product["custom_fields"],
+      }),
+      "https://example.com/product",
+    );
+    expect(schema).not.toHaveProperty("brand");
+    expect(schema).not.toHaveProperty("gtin13");
+  });
+  it("uses explicit public specifications instead of generic purchase copy", () => {
+    const item = product({
+      custom_fields: [
+        { key: "catalog.players", label: "Jugadores", value: "2" },
+        { key: "catalog.language", label: "Idioma", value: "Español" },
+        { key: "pricing.purchase_cost", label: "Coste", value: "7.10" },
+      ] as Product["custom_fields"],
+    });
+    const description = buildProductShortDescription(item, "es");
+    expect(description).toContain("Jugadores: 2");
+    expect(description).toContain("Idioma: Español");
+    expect(description).not.toContain("7.10");
+    expect(description).not.toContain("Consulta precio");
+  });
+
+  it("describes only the initially displayed variant's language", () => {
+    const item = product({
+      default_variant: {
+        option_values: [
+          {
+            option_type_name: "idioma",
+            option_type_label: "Idioma",
+            label: "Japonés",
+            name: "ja",
+          },
+        ],
+      } as unknown as Product["default_variant"],
+      variants: [
+        {
+          purchasable: true,
+          option_values: [{ option_type_name: "idioma", label: "Español" }],
+        },
+      ] as Product["variants"],
+      custom_fields: [
+        { key: "language", value: "Español" },
+      ] as Product["custom_fields"],
+    });
+    const description = buildProductShortDescription(item, "es");
+    expect(description).toContain("Idioma: Japonés");
+    expect(description).not.toContain("Español");
+  });
+
+  it("preserves authored descriptions before derived specifications", () => {
+    const item = product({
+      description: "Una descripción del editor.",
+      custom_fields: [
+        { key: "players", value: "2" },
+      ] as Product["custom_fields"],
+    });
+    expect(buildProductShortDescription(item, "es")).toBe(
+      "Una descripción del editor.",
+    );
+  });
+
+  it("excludes internal supplier fields even when their labels resemble specifications", () => {
+    const item = product({
+      custom_fields: [
+        { key: "sourcing.manufacturer", label: "Marca", value: "INTERNAL" },
+        { key: "devir.edition", label: "Edición", value: "PRIVATE" },
+      ] as Product["custom_fields"],
+    });
+    const description = buildProductShortDescription(item, "es");
+    expect(description).not.toContain("INTERNAL");
+    expect(description).not.toContain("PRIVATE");
+  });
   it("uses the exact catalog variant GTIN rather than a group identifier", () => {
     const schema = buildProductJsonLd(
       product({

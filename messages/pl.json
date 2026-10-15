@@ -63,7 +63,8 @@
     "cart": "Koszyk",
     "policies": "Regulaminy",
     "wholesale": "Handel i sprzedaż hurtowa",
-    "rightsReserved": "Wszelkie prawa zastrzeżone."
+    "rightsReserved": "Wszelkie prawa zastrzeżone.",
+    "guides": "Poradniki zakupowe"
   },
   "home": {
     "welcome": "{storeName}",
