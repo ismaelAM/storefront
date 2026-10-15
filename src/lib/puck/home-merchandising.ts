@@ -1,4 +1,5 @@
 import type { Product } from "@spree/sdk";
+import { madridCommercialDay } from "../../../supabase/functions/_shared/commercial-pricing-policy";
 
 type HomeProduct = Product & {
   preorder_ships_at?: string | null;
@@ -59,8 +60,7 @@ function hash(value: string): number {
 
 function rotateStable<T extends { id: string }>(items: T[], seed: number): T[] {
   return [...items].sort(
-    (left, right) =>
-      hash(`${seed}:${left.id}`) - hash(`${seed}:${right.id}`),
+    (left, right) => hash(`${seed}:${left.id}`) - hash(`${seed}:${right.id}`),
   );
 }
 
@@ -119,12 +119,17 @@ export function buildHomeMerchandisingProducts(
   now = new Date(),
 ): Product[] {
   const seed = Math.floor(now.getTime() / ROTATION_WINDOW_MS);
+  const dayKey = madridCommercialDay(now).dayKey;
 
   const sales = dedupe(
     (saleProducts as HomeProduct[]).filter(
       (product) =>
         isLandingSafe(product) &&
         isActualSale(product) &&
+        product.tags?.includes(`offer-date:${dayKey}`) &&
+        product.tags.some(
+          (tag) => tag === "daily-offer" || tag === "saturday-special",
+        ) &&
         !product.preorder,
     ),
   );
