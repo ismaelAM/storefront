@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildSocialOffers, type DailyOfferState } from "./offers";
+import {
+  buildSocialOffers,
+  type DailyOfferState,
+  offerCaption,
+  type SocialOfferSnapshot,
+} from "./offers";
 
 const now = new Date("2026-10-11T08:00:00Z");
 const state: DailyOfferState = {
@@ -133,5 +138,72 @@ describe("public daily offer snapshot", () => {
       now,
     );
     expect(result.offers).toHaveLength(3);
+  });
+});
+
+describe("automatic Instagram hashtags", () => {
+  const offer = {
+    productId: "p",
+    variantId: "v",
+    category: "tcg" as const,
+    name: "Producto",
+    slug: "producto",
+    price: 9.9,
+    originalPrice: 12,
+    imageUrl: "https://images.example.com/product.jpg",
+  };
+  const snapshot: SocialOfferSnapshot = {
+    dayKey: "2026-10-15",
+    priceListId: "pl_daily",
+    offers: [],
+  };
+
+  it("adds five stable, unique brand/category hashtags to a complete daily carousel", () => {
+    const offers = (
+      ["tcg", "juegos-de-mesa", "accesorios", "merchandising"] as const
+    ).flatMap((category) =>
+      [1, 2, 3].map((n) => ({
+        ...offer,
+        productId: `${category}-${n}`,
+        category,
+      })),
+    );
+    const caption = offerCaption(
+      { ...snapshot, offers },
+      "https://www.bisontcg.com",
+    );
+    expect(caption.split("\n").at(-1)).toBe(
+      "#BisonTCG #TCG #JuegosDeMesa #AccesoriosTCG #Merchandising",
+    );
+    const tags = caption.match(/#[A-Za-z]+/g) ?? [];
+    expect(tags).toHaveLength(5);
+    expect(new Set(tags).size).toBe(5);
+  });
+
+  it("does not add hashtags for categories missing from a partial download", () => {
+    const caption = offerCaption(
+      { ...snapshot, offers: [offer, { ...offer, productId: "p2" }] },
+      "https://www.bisontcg.com",
+    );
+    expect(caption.split("\n").at(-1)).toBe("#BisonTCG #TCG");
+  });
+
+  it("keeps the complete twelve-offer caption within the publishing character budget", () => {
+    const offers = (
+      ["tcg", "juegos-de-mesa", "accesorios", "merchandising"] as const
+    ).flatMap((category) =>
+      [1, 2, 3].map((n) => ({
+        ...offer,
+        productId: `${category}-${n}`,
+        category,
+        name: "Nombre de producto largo 🦬 ".repeat(15),
+      })),
+    );
+    const caption = offerCaption(
+      { ...snapshot, offers },
+      "https://www.bisontcg.com",
+    );
+    expect([...caption].length).toBeLessThanOrEqual(2200);
+    expect(caption).toContain("#Merchandising");
   });
 });
