@@ -46,8 +46,8 @@ Files: `ops/spree-migration/migration.mjs`,
 
 ## Task 3: Revisión y entrega
 
-- [ ] Revisar diff y secretos; publicar rama y abrir PR de preparación.
-- [ ] Documentar estado real de origen, destino y límites de validación.
+- [x] Revisar diff y secretos; rama publicada y PR de preparación #93 abierta.
+- [x] Documentar estado real de origen, destino y límites de validación.
 - [ ] Continuar con importación real cuando se reciba el paquete de origen.
 
 ## Rulings
@@ -60,3 +60,11 @@ Files: `ops/spree-migration/migration.mjs`,
   herramientas y el paquete original. No presentar simulaciones como esos tests.
 - Supabase `get_cost` devolvió UNAVAILABLE el 15/10/2026. No inventar un coste,
   confirmation ID o credenciales, ni crear recursos por otra cuenta.
+- Revisión independiente: corregidos el recuento obligatorio en cada arranque y
+  los overrides URL/TLS. No quedan incidencias importantes en esta preparación.
+- Checkpoint aplicado a las 13:54:21 UTC: 18 tablas, 105.394 filas; RLS y ausencia
+  de lectura para roles API verificadas. Es una copia interna de datos.
+- CI de GitHub no devolvió ejecuciones para el commit ni para el merge ref
+  durante la comprobación. Las dos pruebas Ruby siguen pendientes de ejecución;
+  no se presentan como pasadas. El preview Vercel falla con el ENOTFOUND del
+  backend original; esta entrega todavía no cambia su dirección.
