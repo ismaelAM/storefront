@@ -31,6 +31,43 @@ account permissions or successful publication to Instagram.
 
 ## Server configuration
 
+### Connection preparation checked on 2026-10-15
+
+The target account is **@bisontcg**. Its Instagram tester invitation is still
+pending, and the Vercel project currently has none of the three Instagram
+configuration variables below. No live publishing permission or successful
+publication has been verified.
+
+The Meta screenshot supplied during setup shows `instagram_business_basic`,
+comment-management and message-management permissions, but does not show
+`instagram_business_content_publish`. Add the content-publishing permission
+under the app's **Permissions and features** before generating the final token.
+The screenshot's **Instagram application ID** identifies the Meta application;
+it is not the account ID required by `INSTAGRAM_ACCOUNT_ID`.
+
+The offers panel includes **Comprobar conexión con Instagram**, backed by
+authenticated `GET /api/internal/offers/instagram`. It reports missing server
+configuration or makes only a read-only
+`GET /{version}/me?fields=user_id,username` request with bearer authentication.
+The returned user ID must match the configured account ID, and the username
+must match `bisontcg` (case-insensitive). Tokens, upstream bodies and provider
+error messages are never returned or logged. The publishing job performs the
+same identity check before preparing images or creating containers.
+
+A successful identity check proves account access, **not** the publishing
+permission, token lifetime or a successful carousel post. Once access is
+restored, accept the tester invitation, authorize the required permissions and
+store the credentials in Vercel's private server environment. Check the token's
+expiry and arrange renewal before enabling unattended long-term operation.
+The existing cron can publish once the real credentials are configured; do not
+add placeholder credentials just to make the panel report a connection.
+
+Current official references:
+
+- [Get started with Instagram Login](https://developers.facebook.com/documentation/instagram-platform/instagram-api-with-instagram-login/get-started)
+- [Content publishing permissions](https://developers.facebook.com/documentation/instagram-platform/content-publishing)
+- [Business Login for Instagram](https://developers.facebook.com/documentation/instagram-platform/instagram-api-with-instagram-login/business-login)
+
 `readInstagramConfig()` requires all of these server variables:
 
 | Variable | Meaning |
