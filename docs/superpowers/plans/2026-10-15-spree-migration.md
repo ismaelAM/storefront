@@ -98,9 +98,18 @@ este mecanismo utiliza las variables del deployment sin leer secretos ni
 ejecutar migraciones en el proceso web. Coste si falla: el backend continúa
 bloqueado y hay que detener el daemon; el staging canónico queda separado.
 
-- [ ] Probar el fallo seguro de la operación y desplegarla en Production.
-- [ ] Verificar tablas y migraciones, detener el daemon y fijar instancias a cero.
+- [x] Probar el fallo seguro de la operación y desplegarla en Production.
+- [x] Verificar tablas y migraciones, detener el daemon y fijar instancias a cero.
 - [ ] Configurar tienda, importación, worker durable y pruebas de compra.
+
+Evidencia: Production `dpl_GBHcQt8aysBZouekFV7cbuX4zp5B`, commit `929c1a2`.
+Inicialización completada a las 12:12:12 UTC, 185 migraciones, 155 tablas,
+0 tiendas, 15.097 registros de staging intactos y 0 medios subidos. Daemon
+verificado en 0/0 instancias; `/up` devuelve la página verde de Rails.
+PORT=3000 guardado como Config en Production. 887 pruebas existentes pasan,
+17 pruebas operativas pasan (2 Ruby omitidas), TypeScript y revisión sin
+hallazgos importantes. Minor diferido: prueba específica del fallo de la
+guarda ejecutada por rails runner; la orden precede a db:migrate bajo set -e.
 
 Verificación: 887 pruebas existentes pasan, TypeScript sin errores; 14 pruebas
 Node de migración/arranque pasan y 2 de Ruby se omiten por falta de runtime local.

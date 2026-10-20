@@ -29,15 +29,16 @@ El endpoint S3 y la región se fijan al destino nuevo. El proceso web exige todo
 los secretos y rechaza migraciones pendientes; nunca ejecuta `db:prepare`,
 seeds ni importa datos al arrancar.
 
-## Inicialización explícita, todavía pendiente
+## Esquema inicializado; configuración comercial pendiente
 
 El 20/10 se verificó la conexión real de Production: la contraseña ya funciona
 y Rails detecta 185 migraciones pendientes. El daemon `initialize` ejecuta
 solamente las guardas y `db:migrate`, reutilizando por digest el contenedor
 que ya se construyó en este proyecto. Recibe las variables privadas del mismo
 deployment. No expone HTTP ni crea usuarios, tienda, muestras o catálogo.
-Al terminar queda inactivo para evitar reinicios continuos; hay que escalarlo
-a cero y dejar `instances.dub1: 0` antes de la entrega. No es el worker de jobs.
+Terminó el 20/10 a las 12:12:12 UTC: 185 migraciones y 155 tablas verificadas
+en el esquema `spree`. Se escaló a cero y `instances.dub1` queda a cero en Git.
+El endpoint `/up` ya devuelve la página verde de Rails. No es el worker de jobs.
 Este paso utiliza la cuota Hobby existente, sin contratar un plan nuevo.
 
 Configurar también `PORT=3000` como Config en los ajustes del proyecto:
