@@ -60,7 +60,7 @@ jobs:
         with:
           ruby-version: '3.4.7'
       - name: Verify Spree recovery preparation
-        run: node --test ops/spree-migration/migration.test.mjs ops/spree-backend/start.test.mjs
+        run: node --test ops/spree-migration/migration.test.mjs ops/spree-backend/start.test.mjs ops/spree-backend/initialize.test.mjs
       - name: Verify production PPR bot resumes (Turbopack)
         run: pnpm run test:next-ppr
       - name: Verify production PPR bot resumes (Webpack)

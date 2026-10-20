@@ -31,6 +31,21 @@ seeds ni importa datos al arrancar.
 
 ## Inicialización explícita, todavía pendiente
 
+El 20/10 se verificó la conexión real de Production: la contraseña ya funciona
+y Rails detecta 185 migraciones pendientes. El daemon `initialize` ejecuta
+solamente las guardas y `db:migrate`, reutilizando por digest el contenedor
+que ya se construyó en este proyecto. Recibe las variables privadas del mismo
+deployment. No expone HTTP ni crea usuarios, tienda, muestras o catálogo.
+Al terminar queda inactivo para evitar reinicios continuos; hay que escalarlo
+a cero y dejar `instances.dub1: 0` antes de la entrega. No es el worker de jobs.
+Este paso utiliza la cuota Hobby existente, sin contratar un plan nuevo.
+
+Configurar también `PORT=3000` como Config en los ajustes del proyecto:
+Vercel resuelve el puerto desde esos ajustes, no desde `ENV` del Dockerfile.
+
+Fuentes: https://vercel.com/docs/daemons y
+https://vercel.com/docs/daemons/config-reference.
+
 Con el mismo contenedor y sus secretos, verificar primero:
 
 ```sh

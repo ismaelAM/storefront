@@ -84,6 +84,24 @@ compatibilidad del contrato API antes de conectar el storefront.
 
 No reemplazar el plan de restauración si posteriormente aparece el dump.
 
+## Ejecución del 20/10: producción autorizada
+
+El usuario ha pedido Production expresamente y ha guardado las credenciales.
+`dpl_Gn9scPR4FRF3w41Ldv4n5iNJt9Sp` conecta con Supabase y detecta 185
+migraciones pendientes; el fallo de contraseña del despliegue anterior está
+resuelto. No se ha cambiado el dominio ni el frontend.
+
+Ruling: usar un daemon de inicialización separado, con la imagen ya construida
+fijada por digest, para ejecutar las migraciones bajo las guardas existentes.
+Vercel no ofrece release_command y el conector sigue sin acceso al proyecto;
+este mecanismo utiliza las variables del deployment sin leer secretos ni
+ejecutar migraciones en el proceso web. Coste si falla: el backend continúa
+bloqueado y hay que detener el daemon; el staging canónico queda separado.
+
+- [ ] Probar el fallo seguro de la operación y desplegarla en Production.
+- [ ] Verificar tablas y migraciones, detener el daemon y fijar instancias a cero.
+- [ ] Configurar tienda, importación, worker durable y pruebas de compra.
+
 Verificación: 887 pruebas existentes pasan, TypeScript sin errores; 14 pruebas
 Node de migración/arranque pasan y 2 de Ruby se omiten por falta de runtime local.
 Los tres checksums de staging coinciden con el checkpoint de las 13:54:21 UTC.

@@ -1,5 +1,13 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "container",
-  "regions": ["dub1"]
+  "regions": ["dub1"],
+  "daemons": {
+    "initialize": {
+      "root": "operations",
+      "entrypoint": "Dockerfile",
+      "instances": { "dub1": 1 },
+      "resources": { "requests": { "memory": "1Gi" } }
+    }
+  }
 }
