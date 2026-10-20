@@ -3,6 +3,13 @@
   "framework": "container",
   "regions": ["dub1"],
   "daemons": {
+    "configure_store": {
+      "root": "operations",
+      "entrypoint": "Dockerfile",
+      "command": ["/bin/sh", "/rails/configure-store.sh"],
+      "instances": { "dub1": 0 },
+      "resources": { "requests": { "memory": "1Gi" } }
+    },
     "initialize": {
       "root": "operations",
       "entrypoint": "Dockerfile",

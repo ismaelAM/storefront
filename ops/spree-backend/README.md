@@ -47,6 +47,14 @@ Vercel resuelve el puerto desde esos ajustes, no desde `ENV` del Dockerfile.
 Fuentes: https://vercel.com/docs/daemons y
 https://vercel.com/docs/daemons/config-reference.
 
+La operación `configure_store`, inicialmente detenida, crea únicamente la tienda
+BisonTCG (ES/EUR/es), un canal, categorías de envío y almacén sin existencias.
+Usa una transacción, las dos guardas de destino y comprobaciones de configuración.
+No crea cuentas ni claves. `no-reply@bisontcg.com` es una configuración técnica;
+los envíos de correo siguen deshabilitados hasta validar el remitente real.
+No configura impuestos, pagos, transportistas ni stock a partir de proveedores.
+Después de ejecutarla hay que dejarla de nuevo en cero.
+
 Con el mismo contenedor y sus secretos, verificar primero:
 
 ```sh
