@@ -53,6 +53,15 @@ Usa una transacción, las dos guardas de destino y comprobaciones de configuraci
 No crea cuentas ni claves. `no-reply@bisontcg.com` es una configuración técnica;
 los envíos de correo siguen deshabilitados hasta validar el remitente real.
 No configura impuestos, pagos, transportistas ni stock a partir de proveedores.
+El país se configura mediante `default_country`, compatible con Spree 5.6.1.
+El mercado queda pendiente hasta configurar los transportistas y tarifas reales:
+`default_country_iso` intenta crearlo inmediatamente y `MarketCountry` exige
+cobertura de envío. No se añade un envío ficticio ni gratuito para pasar esa
+validación. La Store conserva ES/EUR/es mediante los fallbacks oficiales.
+Countries/States añaden referencia geográfica mundial: sin Markets, Spree puede
+listar todos esos países en checkout. Esta configuración sirve para reconstruir
+y administrar borradores, no acredita venta ni cobertura limitada a España.
+Mantener el storefront y el bot sin conectar hasta validar Market, envíos y pagos.
 Después de ejecutarla hay que dejarla de nuevo en cero.
 
 Con el mismo contenedor y sus secretos, verificar primero:

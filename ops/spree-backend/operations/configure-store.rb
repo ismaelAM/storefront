@@ -5,11 +5,16 @@ Spree::Events.disable do
     store = Spree::Store.find_by(code: 'bisontcg')
     raise 'Unexpected stores in the new database' unless Spree::Store.count == (store ? 1 : 0)
     unless store
+      # Countries/states are reference data only; do not seed commercial defaults.
+      Spree::Seeds::Countries.call
+      country = Spree::Country.find_by!(iso: 'ES')
       I18n.with_locale(:es) do
         store = Spree::Store.new(
           name: 'BisonTCG', code: 'bisontcg', url: 'www.bisontcg.com',
           mail_from_address: 'no-reply@bisontcg.com', default: true,
-          default_country_iso: 'ES', default_currency: 'EUR', default_locale: 'es',
+          # Keep the supported legacy defaults until real shipping coverage is configured.
+          # default_country_iso would create a Market and reject its uncovered country.
+          default_country: country, default_currency: 'EUR', default_locale: 'es',
           supported_currencies: 'EUR', supported_locales: 'es,en'
         )
         store.preferred_admin_locale = 'es'
@@ -26,6 +31,8 @@ Spree::Events.disable do
     store.default_shipping_category
     store.default_stock_location
     store.allowed_origins.find_or_create_by!(origin: 'https://www.bisontcg.com')
+    store.reload
+    raise 'Market setup is pending real shipping coverage' unless store.markets.empty?
     raise 'Unexpected default store configuration' unless store.default? && store.default_currency == 'EUR' && store.default_country.iso == 'ES' && store.default_locale == 'es'
     raise 'Store has no default channel' unless store.default_channel
     puts "BisonTCG configuration verified: #{store.id}, ES, EUR, es"

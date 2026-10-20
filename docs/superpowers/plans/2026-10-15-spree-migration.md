@@ -119,3 +119,38 @@ informa RLS sin policies en las dos tablas privadas (denegación intencionada).
 Revisión independiente: sin hallazgos Critical/Important en la preparación.
 El host de medios se toma de RAILS_HOST o VERCEL_URL; queda documentado y
 pendiente de verificación en un despliegue real.
+
+
+## Reanudación 20/10, 18:21 CEST
+
+Production de configuración: `dpl_8ue3csCiLrCR96GAc1iftkgig4MH`, commit
+`49963f2`. El build terminó correctamente, pero la operación falló con
+`Market countries is invalid`: el callback de `default_country_iso` crea
+un mercado cuyo país debe estar cubierto por un método de envío.
+La transacción volvió atrás; SQL al reanudar confirma 0 tiendas, 0 productos
+y 15.097 registros privados intactos.
+
+Ruling: configurar el país por la asociación `default_country` y los defaults
+EUR/es, soportados por Store y Current de Spree 5.6.1; aplazar Market hasta
+definir cobertura y tarifas reales. No saltarse validaciones ni crear portes
+ficticios. El seed Countries sólo añade referencia geográfica, sin cuentas,
+claves, productos, impuestos ni pagos.
+
+La corrección queda preparada en la rama, sin cambiar main ni ejecutar la
+operación. El entorno de ejecución y navegador dejó de estar disponible;
+TypeScript y la ejecución real quedan pendientes. El conector de Vercel ya
+había denegado acceso al proyecto y no se presupone que haya cambiado.
+
+Siguiente ejecución: construir y promover esta rama al backend nuevo; ejecutar
+configure_store una vez, verificar Store/default country/default channel y
+acceso a /admin, y detener la operación. Después recuperar los cambios locales
+de import_catalog/worker del workspace anterior antes de reconstruir archivos.
+Preflight del staging: 106 productos sin variantes; una familia con 2 variantes
+ambiguas (sin opciones / Inglés) se conserva para revisión, sin inventarlas.
+
+Revisión de la corrección: sin Critical/Important para publicarla sólo en draft.
+Matiz verificado: Countries/States añaden geografía mundial y el checkout sin
+Markets puede listar todos los países. No habilitar venta ni anunciar cobertura
+ES-only por estos defaults. Comprobar tienda recargada, cero Markets y canal
+persistido después de ejecutar. La revisión anterior no detectó la dependencia
+de MarketCountry; la evidencia del fallo real prevalece.
