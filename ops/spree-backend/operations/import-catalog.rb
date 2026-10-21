@@ -53,50 +53,52 @@ ActiveRecord::Base.connection_pool.with_connection do |connection|
     RecoveryCatalog.validate!(products, variants)
     by_product = variants.group_by { |v| v.fetch('product_id') }
     pending = []
-    Spree::Events.disable do
-      I18n.with_locale(:es) do
-        products.each_with_index do |source, index|
-          ActiveRecord::Base.transaction do
-            product = mapped_record('catalog_products', source, Spree::Product)
-            unless product
-              product = Spree::Product.create!(store: store, name: source.fetch('name'),
-                slug: "recovery-#{source.fetch('id')}", status: 'draft',
-                shipping_category: store.default_shipping_category,
-                metadata: recovery_metadata(source))
-              record_mapping('catalog_products', source, product)
-            end
-            raise 'Recovery product is no longer an unpublished draft' unless product.store_id == store.id && product.status == 'draft' && product.product_publications.empty?
-            source_variants = by_product.fetch(source.fetch('id'), [])
-            if RecoveryCatalog.ambiguous?(source_variants)
-              pending << source.fetch('id')
-              product.update!(metadata: product.metadata.merge('recovery_pending_variant_ids' => source_variants.map { |v| v.fetch('id') }))
-              next
-            end
-            source_variants.each do |v|
-              variant = mapped_record('catalog_variants', v, Spree::Variant)
-              if variant
-                verify_variant!(variant, v, product)
+    Spree::Current.set(store: store, content_locale: store.default_locale) do
+      Spree::Events.disable do
+        I18n.with_locale(:es) do
+          products.each_with_index do |source, index|
+            ActiveRecord::Base.transaction do
+              product = mapped_record('catalog_products', source, Spree::Product)
+              unless product
+                product = Spree::Product.create!(store: store, name: source.fetch('name'),
+                  slug: "recovery-#{source.fetch('id')}", status: 'draft',
+                  shipping_category: store.default_shipping_category,
+                  metadata: recovery_metadata(source))
+                record_mapping('catalog_products', source, product)
+              end
+              raise 'Recovery product is no longer an unpublished draft' unless product.store_id == store.id && product.status == 'draft' && product.product_publications.empty?
+              source_variants = by_product.fetch(source.fetch('id'), [])
+              if RecoveryCatalog.ambiguous?(source_variants)
+                pending << source.fetch('id')
+                product.update!(metadata: product.metadata.merge('recovery_pending_variant_ids' => source_variants.map { |v| v.fetch('id') }))
                 next
               end
-              values = v.fetch('option_values').sort.map do |key, label|
-                type = Spree::OptionType.find_or_create_by!(name: RecoveryCatalog.option_name(key)) do |t|
-                  t.presentation = key
-                  t.kind = 'dropdown'
+              source_variants.each do |v|
+                variant = mapped_record('catalog_variants', v, Spree::Variant)
+                if variant
+                  verify_variant!(variant, v, product)
+                  next
                 end
-                product.option_types << type unless product.option_types.exists?(id: type.id)
-                type.option_values.find_or_create_by!(name: RecoveryCatalog.option_name(label)) { |value| value.presentation = label }
+                values = v.fetch('option_values').sort.map do |key, label|
+                  type = Spree::OptionType.find_or_create_by!(name: RecoveryCatalog.option_name(key)) do |t|
+                    t.presentation = key
+                    t.kind = 'dropdown'
+                  end
+                  product.option_types << type unless product.option_types.exists?(id: type.id)
+                  type.option_values.find_or_create_by!(name: RecoveryCatalog.option_name(label)) { |value| value.presentation = label }
+                end
+                variant = values.empty? ? product.master : product.variants.build(option_values: values)
+                variant.assign_attributes(sku: v.fetch('canonical_sku'), track_inventory: true, metadata: recovery_metadata(v))
+                variant.save!
+                if v['last_auto_price']
+                  variant.set_price('EUR', BigDecimal(v.fetch('last_auto_price').to_s))
+                end
+                verify_variant!(variant, v, product)
+                record_mapping('catalog_variants', v, variant)
               end
-              variant = values.empty? ? product.master : product.variants.build(option_values: values)
-              variant.assign_attributes(sku: v.fetch('canonical_sku'), track_inventory: true, metadata: recovery_metadata(v))
-              variant.save!
-              if v['last_auto_price']
-                variant.set_price('EUR', BigDecimal(v.fetch('last_auto_price').to_s))
-              end
-              verify_variant!(variant, v, product)
-              record_mapping('catalog_variants', v, variant)
             end
+            puts "Recovered #{index + 1}/#{products.size} draft products" if (index + 1) % 100 == 0
           end
-          puts "Recovered #{index + 1}/#{products.size} draft products" if (index + 1) % 100 == 0
         end
       end
     end
