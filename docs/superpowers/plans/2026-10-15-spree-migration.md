@@ -164,7 +164,7 @@ de MarketCountry; la evidencia del fallo real prevalece.
 - [x] Verificar cero publicaciones y cero stock físico/backorders inventados.
 - [x] Recuperar diez imágenes primarias y leer de nuevo sus bytes desde Supabase.
 - [x] Worker con cuatro procesos vivos, 60 derivados y 132 jobs completados sin fallos.
-- [ ] Ampliar imágenes con tamaño adecuado y volver a leer tras otro deployment.
+- [x] Ampliar a 100 imágenes, optimizar las 90 nuevas a WebP y releer las diez iniciales.
 - [ ] Configurar acceso del propietario y credenciales de las integraciones.
 - [ ] Resolver capacidad de conexiones; probar Market, envíos, pagos y compra.
 - [ ] Conectar storefront, transferir mappings y reactivar bots tras las pruebas.
@@ -186,3 +186,11 @@ El importador de catálogo se dejó de nuevo en 0 tras verificar los recuentos.
 Los medios iniciales ocupan 4.347.601 bytes incluyendo sus 60 derivados.
 El formulario seguro de acceso al panel de Supabase se interrumpió sin resultado
 confirmado; el conector SQL sigue operativo y permitió continuar la recuperación.
+
+Actualización del 21/10 a las 16:12 UTC: 100 assets y 100 asociaciones, 508
+derivados registrados, 674 jobs completados, 20 fallidos y 540 listos. El worker
+se pausó tras SIGKILL por memoria y errores de cuota S3 429/SlowDown; queda
+pendiente reintentar esos medios y comprobar la concurrencia reducida a uno.
+Un job histórico de housekeeping falla por `SolidCable::Message.prunable`,
+ausente en la versión fijada 4.0.2; el contenedor corrige la programación futura
+al scope oficial `trimmable`, conservando el fallo histórico para revisión.

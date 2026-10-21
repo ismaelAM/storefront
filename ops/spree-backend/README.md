@@ -99,6 +99,24 @@ real del objeto privado. Solid Queue procesó sus 60 derivados, con 132 jobs
 completados y ningún fallo en la comprobación posterior. Son fotos primarias;
 esto no acredita la recuperación de todas las galerías.
 
+El lote se amplió a 100 asociaciones verificadas el 21/10 a las 16:00 UTC.
+Las 90 imágenes nuevas son WebP, de hasta 1200 píxeles, y las diez primeras
+se volvieron a leer tras desplegar. Las galerías restantes siguen en staging.
+Durante la generación posterior de miniaturas se observaron SIGKILL con más
+de 1 GiB de memoria y respuestas S3 429/SlowDown. Se pausó el worker: el último
+recuento fue 674 jobs completados, 20 fallidos y 540 listos; no confundir este
+estado con el lote inicial sin fallos. El worker limita ahora JOB_THREADS y
+JOB_CONCURRENCY a 1; verificar memoria, cuota S3 y reintentar los trabajos de
+medios fallidos desde Solid Queue tras confirmar el acceso del propietario.
+El registro fallido de housekeeping usa un scope inexistente en Solid Cable
+4.0.2; el contenedor de operaciones corrige `prunable` por `trimmable` con una
+comprobación del texto original. Ese cambio no reescribe el job histórico.
+
+El alta de administrador usa el formulario de la aplicación host y
+`main_app.admin_user_registration_path`. Devise comparte el mapping admin_user
+entre host y engine; se incluye la misma vista en ambas carpetas scoped
+(admin_users y admin_user). El formulario no asigna roles automáticamente.
+
 Las operaciones `configure_store`, `import_catalog` e `import_media` se arrancan
 en Production escalando únicamente `dub1` de 0 a 1. Tras verificar el resultado,
 hay que escalarlas a 0: el proceso duerme después de terminar. Todos los defaults
