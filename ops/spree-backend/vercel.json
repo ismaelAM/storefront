@@ -3,6 +3,20 @@
   "framework": "container",
   "regions": ["dub1"],
   "daemons": {
+    "import_catalog": {
+      "root": "operations",
+      "entrypoint": "Dockerfile",
+      "command": ["/bin/sh", "/rails/import-catalog.sh"],
+      "instances": { "dub1": 0 },
+      "resources": { "requests": { "memory": "1Gi" } }
+    },
+    "worker": {
+      "root": "operations",
+      "entrypoint": "Dockerfile",
+      "command": ["/bin/sh", "/rails/worker.sh"],
+      "instances": { "dub1": 0 },
+      "resources": { "requests": { "memory": "1Gi" } }
+    },
     "configure_store": {
       "root": "operations",
       "entrypoint": "Dockerfile",
