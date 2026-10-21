@@ -12,6 +12,10 @@ end
 # Preview does not emit transactional messages while reconstruction is verified.
 Rails.application.config.action_mailer.perform_deliveries = false
 
+# The host app owns /admin_users registration; its form must use main_app
+# routes, while the Spree engine continues to own the admin sign-in screen.
+Devise.scoped_views = true
+
 # A separate durable job processor is required before production cutover.
 # Do not turn on in-Puma workers in this scale-to-zero web service.
 abort 'Unexpected in-Puma job worker' unless ENV['SOLID_QUEUE_IN_PUMA'] == 'false'

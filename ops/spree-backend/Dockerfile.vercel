@@ -4,6 +4,7 @@ WORKDIR /rails
 COPY --chown=1000:1000 --chmod=644 start.sh target.rb ./
 COPY --chown=1000:1000 config/database.yml config/storage.yml ./config/
 COPY --chown=1000:1000 config/initializers/bisontcg.rb ./config/initializers/
+COPY --chown=1000:1000 app/views/admin_users/registrations/new.html.erb ./app/views/admin_users/registrations/new.html.erb
 RUN ruby -c target.rb && ruby -c config/initializers/bisontcg.rb && sh -n start.sh
 ENV RAILS_ENV=production PORT=3000 RAILS_MAX_THREADS=3 SOLID_QUEUE_IN_PUMA=false PIDFILE=/tmp/spree.pid TARGET_SUPABASE_PROJECT_REF=dtrospakebdiqihhcrub
 # Bypass upstream entrypoint: it runs db:prepare on each web startup.
