@@ -3,6 +3,12 @@ require 'digest'
 module RecoveryMedia
   HOSTS = %w[tcgfactory.com devirinvestments.s3.eu-west-1.amazonaws.com].freeze
   MAX_BYTES = 5 * 1024 * 1024
+  def self.optimize(path)
+    require 'image_processing/vips'
+    ImageProcessing::Vips.source(path).resize_to_limit(1200, 1200)
+      .convert('webp').saver(quality: 80, strip: true).call
+  end
+
   def self.uri(value)
     uri = URI.parse(value)
     raise ArgumentError, 'Unsupported media source' unless uri.scheme == 'https' && HOSTS.include?(uri.host) && uri.port == 443 && uri.userinfo.nil? && uri.fragment.nil?

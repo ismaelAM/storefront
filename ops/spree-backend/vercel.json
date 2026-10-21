@@ -6,7 +6,7 @@
     "import_media": {
       "root": "operations",
       "entrypoint": "Dockerfile",
-      "command": ["/bin/sh", "/rails/import-media.sh", "10"],
+      "command": ["/bin/sh", "/rails/import-media.sh", "100"],
       "instances": { "dub1": 0 },
       "resources": { "requests": { "memory": "1Gi" } }
     },

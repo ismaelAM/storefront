@@ -28,11 +28,9 @@ def download_media(url)
     file.rewind
     type = Marcel::MimeType.for(file)
     raise 'Unsupported supplier media type' unless %w[image/jpeg image/png image/webp image/avif image/gif].include?(type)
-    file.rewind
-    [file, type]
-  rescue
+    [RecoveryMedia.optimize(file.path), 'image/webp']
+  ensure
     file.close!
-    raise
   end
 end
 
@@ -72,6 +70,7 @@ begin
               raise 'Media storage batch budget reached' if bytes + file.size > 400 * 1024 * 1024
               asset = product.media.build(media_type: 'image', metadata: {
                 'recovery_image_source_sha256' => sha, 'recovery_image_source_url' => url,
+                'recovery_image_format' => 'webp_1200_v1',
                 'recovery_image_content_sha256' => Digest::SHA256.file(file.path).hexdigest,
                 'recovery_image_byte_size' => file.size
               })
@@ -85,7 +84,7 @@ begin
           expected_sha = asset.metadata.fetch('recovery_image_content_sha256')
           expected_size = asset.metadata.fetch('recovery_image_byte_size')
           blob = asset.attachment.blob
-        RecoveryMedia.verify!(blob, expected_size, expected_sha)
+          RecoveryMedia.verify!(blob, expected_size, expected_sha)
           Spree::VariantMedia.find_or_create_by!(variant: variant, asset: asset)
           processed += 1
           puts "Verified #{processed} primary media associations"

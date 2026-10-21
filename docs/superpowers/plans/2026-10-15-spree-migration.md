@@ -154,3 +154,35 @@ Markets puede listar todos los países. No habilitar venta ni anunciar cobertura
 ES-only por estos defaults. Comprobar tienda recargada, cero Markets y canal
 persistido después de ejecutar. La revisión anterior no detectó la dependencia
 de MarketCountry; la evidencia del fallo real prevalece.
+
+## Recuperación real del 21/10
+
+- [x] Configurar la tienda ES/EUR/es, un canal y cero Markets pendientes de portes.
+- [x] Corregir el locale de contenido de las operaciones y el nombre base de Store.
+- [x] Importar 5.000 borradores, 5.013 variantes canónicas y 2.458 precios EUR.
+- [x] Reconciliar nombres, SKU, opciones y precios: cero diferencias por SQL.
+- [x] Verificar cero publicaciones y cero stock físico/backorders inventados.
+- [x] Recuperar diez imágenes primarias y leer de nuevo sus bytes desde Supabase.
+- [x] Worker con cuatro procesos vivos, 60 derivados y 132 jobs completados sin fallos.
+- [ ] Ampliar imágenes con tamaño adecuado y volver a leer tras otro deployment.
+- [ ] Configurar acceso del propietario y credenciales de las integraciones.
+- [ ] Resolver capacidad de conexiones; probar Market, envíos, pagos y compra.
+- [ ] Conectar storefront, transferir mappings y reactivar bots tras las pruebas.
+
+Evidencia de Production: `dpl_BEc3SKJdjppKfAtNUFjSwYnhoVSd`, commit `6692719`.
+Los 15.097 registros privados conservan los tres checksums originales usando
+`md5(string_agg(md5(payload::text), '' ORDER BY source_id))` por tabla.
+Una familia con dos variantes ambiguas queda sin mapear para revisión; se
+mantienen sus datos originales. No hay cuentas de administrador ni se ha
+cambiado el dominio de la web.
+
+Incidencia operacional: el pooler de sesión rechazó conexiones con
+`EMAXCONNSESSION`, límite 15, durante el solapamiento del despliegue. Se detuvo
+la operación, se pausó temporalmente el worker y se continuó secuencialmente.
+Después se reactivó el worker y se comprobaron los derivados de imágenes.
+No se ha contratado capacidad adicional ni se ha cambiado el aislamiento SQL.
+
+El importador de catálogo se dejó de nuevo en 0 tras verificar los recuentos.
+Los medios iniciales ocupan 4.347.601 bytes incluyendo sus 60 derivados.
+El formulario seguro de acceso al panel de Supabase se interrumpió sin resultado
+confirmado; el conector SQL sigue operativo y permitió continuar la recuperación.

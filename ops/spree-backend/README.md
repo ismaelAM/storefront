@@ -7,7 +7,7 @@ configuración OCI confirma Ruby 4.0.1, `/rails` y usuario `1000:1000`.
 `vercel.json` fija expresamente `framework: container`: el proyecto vacío
 creado desde el panel heredó Other y produjo un despliegue sin construir Rails.
 
-## Conexión privada pendiente
+## Conexión privada
 
 Guardar estas variables únicamente en el proyecto **bisontcg-spree**, nunca
 en Git, comentarios ni variables `NEXT_PUBLIC_`:
@@ -80,6 +80,41 @@ La copia `spree_recovery.source_records` no crea aún productos de Spree.
 Las nuevas correspondencias van en `destination_mappings`; no sobrescribir
 `spree_product_id`/`spree_variant_id` en el proyecto canónico anterior.
 
+## Recuperación verificada el 21/10
+
+Production `dpl_BEc3SKJdjppKfAtNUFjSwYnhoVSd` contiene la tienda BisonTCG,
+ES/EUR/es y un canal. La importación ha creado 5.000 productos borrador,
+5.013 correspondencias de variantes y 2.458 precios EUR de `last_auto_price`.
+SQL confirma cero diferencias en nombres, SKU, opciones y precios recuperados,
+cero publicaciones y cero stock vendible. Los 106 productos sin variantes y
+la familia ambigua de dos variantes permanecen conservados para revisión;
+las dos variantes ambiguas no se han inventado en Spree.
+
+Las operaciones fijan `Spree::Current.content_locale` además de I18n: fuera de
+HTTP, usar sólo `I18n.with_locale(:es)` dejaba sin escribir las columnas base.
+`configure_store` también repara el nombre base de la tienda existente.
+
+El primer lote de medios verificó diez asociaciones mediante SHA256 y lectura
+real del objeto privado. Solid Queue procesó sus 60 derivados, con 132 jobs
+completados y ningún fallo en la comprobación posterior. Son fotos primarias;
+esto no acredita la recuperación de todas las galerías.
+
+Las operaciones `configure_store`, `import_catalog` e `import_media` se arrancan
+en Production escalando únicamente `dub1` de 0 a 1. Tras verificar el resultado,
+hay que escalarlas a 0: el proceso duerme después de terminar. Todos los defaults
+de Git son 0 para que un Preview no ejecute la reconstrucción. `worker` ejecuta
+`bin/jobs` y se mantiene en 1 en Production cuando se procesan trabajos.
+
+El session pooler tiene un límite de 15 clientes: durante una promoción,
+el solapamiento de workers y peticiones HTTP agotó las conexiones. Para la
+reconstrucción se pausó el worker, se ejecutaron las operaciones una a una y
+después se reactivó. Antes de conectar tráfico hay que resolver/verificar ese
+presupuesto de conexiones bajo carga y durante despliegues.
+
+El cron canónico `devir-cloud-sync-tick` sigue pausado. Antes de reactivarlo:
+verificar credenciales del backend nuevo, transferir las correspondencias
+canónicas y probar los contratos reales; no apuntarlo a IDs del sandbox antiguo.
+
 ## Condiciones antes de producción
 
 - Configurar y comprobar un procesador durable de Solid Queue. El web
@@ -93,5 +128,6 @@ Las nuevas correspondencias van en `destination_mappings`; no sobrescribir
 - Cambiar bot, storefront, webhooks y dominio solo después de estas pruebas.
 
 Pruebas locales de guardas: `node --test ops/spree-backend/start.test.mjs
-ops/spree-migration/migration.test.mjs`. Un test de shell no acredita que Rails
-ni S3 funcionen: siguen pendientes el build y la prueba real con secretos.
+ops/spree-migration/migration.test.mjs`. Los tests Ruby de catálogo y medios
+se ejecutan durante el build con el runtime fijado. Un test de shell no acredita
+Rails, S3 ni el checkout: contrastar siempre los recuentos y las operaciones reales.
