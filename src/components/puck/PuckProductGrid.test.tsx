@@ -12,6 +12,7 @@ afterEach(cleanup);
 const catalogItem = {
   id: "prod_catalog", name: "Producto del catálogo", slug: "producto-catalogo",
   purchasable: false, price: { display_amount: "12,34 €" },
+  variants: [{ id: "variant_catalog", sku: "SKU-CATALOG", options_text: "Español" }],
 } as Product;
 const sale = {
   id: "prod_offer", name: "Oferta del día", slug: "oferta",
@@ -37,5 +38,11 @@ describe("Puck catalog and merchandising pools", () => {
       <PuckProductGrid productFilter="available" />
     </PuckProductsProvider>);
     expect(screen.queryByRole("link", { name: catalogItem.name })).not.toBeInTheDocument();
+  });
+  it("uses expanded catalog variants for the editor's variant and SKU filters", () => {
+    render(<PuckProductsProvider products={[]} catalogProducts={[catalogItem]} basePath="/es/es">
+      <PuckProductGrid productFilter="all" selectedVariantIds={["variant_catalog"]} variantFilter="SKU-CATALOG" />
+    </PuckProductsProvider>);
+    expect(screen.getByRole("link", { name: catalogItem.name })).toBeInTheDocument();
   });
 });

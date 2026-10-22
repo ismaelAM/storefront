@@ -15,7 +15,7 @@ export default async function EditorPage({ params }: EditorPageProps) {
   let categories: Category[] = [];
   try {
     const [productsResponse, categoriesResponse] = await Promise.all([
-      getProducts({ limit: 100, fields: PRODUCT_CARD_FIELDS, expand: ["variants"] }, "dtc"),
+      getProducts({ limit: 100, fields: [...PRODUCT_CARD_FIELDS, "variants"], expand: ["variants"] }, "dtc"),
       getCategories({ depth_eq: 0, expand: ["children.children"] }, { country, locale }),
     ]);
     products = productsResponse.data ?? [];

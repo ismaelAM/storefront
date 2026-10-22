@@ -36,7 +36,7 @@ export default async function HomePage({ params }: HomePageProps) {
 
   let products: Product[] = [];
   const catalogPromise = cachedListProducts(
-    { limit: 100, fields: PRODUCT_CARD_FIELDS },
+    { limit: 100, fields: [...PRODUCT_CARD_FIELDS, "variants"], expand: ["variants"] },
     { locale, country },
     "dtc",
     userToken,
