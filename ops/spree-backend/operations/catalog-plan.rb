@@ -24,6 +24,18 @@ module RecoveryCatalog
     empty > 1 || (empty == 1 && variants.size > 1)
   end
 
+  # Public browsing during recovery is separate from purchasability: no stock,
+  # backorders, review approvals or supplier offers are changed by listing.
+  def self.listable?(product, variants)
+    return false unless product['requires_review'] == false && %w[pending approved].include?(product['review_decision'])
+    return false if variants.empty? || ambiguous?(variants)
+    variants.all? do |variant|
+      next false unless variant['product_id'] == product['id'] && variant['requires_review'] == false && variant['fulfillment_mode'] == 'supplier_or_physical'
+      price = BigDecimal(variant['last_auto_price'].to_s, exception: false)
+      price && price.finite? && price.positive?
+    end
+  end
+
   # Keep exact labels separate even when transliteration or case would collide.
   def self.option_name(value)
     "recovery-#{Digest::SHA256.hexdigest(value)}"
