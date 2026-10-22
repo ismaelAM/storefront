@@ -135,6 +135,58 @@ canónicas y probar los contratos reales; no apuntarlo a IDs del sandbox antiguo
 
 ## Condiciones antes de producción
 
+### Catálogo visible durante la recuperación (22/10)
+
+El propietario ha pedido que se vean productos en la web. `publish_catalog`
+habilita únicamente navegación de catálogo, separada de la apertura de venta:
+selecciona 2.315 productos del checkpoint con todas sus variantes mapeadas,
+precios EUR positivos, sin revisión obligatoria ni fulfillment restringido.
+No altera precios, stock, backorders, preventas ni decisiones de revisión.
+Valida inventario y comprabilidad antes y después, también en reintentos, y
+publica mediante `activate!` y `Channel#add_products`. Crea sólo una clave
+publishable ligada al canal; no cuentas, roles ni claves secretas.
+
+Arrancar `publish_catalog` en Production con el worker pausado, comprobar
+el mensaje final y las 2.315 publicaciones, y dejarlo de nuevo en cero.
+El frontend requiere `SPREE_API_URL` y esa clave publishable nueva; la cuenta
+del propietario no es requisito técnico para mostrar catálogo público.
+La portada debe cargar un pool general además de las ofertas/prerreservas:
+los bloques Puck `all`/`available` usan el primero, y `sale`/`preorder` conservan
+el pool curado. El editor y la página pública comparten `pages.home` y las
+variantes expandidas. La navegación temporal no acredita compra funcional.
+
+Rollback de la web: conservar el deployment Production previo
+`dpl_8GRCL8Dk1ij14KcWWgvFAY5wcGDF` con su configuración original; restaurarlo
+no recupera el backend antiguo, que sigue caído. El bloque añadido a Puck
+tiene ID `home-general-catalog`, sin reemplazar los cinco bloques anteriores.
+La venta y los bots siguen pendientes de Market/envíos/pagos, credenciales,
+correspondencias e inventario verificados.
+
+La operación terminó el 22/10 a las 06:03 UTC: 2.315 activos y 2.685 borradores,
+clave publishable creada y `publish_catalog` verificado en 0/0 instancias.
+El worker queda en 0 durante el bloqueo del equipo. El panel muestra
+`Deployments Paused` por **Fluid Active CPU**, límite fair use de Hobby;
+la API devuelve `402 resource_creation_blocked`. No intentar eludirlo creando
+otro equipo ni cambiar de plan sin una decisión expresa del propietario.
+
+El propietario aclara que los productos sin stock físico se publican y se
+compran bajo el protocolo de **2–3 días de preparación**. El estado de navegación
+anterior es un checkpoint de recuperación, no la política comercial definitiva.
+La ficha reutiliza `products.extendedFulfillment`, ya usado por ProductCard,
+cuando la variante seleccionada es comprable, no está en stock y no es preventa.
+Spree conserva la autoridad para permitir la compra; las preventas conservan
+su fecha. No se inventan unidades físicas ni se confunde preparación con entrega.
+Las ofertas existentes tienen última observación como máximo del 15/10 y ninguna
+cumple hoy su caducidad de 8/18 horas: hace falta refrescar proveedores y migrar
+credenciales/mappings antes de volver a reconciliar disponibilidad.
+
+Preview de la rama `migration/spree-owned-backend` tiene URL y clave nuevas,
+sin cambiar Production. Desplegar por **nombre de rama** para aplicar esas
+variables: un build solicitado con ref SHA usó las variables genéricas y falló
+con ENOTFOUND del host antiguo. El siguiente build por rama fue rechazado por
+la pausa. Falta verificar Store API, Preview y dominio público tras desbloquear
+Vercel; no presentar el catálogo como visible ya en www.bisontcg.com.
+
 - Configurar y comprobar un procesador durable de Solid Queue. El web
   desactiva `SOLID_QUEUE_IN_PUMA`; Vercel puede escalar a cero.
 - Importar productos/variantes como borradores, conservando opciones y SKU.

@@ -194,3 +194,52 @@ pendiente reintentar esos medios y comprobar la concurrencia reducida a uno.
 Un job histórico de housekeeping falla por `SolidCable::Message.prunable`,
 ausente en la versión fijada 4.0.2; el contenedor corrige la programación futura
 al scope oficial `trimmable`, conservando el fallo histórico para revisión.
+
+## Catálogo público solicitado el 22/10
+
+El usuario insiste en que no hay productos visibles. El objetivo inmediato
+pasa a ser navegación de catálogo con precios recuperados y stock sin validar
+incomprable, manteniendo pendiente la apertura de venta y los bots. La cuenta
+de administración no bloquea técnicamente esta navegación. Se mantiene main.
+
+- [x] Confirmar ambos fallos: frontend usa backend antiguo y Home sólo carga ofertas/prerreservas.
+- [x] Test Ruby de selección observado rojo en `91c79cc`; verde en build de `c5bf58c`.
+- [x] Preparar publicación guardada de 2.315 productos y clave publishable por canal, sin stock/preventas.
+- [x] Separar pool general y merchandising en Puck, compartiendo datos publicados con el editor.
+- [x] Test de grid observado rojo y luego verde; 891 pruebas pasan con el ajuste de variantes.
+- [x] Terminar publicación y verificar 2.315 activos, clave pública y operación en 0/0.
+- [ ] Verificar Store API, Preview y navegación/ficha públicas antes de confirmar recuperación visible.
+- [ ] Comprobar memoria/conexiones y reintentar los 22 jobs fallidos; mantener cron pausado hasta migrar integraciones.
+
+Deployment web previo para rollback: `dpl_8GRCL8Dk1ij14KcWWgvFAY5wcGDF`.
+La fuente Puck `pages.home` conserva los cinco bloques originales y añade
+`home-general-catalog`; se añade un enlace Ver catálogo al hero sólo si no
+tenía botón principal. No se inventa disponibilidad física para rellenar Home.
+
+### Aclaración comercial y bloqueo de Vercel
+
+El usuario indica que los artículos sin stock físico permanecen publicados y
+se sirven con preparación de 2–3 días. La ficha recupera la traducción existente
+`extendedFulfillment` para la variante comprable sin stock, excluyendo preventas.
+No cambia el permiso de compra de Spree, precios ni carrito. Cinco regresiones
+verifican stock físico, proveedor, preventa, agotado y stock de variante frente
+al agregado del producto. Dos fallaron antes del parche; las ocho pruebas de
+la ficha pasan después. Suite completa: **896 pruebas / 90 archivos**, TypeScript
+sin errores. La venta bajo pedido aún requiere reactivar la integración real.
+
+Evidencia del catálogo: Production backend `dpl_8zhVjuMBZW7LygEHorufDW4Wi847`,
+operación terminada a las 06:03:11 UTC. Preview de la rama tiene URL y clave
+publishable nuevas; Production frontend conserva sus variables anteriores.
+El build `dpl_EL2Q8Dd7CJtQbWq7JxUyCvh6p9fd` se solicitó por SHA y por eso
+no tomó las variables específicas de rama: falló ENOTFOUND al host antiguo.
+La siguiente solicitud por rama devuelve **402 resource_creation_blocked**;
+el panel confirma **Deployments Paused / Fluid Active CPU / Hobby fair use**.
+No hay corte del storefront ni verificación pública completada. Todos los
+daemons de operaciones y el worker están a cero; el cron canónico sigue pausado.
+
+Las ofertas de ambos distribuidores llegan como máximo al 15/10; ninguna es
+vigente respecto de sus límites de caducidad. No abrir todos los backorders
+por SQL ni alargar artificialmente la caducidad. Tras resolver el bloqueo:
+desplegar por nombre de rama, verificar la API y catálogo, migrar credenciales
+scoped y mappings, refrescar proveedores, reconciliar stock bajo pedido y probar
+el protocolo de preparación, además de Market/envíos/pagos antes de compra real.
