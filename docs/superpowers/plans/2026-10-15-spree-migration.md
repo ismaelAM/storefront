@@ -243,3 +243,39 @@ por SQL ni alargar artificialmente la caducidad. Tras resolver el bloqueo:
 desplegar por nombre de rama, verificar la API y catálogo, migrar credenciales
 scoped y mappings, refrescar proveedores, reconciliar stock bajo pedido y probar
 el protocolo de preparación, además de Market/envíos/pagos antes de compra real.
+
+## Continuación durante la pausa: ensayo de integración (22/10)
+
+- [x] Revalidar 5.000 productos / 5.013 mappings; cero correspondencias sin verificar.
+- [x] Comprobar propietarios de registros nuevos, SKU y padres canónicos: cero faltantes.
+- [x] Comparar origen y checkpoint: identidad, revisión, SKU, opciones y precio intactos; solo 26 updated_at distintos.
+- [x] Preparar generador de ensayo reversible y exportador sin secretos.
+- [x] Ensayar realmente los IDs en las tablas canónicas y heredada de Devir; verificar ROLLBACK con huellas completas.
+- [x] Probar rechazo de duplicados, mezcla de tipos, SQL inyectado, campos no escalares y propiedades heredadas; once pruebas pasan.
+- [x] Verificar rutas y permisos contra el código oficial del backend fijado.
+- [ ] Resolver o aislar las dos variantes ambiguas también referenciadas por Devir antes de habilitar el worker.
+- [ ] Crear credencial del backend nuevo y probar HTTP; ejecutar corte coordinado una vez levantada la pausa.
+
+El ensayo inicialmente detectó dos pares heredados sin variante nueva. Se
+corrigió la expectativa para conservar juntos ambos IDs y mantenerlos pendientes;
+no hacer una migración parcial de su padre. El resultado final valida 5.000 /
+5.013 y devuelve ready_for_cutover=false, siempre con ROLLBACK. Las huellas
+posteriores de origen son 08419a6e1fd6ca51e88e49ada8911f4c para productos y
+0292a7a4cb1cba694be51db62fd0019b para variantes, iguales a las anteriores al
+ensayo. No se escribió disponibilidad ni stock ni se alteraron precios.
+
+La API de Vercel sigue devolviendo 402 resource_creation_blocked al solicitar
+el build por nombre de rama. La Edge Function existente sigue en v134; su cron
+está pausado. Preview conserva URL y clave pública específicas de la rama.
+SQL confirma cero categorías, Markets, métodos de envío, métodos de pago y
+cuentas admin en el destino: son tareas pendientes, no configuración ya migrada.
+
+Revisión independiente: corregidos el acceso heredado a PREFIX, las colisiones
+transitorias de UNIQUE en intercambios de IDs y el falso resultado de éxito de
+un ejecutor que continúe tras errores. El SQL libera referencias mapeadas dentro
+de la transacción, preserva las demás y emite validación antes del ROLLBACK.
+Ensayos PostgreSQL con el fragmento real: intercambio de dos IDs y ciclo de
+tres pasan; la versión anterior fallaba UNIQUE. La guarda de URL incorrecta
+falla sin resultado de éxito. El ensayo completo final pasa y una consulta
+independiente confirma de nuevo las huellas originales. El revisor vuelve a
+comprobar las once pruebas Node y no encuentra defectos importantes pendientes.

@@ -1,7 +1,9 @@
 # Traslado de Spree: preparación y recuperación
 
-Estado: **preparación, no restauración ni corte de producción**. El frontend
-sigue en Vercel. El backend del sandbox no es accesible por DNS. El usuario
+Estado a 22/10: **reconstrucción parcial; corte público pendiente**. Spree nuevo
+contiene 5.000 productos, 5.013 variantes canónicas y 2.315 productos activos.
+El storefront todavía no está conectado. Vercel ha pausado el equipo por el
+límite de CPU de Hobby. El backend del sandbox no es accesible por DNS. El usuario
 ha elegido un proyecto separado en la organización Supabase **Bisontcg**.
 
 ## Qué está comprobado
@@ -15,7 +17,8 @@ El usuario ha creado el destino `dtrospakebdiqihhcrub` (BisonTCG Spree), en
 Bisontcg, Irlanda y plan gratuito, con Data API desactivada. El SQL responde.
 Se han copiado 15.097 registros del checkpoint a `spree_recovery.source_records`:
 5.000 productos, 5.015 variantes y 5.082 ofertas. Los checksums de contenido
-coinciden por tabla. Es staging privado, todavía no productos importados a Spree.
+coinciden por tabla. Ese staging privado se conserva, además de la reconstrucción
+ya importada en Spree; ver `../spree-backend/README.md` para su estado operativo.
 No hay credenciales de la base de origen,
 dump, archivos originales ni versión exacta del backend disponibles aquí.
 
@@ -152,8 +155,68 @@ apuntar de nuevo a él no sería por sí solo un rollback operativo.
 ## Límites de esta entrega
 
 No se ha restaurado ningún dato del Spree original. El destino sí está creado y
-contiene una copia privada verificada del catálogo canónico. El bucket privado
-`spree-media` está creado, todavía sin imágenes. El runtime nuevo está en
-`../spree-backend`; necesita secretos, inicialización y pruebas reales. No se han
-configurado workers ni cambiado DNS o tráfico de producción. Este entorno no
-tiene Docker, Ruby o PostgreSQL CLI; no presentar tests Node como un build Rails.
+contiene la reconstrucción y una copia privada verificada del catálogo canónico.
+El bucket privado `spree-media` tiene 100 imágenes primarias verificadas; quedan
+galerías y reintentos. El runtime ya está inicializado y el worker se ha probado,
+actualmente detenido durante la pausa de Vercel. No se ha cambiado DNS ni cortado
+tráfico del storefront. Faltan categorías, Markets, envíos y pagos, credenciales
+de integración y pruebas de compra. Este entorno no tiene Docker, Ruby o
+PostgreSQL CLI; no presentar tests Node como un build Rails.
+
+## Ensayo de correspondencias para los bots (22/10)
+
+`mapping-export.sql` lee las correspondencias verificadas del destino. Exportar
+el resultado como array JSON privado, con exactamente las cuatro columnas de la
+consulta. No incluir claves ni datos de ofertas. El generador no tiene modo de
+aplicación permanente:
+
+```sh
+node ops/spree-migration/rebind.mjs .local/mappings.json .local/rehearsal.sql
+node --test ops/spree-migration/rebind.test.mjs
+```
+
+El SQL generado solo se ejecuta en el proyecto canónico
+`ikglqbjlbkbaronbiryl`. Bloquea brevemente las tablas, exige cron detenido,
+ausencia de lock del worker, URL antigua y checkpoint intacto. Rechaza cambios
+comerciales desde la copia, duplicados y referencias heredadas incoherentes.
+Ensaya los IDs nuevos en `catalog_products`, `catalog_variants` y
+`devir_sync_catalog`, verifica todos los demás campos y termina en **ROLLBACK**.
+Nunca cambiar ese ROLLBACK por COMMIT como atajo para efectuar el corte.
+El ejecutor debe detenerse ante el primer error (`ON_ERROR_STOP=1` en psql).
+El resultado de validación se emite dentro de la transacción, antes del
+ROLLBACK, con estado `verified_pending_rollback`. Confirmar después las huellas
+del origen en otra petición. Un ejecutor que continúe después de un error no
+debe interpretar el final del archivo como una validación correcta.
+
+El ensayo real ha reconciliado 5.000 productos y 5.013 variantes. Las huellas de
+productos y variantes tras la reversión coinciden con las previas; los únicos
+cambios frente al checkpoint original son timestamps de 26 variantes. Se
+conservan las 26 políticas `physical_only` y los 1.047 registros heredados.
+No se han migrado los IDs activos ni reactivado el bot todavía.
+
+Las once pruebas Node validan los datos de entrada. Además, el fragmento real
+de actualizaciones se ensayó en tablas temporales PostgreSQL con un intercambio
+de dos IDs y un ciclo de tres, conservando filas sin mapping. La actualización
+directa falló por UNIQUE; la versión que libera referencias solo dentro de la
+transacción pasó. Una URL de origen deliberadamente incorrecta abortó sin emitir
+éxito. Estos son ensayos SQL manuales, no pruebas HTTP del bot.
+
+Las dos variantes de **MTG FF SCENE BOX** pendientes de importación ya requieren
+revisión y son `physical_only`: una no declara idioma y otra declara Inglés.
+Dos registros de Devir apuntan a esa familia. El ensayo conserva juntos sus
+IDs antiguos; deben quedar expresamente aislados del worker nuevo hasta
+resolverlos, porque los IDs de ambos servidores pueden coincidir y pertenecer
+a artículos distintos. No inventar idioma ni apuntarlos al master por defecto.
+Por ello la respuesta del ensayo marca `ready_for_cutover: false`.
+
+Contrato estático comprobado contra el commit oficial Spree 5.6.1
+`95739365949b0c78dd3a8bde4d59f642b84f68e5`: siguen existiendo rutas Admin V3
+para `custom_field_definitions`, `custom_fields`, categorías, stock y listas de
+precios. Esto no sustituye las pruebas HTTP con el backend recuperado.
+Los permisos mínimos del bot, según sus controladores, son `write_products`,
+`write_stock`, `write_categories` y `write_settings` (incluye canales y
+definiciones de campos). Cada permiso de escritura incluye su lectura.
+Las claves de este backend deben crearse mediante `Spree::ApiKey`: el secreto
+se muestra solo al crearlo y su HMAC depende de SECRET_KEY_BASE. No copiar la
+clave del sandbox ni fabricar un token por SQL. La clave pública ya configurada
+en Preview no permite escribir el catálogo.
