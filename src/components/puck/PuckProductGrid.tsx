@@ -87,8 +87,9 @@ function matchesVariantText(product: ProductWithRelations, query: string): boole
 }
 
 export function PuckProductGrid({ title = "Nuestros productos", subtitle = "Descubre nuestra selección.", productCount = "8", productFilter = "all", selectedProductIds = [], selectedCategoryIds = [], selectedVariantIds = [], variantFilter = "", columns = "4", imageAspect = "square", cardRadius = "medium", backgroundColor = "var(--background)", cardBackgroundColor = "var(--surface)", titleColor = "var(--text)", textColor = "var(--text-muted)", priceColor = "var(--text)", spacing = "normal" }: PuckProductGridProps) {
-  const { products, basePath } = usePuckProducts();
-  const filteredProducts = (products as ProductWithRelations[]).filter((product) => {
+  const { products, catalogProducts, basePath } = usePuckProducts();
+  const sourceProducts = productFilter === "sale" || productFilter === "preorder" ? products : catalogProducts;
+  const filteredProducts = (sourceProducts as ProductWithRelations[]).filter((product) => {
     if (selectedProductIds.length > 0 && !selectedProductIds.includes(product.id)) return false;
     if (!matchesCategoryIds(product, selectedCategoryIds)) return false;
     if (!matchesVariantIds(product, selectedVariantIds)) return false;

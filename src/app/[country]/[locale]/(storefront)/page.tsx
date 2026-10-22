@@ -35,6 +35,15 @@ export default async function HomePage({ params }: HomePageProps) {
   const dayKey = madridCommercialDay(now).dayKey;
 
   let products: Product[] = [];
+  const catalogPromise = cachedListProducts(
+    { limit: 100, fields: PRODUCT_CARD_FIELDS },
+    { locale, country },
+    "dtc",
+    userToken,
+  ).catch((error) => {
+    console.error("HomePuckRenderer: failed to load catalog", error);
+    return { data: [] as Product[] };
+  });
 
   try {
     const [saleResponse, preorderResponse] = await Promise.all([
@@ -73,6 +82,7 @@ export default async function HomePage({ params }: HomePageProps) {
   }
 
   const data = await getHomePageData();
+  const catalogResponse = await catalogPromise;
   const storeUrl = getStoreUrl();
   const canonicalUrl = storeUrl
     ? buildCanonicalUrl(storeUrl, `/${country}/${locale}`)
@@ -83,7 +93,7 @@ export default async function HomePage({ params }: HomePageProps) {
       {canonicalUrl && (
         <JsonLd data={buildWebSiteJsonLd(canonicalUrl, locale)} />
       )}
-      <HomePuckRenderer products={products} basePath={basePath} data={data} />
+      <HomePuckRenderer products={products} catalogProducts={catalogResponse.data ?? []} basePath={basePath} data={data} />
     </>
   );
 }
