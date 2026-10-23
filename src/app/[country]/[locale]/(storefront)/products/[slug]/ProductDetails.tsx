@@ -134,6 +134,10 @@ export function ProductDetails({
     ? (selectedVariant?.preorder ?? false)
     : (product.preorder ?? false);
 
+  const isInStock = hasVariants
+    ? (selectedVariant?.in_stock ?? false)
+    : (product.in_stock ?? false);
+
   const preorderShipsAt = hasVariants
     ? selectedVariant?.preorder_ships_at
     : product.preorder_ships_at;
@@ -212,10 +216,17 @@ export function ProductDetails({
                 )}
               </div>
             ) : isPurchasable ? (
-              <span className="inline-flex items-center gap-1.5 text-green-600">
-                <CircleCheckBig className="w-5 h-5" />
-                {t("availableToOrder")}
-              </span>
+              <div className="space-y-1">
+                <span className="inline-flex items-center gap-1.5 text-green-600">
+                  <CircleCheckBig className="w-5 h-5" />
+                  {t("availableToOrder")}
+                </span>
+                {!isInStock && (
+                  <p className="text-sm text-gray-500">
+                    {t("extendedFulfillment")}
+                  </p>
+                )}
+              </div>
             ) : (
               <span className="inline-flex items-center gap-1.5 text-red-600">
                 <CircleX className="w-5 h-5" />

@@ -1,0 +1,48 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "container",
+  "regions": ["dub1"],
+  "daemons": {
+    "publish_catalog": {
+      "root": "operations",
+      "entrypoint": "Dockerfile",
+      "command": ["/bin/sh", "/rails/publish-catalog.sh"],
+      "instances": { "dub1": 0 },
+      "resources": { "requests": { "memory": "1Gi" } }
+    },
+    "import_media": {
+      "root": "operations",
+      "entrypoint": "Dockerfile",
+      "command": ["/bin/sh", "/rails/import-media.sh", "100"],
+      "instances": { "dub1": 0 },
+      "resources": { "requests": { "memory": "1Gi" } }
+    },
+    "import_catalog": {
+      "root": "operations",
+      "entrypoint": "Dockerfile",
+      "command": ["/bin/sh", "/rails/import-catalog.sh"],
+      "instances": { "dub1": 0 },
+      "resources": { "requests": { "memory": "1Gi" } }
+    },
+    "worker": {
+      "root": "operations",
+      "entrypoint": "Dockerfile",
+      "command": ["/bin/sh", "/rails/worker.sh"],
+      "instances": { "dub1": 0 },
+      "resources": { "requests": { "memory": "1Gi" } }
+    },
+    "configure_store": {
+      "root": "operations",
+      "entrypoint": "Dockerfile",
+      "command": ["/bin/sh", "/rails/configure-store.sh"],
+      "instances": { "dub1": 0 },
+      "resources": { "requests": { "memory": "1Gi" } }
+    },
+    "initialize": {
+      "root": "operations",
+      "entrypoint": "Dockerfile",
+      "instances": { "dub1": 0 },
+      "resources": { "requests": { "memory": "1Gi" } }
+    }
+  }
+}

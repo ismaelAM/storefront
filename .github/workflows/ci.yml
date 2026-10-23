@@ -56,6 +56,11 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm run test
+      - uses: ruby/setup-ruby@651ff0d62c5c79bed6d53ec518387aae20e72c1a # v1
+        with:
+          ruby-version: '3.4.7'
+      - name: Verify Spree recovery preparation
+        run: node --test ops/spree-migration/migration.test.mjs ops/spree-migration/rebind.test.mjs ops/spree-backend/start.test.mjs ops/spree-backend/initialize.test.mjs
       - name: Verify production PPR bot resumes (Turbopack)
         run: pnpm run test:next-ppr
       - name: Verify production PPR bot resumes (Webpack)

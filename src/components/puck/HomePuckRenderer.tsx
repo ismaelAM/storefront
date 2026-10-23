@@ -8,17 +8,19 @@ import { enhancedConfig } from "@/puck/enhanced-config";
 
 interface HomePuckRendererProps {
   products: Product[];
+  catalogProducts?: Product[];
   basePath: string;
   data: Data;
 }
 
 export function HomePuckRenderer({
   products,
+  catalogProducts,
   basePath,
   data,
 }: HomePuckRendererProps) {
   return (
-    <PuckProductsProvider products={products} basePath={basePath}>
+    <PuckProductsProvider products={products} catalogProducts={catalogProducts} basePath={basePath}>
       <Render config={enhancedConfig} data={data} />
     </PuckProductsProvider>
   );

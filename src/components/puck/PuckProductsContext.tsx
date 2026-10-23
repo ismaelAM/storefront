@@ -5,6 +5,7 @@ import { createContext, type ReactNode, useContext } from "react";
 
 interface PuckProductsContextValue {
   products: Product[];
+  catalogProducts: Product[];
   categories: Category[];
   basePath: string;
 }
@@ -13,14 +14,15 @@ const PuckProductsContext = createContext<PuckProductsContextValue | null>(null)
 
 interface PuckProductsProviderProps {
   products: Product[];
+  catalogProducts?: Product[];
   categories?: Category[];
   basePath: string;
   children: ReactNode;
 }
 
-export function PuckProductsProvider({ products, categories = [], basePath, children }: PuckProductsProviderProps) {
+export function PuckProductsProvider({ products, catalogProducts = products, categories = [], basePath, children }: PuckProductsProviderProps) {
   return (
-    <PuckProductsContext.Provider value={{ products, categories, basePath }}>
+    <PuckProductsContext.Provider value={{ products, catalogProducts, categories, basePath }}>
       {children}
     </PuckProductsContext.Provider>
   );

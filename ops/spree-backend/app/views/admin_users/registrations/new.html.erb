@@ -1,0 +1,21 @@
+<main style="max-width: 28rem; margin: 4rem auto; padding: 1.5rem; font-family: sans-serif;">
+  <h1>Crear cuenta de gestión de BisonTCG</h1>
+  <p>El acceso al catálogo se habilitará para la cuenta del propietario.</p>
+  <%= form_for(resource, as: resource_name, url: main_app.admin_user_registration_path) do |f| %>
+    <%= render "devise/shared/error_messages", resource: resource %>
+    <p>
+      <%= f.label :email, "Correo electrónico" %><br>
+      <%= f.email_field :email, autofocus: true, autocomplete: "email", required: true %>
+    </p>
+    <p>
+      <%= f.label :password, "Contraseña" %><br>
+      <%= f.password_field :password, autocomplete: "new-password", required: true, minlength: @minimum_password_length %>
+    </p>
+    <p>
+      <%= f.label :password_confirmation, "Repite la contraseña" %><br>
+      <%= f.password_field :password_confirmation, autocomplete: "new-password", required: true %>
+    </p>
+    <%= f.submit "Crear cuenta" %>
+  <% end %>
+  <p><%= link_to "Iniciar sesión", "/admin" %></p>
+</main>

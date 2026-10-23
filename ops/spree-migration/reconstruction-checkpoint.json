@@ -1,0 +1,13 @@
+{
+  "sourceProject": "ikglqbjlbkbaronbiryl",
+  "sourceSchema": "migration_checkpoint_20261015",
+  "capturedAt": "2026-10-15T13:54:21.618145Z",
+  "destinationProject": "dtrospakebdiqihhcrub",
+  "destinationTable": "spree_recovery.source_records",
+  "verification": "Source and destination MD5 of ordered per-row JSONB MD5 hashes match. This verifies staging content, not a Spree restore.",
+  "tables": [
+    { "name": "catalog_products", "rows": 5000, "checksum": "08419a6e1fd6ca51e88e49ada8911f4c" },
+    { "name": "catalog_variants", "rows": 5015, "checksum": "8e1890b39483959230347980b8bd65f3" },
+    { "name": "catalog_supplier_offers", "rows": 5082, "checksum": "023218cc477923ec7d64ebf216d7af54" }
+  ]
+}

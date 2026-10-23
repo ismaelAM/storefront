@@ -1,0 +1,11 @@
+*
+!Dockerfile.vercel
+!start.sh
+!target.rb
+!config/
+!config/**
+!app/
+!app/views/
+!app/views/admin_users/
+!app/views/admin_users/registrations/
+!app/views/admin_users/registrations/new.html.erb

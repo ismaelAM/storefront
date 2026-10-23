@@ -70,6 +70,68 @@ const productWithoutCustomVariants = {
 } as unknown as Product;
 
 describe("ProductDetails", () => {
+  it.each([
+    { inStock: false, purchasable: true, preorder: false, preparation: true },
+    { inStock: true, purchasable: true, preorder: false, preparation: false },
+    { inStock: false, purchasable: true, preorder: true, preparation: false },
+    { inStock: false, purchasable: false, preorder: false, preparation: false },
+  ])("shows supplier preparation only for an orderable non-stock item: %j", ({
+    inStock,
+    purchasable,
+    preorder,
+    preparation,
+  }) => {
+    const product = {
+      ...productWithoutCustomVariants,
+      in_stock: inStock,
+      purchasable,
+      preorder,
+    };
+    render(
+      <ProductDetails
+        product={product}
+        basePath="/es/es"
+        shortDescription=""
+      />,
+    );
+    expect(screen.queryByText("extendedFulfillment") !== null).toBe(
+      preparation,
+    );
+    if (purchasable) {
+      expect(
+        screen.getByRole("button", {
+          name: preorder ? "preorderAction" : "addToCart",
+        }),
+      ).toBeEnabled();
+    } else {
+      expect(screen.getByRole("button", { name: "outOfStock" })).toBeDisabled();
+    }
+  });
+
+  it("uses the selected variant stock rather than other variants' physical stock", () => {
+    const supplierVariant = {
+      ...productWithoutCustomVariants.default_variant!,
+      in_stock: false,
+      purchasable: true,
+      preorder: false,
+    };
+    const product = {
+      ...productWithoutCustomVariants,
+      in_stock: true,
+      default_variant: supplierVariant,
+      variants: [supplierVariant],
+    };
+    render(
+      <ProductDetails
+        product={product}
+        basePath="/es/es"
+        shortDescription=""
+      />,
+    );
+    expect(screen.getByText("extendedFulfillment")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "addToCart" })).toBeEnabled();
+  });
+
   it("requests product detail data without the broken category expansion", () => {
     expect(PRODUCT_PAGE_EXPAND).toContain("default_variant");
     expect(PRODUCT_PAGE_EXPAND).not.toContain("categories");

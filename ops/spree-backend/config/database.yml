@@ -1,0 +1,7 @@
+production:
+  adapter: postgresql
+  encoding: unicode
+  url: <%= ENV.fetch('DATABASE_URL') %>
+  schema_search_path: spree,extensions
+  pool: <%= Integer(ENV.fetch('RAILS_MAX_THREADS', 3)) + 2 %>
+  checkout_timeout: 5
