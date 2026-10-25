@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import { existsSync } from 'node:fs';
@@ -55,8 +55,11 @@ for (const script of ['start.sh', 'operations/worker.sh']) {
 test('daemon Docker COPY inputs exist within the configured build context', () => {
   const config = JSON.parse(readFileSync(join(directory, 'vercel.json'), 'utf8'));
   for (const daemon of Object.values(config.daemons)) {
-    const root = join(directory, daemon.root);
-    const dockerfile = readFileSync(join(root, daemon.entrypoint), 'utf8');
+    // Vercel builds from the Dockerfile's parent directory, even when `root`
+    // names a higher upload root. Match the actual buildah context argument.
+    const entrypoint = join(directory, daemon.root, daemon.entrypoint);
+    const root = dirname(entrypoint);
+    const dockerfile = readFileSync(entrypoint, 'utf8');
     for (const line of dockerfile.split('\n').filter((line) => line.startsWith('COPY '))) {
       const inputs = line.split(/\s+/).slice(1, -1).filter((word) => !word.startsWith('--'));
       for (const input of inputs) assert.ok(existsSync(join(root, input)), `Missing daemon build input: ${input}`);

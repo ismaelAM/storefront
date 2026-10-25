@@ -232,7 +232,7 @@ carga y durante una promoción antes de abrir ventas. El límite configurado no
 es una medición de consumo ni una garantía de capacidad del plan gratuito.
 
 Los daemons construyen ahora desde `root: .` con
-`entrypoint: operations/Dockerfile`, para copiar la configuración actual de
+`entrypoint: Dockerfile.operations`, para copiar la configuración actual de
 colas/pools/guardas aunque su imagen base de recuperación siga fijada al digest
 antiguo. `.dockerignore` permite esos archivos. Se mantienen **todos en cero**
 en Git; no se reactiva ningún worker ni importador automáticamente.
@@ -256,3 +256,15 @@ medir RSS/conexiones/CPU con tráfico representativo y verificar S3/Store API.
 El 25/10 ambos dominios siguen devolviendo HTTP 402 y los logs del backend por
 el conector devuelven 403; no se atribuye el gasto histórico a una causa única
 ni se promete un porcentaje de ahorro o una cuota mensual cerrada.
+
+## Corrección del contexto y reducción de builds de recuperación
+
+El build `dpl_62H82CLE6KWCijhyf8Q1N26EWKoC` mostró que Vercel usa la
+carpeta del Dockerfile como contexto efectivo, incluso con `root: .`.
+Se mueve el Dockerfile de operaciones al root del backend y se adapta la
+prueba de COPY a ese contexto real. Las configuraciones de inicialización,
+importación y publicación de una sola ejecución se retiran del deployment
+normal: sus scripts siguen en Git y el único daemon es `worker`, en cero.
+Esto evita reconstruir cinco daemons de recuperación al publicar la web.
+Reactivar una operación exige una configuración revisada y un despliegue
+manual agrupado; nunca se relanza una migración automáticamente.

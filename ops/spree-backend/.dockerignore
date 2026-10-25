@@ -1,5 +1,6 @@
 *
 !Dockerfile.vercel
+!Dockerfile.operations
 !start.sh
 !target.rb
 !operations/
