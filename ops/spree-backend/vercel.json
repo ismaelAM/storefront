@@ -10,6 +10,13 @@
     "dub1"
   ],
   "daemons": {
+    "catalog_recovery": {
+      "root": ".",
+      "entrypoint": "Dockerfile.operations",
+      "command": ["/bin/sh", "/rails/catalog-recovery.sh"],
+      "instances": {"dub1": 0},
+      "resources": {"requests": {"memory": "1Gi"}}
+    },
     "worker": {
       "root": ".",
       "entrypoint": "Dockerfile.operations",

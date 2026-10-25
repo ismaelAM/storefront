@@ -4,12 +4,15 @@ FROM vcr.vercel.com/bison-tcg/bisontcg-spree/dockerfile@sha256:2f82d22c203457a8b
 # explicitly rather than silently retaining its old pools, polling and guards.
 COPY --chown=1000:1000 config/database.yml config/queue.yml /rails/config/
 COPY --chown=1000:1000 config/initializers/runtime_guard.rb /rails/config/initializers/
+COPY --chown=1000:1000 config/initializers/recovery_identity.rb /rails/config/initializers/
 COPY --chown=1000:1000 --chmod=644 operations/initialize.sh /rails/initialize.sh
 COPY --chown=1000:1000 --chmod=644 operations/configure-store.sh operations/configure-store.rb /rails/
 COPY --chown=1000:1000 --chmod=644 operations/catalog-plan.rb operations/catalog-plan.test.rb operations/import-catalog.rb operations/import-catalog.sh operations/worker.sh /rails/
 COPY --chown=1000:1000 --chmod=644 operations/catalog-visibility.test.rb /rails/
 COPY --chown=1000:1000 --chmod=644 operations/publish-catalog.rb operations/publish-catalog.sh /rails/
 COPY --chown=1000:1000 --chmod=644 operations/media-source.rb operations/media-source.test.rb operations/media-transform.test.rb operations/import-media.rb operations/import-media.sh /rails/
+COPY --chown=1000:1000 --chmod=644 operations/recovery-access.rb operations/catalog-recovery.rb operations/catalog-recovery.sh operations/catalog-recovery.test.rb /rails/
+COPY --chown=1000:1000 --chmod=644 operations/recovery-identity.test.rb /rails/
 # The pinned starter refers to a scope absent from its locked Solid Cable 4.0.2.
 RUN ruby -e 'p="config/recurring.yml"; s=File.read(p); old="SolidCable::Message.prunable"; abort "Unexpected cable housekeeping configuration" unless s.scan(old).size == 1; File.write(p, s.sub(old, "SolidCable::Message.trimmable"))'
 RUN ruby -c /rails/config/initializers/runtime_guard.rb && sh -n /rails/initialize.sh && sh -n /rails/configure-store.sh && ruby -c /rails/configure-store.rb
@@ -18,4 +21,6 @@ RUN ruby /rails/catalog-visibility.test.rb
 RUN ruby -c /rails/publish-catalog.rb && sh -n /rails/publish-catalog.sh
 RUN ruby /rails/media-source.test.rb && ruby -c /rails/import-media.rb && sh -n /rails/import-media.sh
 RUN bundle exec ruby /rails/media-transform.test.rb
+RUN ruby /rails/catalog-recovery.test.rb && ruby -c /rails/catalog-recovery.rb && sh -n /rails/catalog-recovery.sh
+RUN ruby /rails/recovery-identity.test.rb
 ENTRYPOINT ["/bin/sh", "/rails/initialize.sh"]
