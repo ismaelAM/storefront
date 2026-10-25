@@ -1,13 +1,20 @@
 "use server";
 
 import type { Data } from "@puckeditor/core";
+import { updateTag } from "next/cache";
 import { createSupabaseClient } from "@/lib/supabase/server";
 import { assertPuckEditorAccess } from "./editor-auth";
 
 export async function saveSitePageData(pageId: string, data: Data) {
   await assertPuckEditorAccess();
 
-  if (typeof pageId !== "string" || !pageId.trim() || !data || typeof data !== "object" || !Array.isArray(data.content)) {
+  if (
+    typeof pageId !== "string" ||
+    !pageId.trim() ||
+    !data ||
+    typeof data !== "object" ||
+    !Array.isArray(data.content)
+  ) {
     throw new Error("Invalid Puck data");
   }
 
@@ -25,4 +32,6 @@ export async function saveSitePageData(pageId: string, data: Data) {
     console.error(`Error saving Puck page data for ${pageId}:`, error);
     throw new Error("No se ha podido guardar la página.");
   }
+
+  updateTag(`puck-page:${pageId}`);
 }

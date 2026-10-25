@@ -1,14 +1,18 @@
 # Reuse the already-built, guarded backend, including its exact Rails/S3 config.
 FROM vcr.vercel.com/bison-tcg/bisontcg-spree/dockerfile@sha256:2f82d22c203457a8bbfe113deb16d4fe592a02def00e2e0ed2bc85fe2bd729e4
-COPY --chown=1000:1000 --chmod=644 initialize.sh /rails/initialize.sh
-COPY --chown=1000:1000 --chmod=644 configure-store.sh configure-store.rb /rails/
-COPY --chown=1000:1000 --chmod=644 catalog-plan.rb catalog-plan.test.rb import-catalog.rb import-catalog.sh worker.sh /rails/
-COPY --chown=1000:1000 --chmod=644 catalog-visibility.test.rb /rails/
-COPY --chown=1000:1000 --chmod=644 publish-catalog.rb publish-catalog.sh /rails/
-COPY --chown=1000:1000 --chmod=644 media-source.rb media-source.test.rb media-transform.test.rb import-media.rb import-media.sh /rails/
+# The pinned recovery base predates runtime cost fixes. Copy current settings
+# explicitly rather than silently retaining its old pools, polling and guards.
+COPY --chown=1000:1000 config/database.yml config/queue.yml /rails/config/
+COPY --chown=1000:1000 config/initializers/runtime_guard.rb /rails/config/initializers/
+COPY --chown=1000:1000 --chmod=644 operations/initialize.sh /rails/initialize.sh
+COPY --chown=1000:1000 --chmod=644 operations/configure-store.sh operations/configure-store.rb /rails/
+COPY --chown=1000:1000 --chmod=644 operations/catalog-plan.rb operations/catalog-plan.test.rb operations/import-catalog.rb operations/import-catalog.sh operations/worker.sh /rails/
+COPY --chown=1000:1000 --chmod=644 operations/catalog-visibility.test.rb /rails/
+COPY --chown=1000:1000 --chmod=644 operations/publish-catalog.rb operations/publish-catalog.sh /rails/
+COPY --chown=1000:1000 --chmod=644 operations/media-source.rb operations/media-source.test.rb operations/media-transform.test.rb operations/import-media.rb operations/import-media.sh /rails/
 # The pinned starter refers to a scope absent from its locked Solid Cable 4.0.2.
 RUN ruby -e 'p="config/recurring.yml"; s=File.read(p); old="SolidCable::Message.prunable"; abort "Unexpected cable housekeeping configuration" unless s.scan(old).size == 1; File.write(p, s.sub(old, "SolidCable::Message.trimmable"))'
-RUN sh -n /rails/initialize.sh && sh -n /rails/configure-store.sh && ruby -c /rails/configure-store.rb
+RUN ruby -c /rails/config/initializers/runtime_guard.rb && sh -n /rails/initialize.sh && sh -n /rails/configure-store.sh && ruby -c /rails/configure-store.rb
 RUN ruby /rails/catalog-plan.test.rb && ruby -c /rails/import-catalog.rb && sh -n /rails/import-catalog.sh && sh -n /rails/worker.sh
 RUN ruby /rails/catalog-visibility.test.rb
 RUN ruby -c /rails/publish-catalog.rb && sh -n /rails/publish-catalog.sh

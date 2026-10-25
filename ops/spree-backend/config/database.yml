@@ -3,5 +3,7 @@ production:
   encoding: unicode
   url: <%= ENV.fetch('DATABASE_URL') %>
   schema_search_path: spree,extensions
-  pool: <%= Integer(ENV.fetch('RAILS_MAX_THREADS', 3)) + 2 %>
+  # The dedicated async supervisor shares this pool across job/housekeeping
+  # threads. Web needs only its three request threads, not five per instance.
+  pool: <%= ENV['SPREE_RUNTIME_ROLE'] == 'worker' ? 8 : Integer(ENV.fetch('RAILS_MAX_THREADS', 3)) %>
   checkout_timeout: 5

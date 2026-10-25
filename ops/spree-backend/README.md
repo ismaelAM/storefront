@@ -201,3 +201,58 @@ Pruebas locales de guardas: `node --test ops/spree-backend/start.test.mjs
 ops/spree-migration/migration.test.mjs`. Los tests Ruby de catálogo y medios
 se ejecutan durante el build con el runtime fijado. Un test de shell no acredita
 Rails, S3 ni el checkout: contrastar siempre los recuentos y las operaciones reales.
+
+## Ajuste de consumo preparado el 25/10
+
+`start.sh` y `worker.sh` mantienen la validación de URL antes de arrancar Ruby
+on Rails, pero ya no ejecutan dos comandos Rails completos antes del servicio.
+`runtime_guard.rb` valida la configuración efectiva y las migraciones pendientes
+dentro de ese mismo arranque, antes de aceptar tráfico o arrancar las colas.
+Las operaciones de reconstrucción conservan sus guardas y pueden ejecutar
+migraciones intencionadamente sin `SPREE_RUNTIME_ROLE`.
+
+El worker usa el modo `async` del supervisor de **Solid Queue 1.5.0**, la versión
+del contenedor fijado: supervisor, dispatcher, scheduler y worker comparten un
+proceso Rails. Esto no cambia el almacenamiento durable de los trabajos en
+Postgres ni elimina tareas recurrentes. Un único hilo ejecuta trabajos para
+evitar transformaciones de imágenes simultáneas. Se conserva el orden de colas
+del starter y su catch-all para trabajos futuros.
+
+La consulta de trabajos listos pasa de cada 0,1 s a cada 2 s (de hasta 600 a
+30 sondeos/minuto cuando está inactivo), y el dispatcher a cada 5 s con lotes
+de 100. Esto añade hasta aproximadamente 2 s de espera al sondeo de trabajos
+listos, además de la cola de trabajos; no es una garantía de latencia. Los
+trabajos programados también esperan el siguiente sondeo del dispatcher.
+
+El pool web pasa de 5 a 3 conexiones por instancia. El worker comparte un pool
+de 8: un worker y dos instancias web solapadas tienen un máximo configurado
+de 14 clientes frente al límite de 15 observado. Más instancias web, sesiones
+de administración o recuperación pueden superar ese margen; comprobarlo bajo
+carga y durante una promoción antes de abrir ventas. El límite configurado no
+es una medición de consumo ni una garantía de capacidad del plan gratuito.
+
+Los daemons construyen ahora desde `root: .` con
+`entrypoint: operations/Dockerfile`, para copiar la configuración actual de
+colas/pools/guardas aunque su imagen base de recuperación siga fijada al digest
+antiguo. `.dockerignore` permite esos archivos. Se mantienen **todos en cero**
+en Git; no se reactiva ningún worker ni importador automáticamente.
+
+La composición publicada de Puck usa una caché de diez minutos y una etiqueta
+por página. Tanto las acciones del editor como `POST /api/pages/home` invalidan
+la página después de guardarla correctamente. Los fallos de lectura se manejan
+fuera de la caché para no persistir una portada por defecto tras una caída.
+Las cachés comerciales de cliente/canal/idioma, precios y stock no se alteran.
+
+Verificación local: 902 pruebas de aplicación, 42 pruebas operativas sin skips,
+TypeScript y comprobación Biome de los TypeScript modificados. La reproducción
+con Next en producción prueba reutilización entre visitas, publicación inmediata,
+recuperación tras error y los casos de PPR/bots. El entorno local necesitó
+restaurar el binario SWC 16.2.11 desde el paquete oficial con integridad SHA512
+verificada y un shim de telemetría de memoria porque no dispone de `/proc`;
+ninguno de esos ajustes locales cambia dependencias ni código de producción.
+
+Pendiente: construir ambos contenedores con su runtime Ruby 4.0.1 real,
+medir RSS/conexiones/CPU con tráfico representativo y verificar S3/Store API.
+El 25/10 ambos dominios siguen devolviendo HTTP 402 y los logs del backend por
+el conector devuelven 403; no se atribuye el gasto histórico a una causa única
+ni se promete un porcentaje de ahorro o una cuota mensual cerrada.

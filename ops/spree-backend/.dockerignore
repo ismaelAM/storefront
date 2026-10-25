@@ -2,6 +2,8 @@
 !Dockerfile.vercel
 !start.sh
 !target.rb
+!operations/
+!operations/**
 !config/
 !config/**
 !app/

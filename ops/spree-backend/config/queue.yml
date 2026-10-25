@@ -1,0 +1,33 @@
+# Same queue order/catch-all as the pinned Spree 5.6.1 starter. One job at a
+# time bounds image memory; async mode in worker.sh shares the Rails process.
+production:
+  dispatchers:
+    - polling_interval: 5
+      batch_size: 100
+  workers:
+    - queues:
+        - default
+        - spree_imports
+        - spree_payment_webhooks
+        - mailers
+        - spree_events
+        - spree_exports
+        - spree_images
+        - active_storage_transform
+        - spree_products
+        - spree_reports
+        - spree_variants
+        - spree_taxons
+        - spree_stock_location_stock_items
+        - spree_coupon_codes
+        - spree_addresses
+        - spree_gift_cards
+        - spree_webhooks
+        - spree_api_keys
+        - spree_search
+        - active_storage_analysis
+        - active_storage_purge
+        - "*"
+      threads: 1
+      processes: 1
+      polling_interval: 2

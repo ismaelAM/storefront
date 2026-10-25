@@ -1,4 +1,5 @@
 import type { Data } from "@puckeditor/core";
+import { revalidateTag } from "next/cache";
 import { createSupabaseClient } from "@/lib/supabase/server";
 
 /**
@@ -71,6 +72,7 @@ export async function POST(request: Request) {
       );
     }
 
+    revalidateTag("puck-page:home", { expire: 0 });
     return Response.json({ success: true });
   } catch (err) {
     console.error("API error:", err);

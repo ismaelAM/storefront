@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
-import { dirname, join } from "node:path";
+import { createServer as createHttpServer } from "node:http";
+import { dirname, join, sep } from "node:path";
 import { createRequire } from "node:module";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -20,6 +21,11 @@ let server;
 let serverOutput = "";
 let url;
 let postponed;
+let databaseServer;
+let databaseUrl;
+const published = new Map();
+const pageReads = new Map();
+const failingReads = new Set();
 const children = new Map();
 const closedChildren = new Set();
 
@@ -31,9 +37,9 @@ function child(command, args, options) {
   });
   children.set(childProcess, new Promise((resolve) => {
     childProcess.once("error", (error) => resolve({ error }));
-    childProcess.once("close", (code) => {
+    childProcess.once("close", (code, signal) => {
       closedChildren.add(childProcess);
-      resolve({ code });
+      resolve({ code, signal });
     });
   }));
   return childProcess;
@@ -80,28 +86,69 @@ async function stopChild(childProcess) {
 }
 
 before(async () => {
+  // The fixture runs our real Puck reader and HTTP publisher against a tiny
+  // Supabase HTTP boundary. This exercises Next's production cache/invalidation
+  // rather than pretending the cache directive works in a unit-test transform.
+  databaseServer = createHttpServer(async (request, response) => {
+    response.setHeader("content-type", "application/json");
+    const requestUrl = new URL(request.url, "http://fixture.test");
+    const pageId = requestUrl.searchParams.get("page_id")?.replace(/^eq\./, "");
+    if (request.method === "GET") {
+      pageReads.set(pageId, (pageReads.get(pageId) ?? 0) + 1);
+      if (failingReads.has(pageId)) {
+        response.writeHead(503);
+        response.end(JSON.stringify({ message: "Fixture unavailable" }));
+      } else {
+        response.end(JSON.stringify(published.has(pageId) ? { published_data: published.get(pageId) } : null));
+      }
+    } else if (request.method === "POST") {
+      let body = "";
+      for await (const chunk of request) body += chunk;
+      const record = JSON.parse(body);
+      published.set(record.page_id, record.published_data);
+      response.writeHead(201);
+      response.end("null");
+    } else {
+      response.writeHead(405);
+      response.end("null");
+    }
+  });
+  databaseServer.listen(0, "127.0.0.1");
+  await once(databaseServer, "listening");
+  databaseUrl = `http://127.0.0.1:${databaseServer.address().port}`;
   await mkdir(join(root, ".local"), { recursive: true });
   fixture = await mkdtemp(join(root, ".local/ppr-bot-resume-"));
   await cp(fixtureSource, fixture, { recursive: true });
   await symlink(join(root, "node_modules"), join(fixture, "node_modules"));
   await writeFile(join(fixture, "package.json"), JSON.stringify({ private: true }));
+  const serverImport = /@\/lib\/supabase\/server/g;
+  await writeFile(join(fixture, "app/published-data.ts"), (await readFile(join(root, "src/lib/puck/get-site-page-data.ts"), "utf8")).replace(serverImport, "./supabase"));
+  await cp(join(root, "src/lib/supabase/server.ts"), join(fixture, "app/supabase.ts"));
+  await mkdir(join(fixture, "app/api/pages/home"), { recursive: true });
+  await writeFile(join(fixture, "app/api/pages/home/route.ts"), (await readFile(join(root, "src/app/api/pages/home/route.ts"), "utf8")).replace(serverImport, "../../../supabase"));
+  // Linked worktrees can share dependencies with a sibling checkout. Turbopack
+  // must be allowed to resolve that real path, while CI keeps its normal root.
+  const dependencyRoot = dirname(await realpath(join(root, "node_modules")));
+  let filesystemRoot = root;
+  while (dirname(filesystemRoot) !== filesystemRoot && dependencyRoot !== filesystemRoot && !dependencyRoot.startsWith(`${filesystemRoot}${sep}`)) filesystemRoot = dirname(filesystemRoot);
   await writeFile(join(fixture, "next.config.js"), `module.exports = {
     cacheComponents: true,
+    cacheLife: { tenMinutes: { stale: 300, revalidate: 600, expire: 3600 } },
     htmlLimitedBots: new RegExp(${JSON.stringify(`${HTML_LIMITED_BOT_UA_RE.source}|Googlebot|MySpecialBot`)}, 'i'),
-    turbopack: { root: ${JSON.stringify(root)} },
+    turbopack: { root: ${JSON.stringify(filesystemRoot)} },
   };\n`);
 
   const build = child(process.execPath, [nextBin, "build", fixture, ...(process.env.PPR_TEST_WEBPACK ? ["--webpack"] : [])], {
     cwd: root,
-    env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1" },
+    env: { ...process.env, TMPDIR: fixture, NEXT_TELEMETRY_DISABLED: "1", SUPABASE_URL: databaseUrl, SUPABASE_SERVICE_ROLE_KEY: "fixture-server-key" },
   });
   let output = "";
   build.stdout.on("data", (chunk) => { output += chunk; });
   build.stderr.on("data", (chunk) => { output += chunk; });
   try {
-    const { code, error } = await waitForChild(build, 120_000);
+    const { code, error, signal } = await waitForChild(build, 120_000);
     if (error) throw error;
-    assert.equal(code, 0, `Fixture build failed:\n${output}`);
+    assert.equal(code, 0, `Fixture build failed (${signal ?? code}):\n${output}`);
   } finally {
     await stopChild(build);
   }
@@ -120,7 +167,7 @@ before(async () => {
   });\n`);
   server = child(process.execPath, [serverFile], {
     cwd: fixture,
-    env: { ...process.env, NODE_ENV: "production", NEXT_TELEMETRY_DISABLED: "1", NEXT_PRIVATE_TEST_HEADERS: "1" },
+    env: { ...process.env, TMPDIR: fixture, NODE_ENV: "production", NEXT_TELEMETRY_DISABLED: "1", NEXT_PRIVATE_TEST_HEADERS: "1", SUPABASE_URL: databaseUrl, SUPABASE_SERVICE_ROLE_KEY: "fixture-server-key", PUCK_PUBLISH_SECRET: "fixture-publish-key" },
   });
   await new Promise((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error(`Server startup timed out:\n${serverOutput}`)), 30_000);
@@ -139,8 +186,45 @@ after(async () => {
   try {
     await Promise.all([...children.keys()].map(stopChild));
   } finally {
+    if (databaseServer?.listening) await new Promise((resolve) => databaseServer.close(resolve));
     if (fixture) await rm(fixture, { recursive: true, force: true });
   }
+});
+
+test("published Puck content is reused across requests and expires immediately after HTTP publication", async () => {
+  const homeUrl = new URL("/published", url);
+  const publishUrl = new URL("/api/pages/home", url);
+  published.set("home", { content: [{ type: "Text", props: { id: "title", text: "Original published title" } }], root: {} });
+  const read = () => fetch(homeUrl, { headers: { "user-agent": "Twitterbot/1.0" }, signal: AbortSignal.timeout(15_000) }).then(async (response) => {
+    assert.equal(response.status, 200);
+    return response.text();
+  });
+  assert.match(await read(), /<h1>Original published title<\/h1>/);
+  const firstReads = pageReads.get("home");
+  assert.equal(firstReads, 1);
+  assert.match(await read(), /<h1>Original published title<\/h1>/);
+  assert.equal(pageReads.get("home"), firstReads, "A second visitor must not query Supabase again");
+
+  const response = await fetch(publishUrl, {
+    method: "POST",
+    headers: { authorization: "Bearer fixture-publish-key", "content-type": "application/json" },
+    body: JSON.stringify({ content: [{ type: "Text", props: { id: "title", text: "New published title" } }], root: {} }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  assert.equal(response.status, 200);
+  assert.match(await read(), /<h1>New published title<\/h1>/);
+  assert.equal(pageReads.get("home"), firstReads + 1);
+});
+
+test("a failed Puck read does not cache a fallback over recovered published content", async () => {
+  const pageId = "retry-after-outage";
+  const pageUrl = new URL(`/published?page=${pageId}`, url);
+  failingReads.add(pageId);
+  const read = () => fetch(pageUrl, { headers: { "user-agent": "Twitterbot/1.0" }, signal: AbortSignal.timeout(15_000) }).then((response) => response.text());
+  assert.match(await read(), /<h1>No published content<\/h1>/);
+  failingReads.delete(pageId);
+  published.set(pageId, { content: [{ type: "Text", props: { id: "title", text: "Recovered published content" } }], root: {} });
+  assert.match(await read(), /<h1>Recovered published content<\/h1>/);
 });
 
 for (const [label, userAgent] of [
