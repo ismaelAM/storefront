@@ -857,3 +857,11 @@ No codificar selectores de PrestaShop ni endpoints privados sin una muestra
 autorizada y pruebas. Si se implementa el login, verificar que tras enviarlo ya
 no aparece el formulario de acceso; ante fallo o expiración, abortar el run y no
 ejecutar catalog-complete-run.
+
+37. Coste de launches (norma expresa del propietario, 25/10/2026)
+
+Minimizar los launches y activaciones facturables. Agrupar las correcciones,
+validar localmente antes de desplegar, evitar previews/rebuilds duplicados y
+preferir registros del panel a sondeos repetidos. No mantener el backend caliente
+con pings. Verificar sólo lo necesario para la publicación autorizada y reutilizar
+el build verificado cuando la plataforma permita promoverlo sin reconstruir.

@@ -2,7 +2,7 @@ import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { Geist } from "next/font/google";
 import { Suspense } from "react";
-import { CookieConsent } from "@/components/privacy/CookieConsent";
+import { LocalizedCookieConsent } from "@/components/privacy/LocalizedCookieConsent";
 import { localeDirection } from "@/i18n/locales";
 
 const gtmId = process.env.GTM_ID;
@@ -44,7 +44,11 @@ export function DocumentShell({ children, locale }: DocumentShellProps) {
         className={`${geist.variable} antialiased min-h-screen min-h-dvh flex flex-col`}
       >
         <Suspense fallback={null}>{children}</Suspense>
-        {gtmId && <CookieConsent gtmId={gtmId} />}
+        {gtmId && (
+          <Suspense fallback={null}>
+            <LocalizedCookieConsent locale={locale} gtmId={gtmId} />
+          </Suspense>
+        )}
         <Analytics />
         <SpeedInsights />
       </body>
