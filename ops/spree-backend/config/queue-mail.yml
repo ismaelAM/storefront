@@ -1,0 +1,13 @@
+# Explicitly selected by email-worker.sh. No catch-all, media or native mailers.
+# Payment webhooks remain outside this worker's reviewed scope.
+production:
+  dispatchers:
+    - polling_interval: 5
+      batch_size: 20
+  workers:
+    - queues:
+        - spree_events
+        - spree_webhooks
+      threads: 1
+      processes: 1
+      polling_interval: 2

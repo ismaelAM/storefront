@@ -7,11 +7,13 @@ import {
   reconcileStripePaymentToSpree,
 } from "@/lib/payments/stripe-live";
 
-function verifyStripeSignature(payload: string, header: string, secret: string) {
+function verifyStripeSignature(
+  payload: string,
+  header: string,
+  secret: string,
+) {
   const parts = header.split(",");
-  const timestamp = parts
-    .find((part) => part.startsWith("t="))
-    ?.slice(2);
+  const timestamp = parts.find((part) => part.startsWith("t="))?.slice(2);
   const signatures = parts
     .filter((part) => part.startsWith("v1="))
     .map((part) => part.slice(3));
@@ -72,12 +74,21 @@ export async function POST(request: Request) {
   if (relevantPaymentIntentEvent) {
     const paymentIntentId = event.data?.object?.id;
     if (typeof paymentIntentId !== "string" || !paymentIntentId) {
-      return NextResponse.json({ error: "Missing payment intent" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Missing payment intent" },
+        { status: 400 },
+      );
     }
     try {
       // Always branch on Stripe's current authoritative state rather than the
       // event name. This makes delayed/out-of-order webhook delivery harmless.
       const intent = await getStripePaymentIntent(paymentIntentId);
+      // Native Spree payment sessions have their own signed backend endpoint.
+      // Only this storefront's intents carry its cart link; acknowledging the
+      // other intents avoids duplicate reconciliation and Stripe retry loops.
+      if (!intent.metadata?.spree_cart_id) {
+        return NextResponse.json({ received: true });
+      }
       if (intent.status === "requires_capture") {
         await placeAuthorizedStripePaymentInSpree(intent);
       } else if (intent.status === "succeeded") {
@@ -87,7 +98,10 @@ export async function POST(request: Request) {
       }
     } catch (error) {
       console.error("Stripe webhook reconciliation failed", error);
-      return NextResponse.json({ error: "Reconciliation failed" }, { status: 500 });
+      return NextResponse.json(
+        { error: "Reconciliation failed" },
+        { status: 500 },
+      );
     }
   }
 
