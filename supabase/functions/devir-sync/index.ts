@@ -8212,7 +8212,7 @@ async function loadDailyOfferSupplyRows(): Promise<Array<Record<string, unknown>
     const { data, error } = await supabase
       .from("catalog_selected_supply")
       .select(
-        "variant_id,canonical_sku,spree_variant_id,product_id,product_name,spree_product_id,supplier_code,normalized_cost,reference_price_net,availability,source_url",
+        "variant_id,canonical_sku,spree_variant_id,product_id,product_name,spree_product_id,supplier_code,normalized_cost,reference_price_net,availability,source_url,supplier_enabled,supplier_stale_after_hours,last_seen_at,fulfillment_mode",
       )
       .eq("availability", "available")
       .not("spree_variant_id", "is", null)
@@ -8385,6 +8385,16 @@ async function rotateDailyOffersUnlocked(
       }
       const spreeVariantId = String(row.spree_variant_id ?? "");
       const stockOnHand = physicalStockByVariant.get(spreeVariantId) ?? 0;
+      // Stale supplier rows must not consume the bounded inspection pool or
+      // external request budget before fresh offers can be reached. Actual
+      // physical stock retains its existing independent clearance path.
+      if (row.fulfillment_mode === "disabled") return [];
+      if (stockOnHand <= 0) {
+        if (row.fulfillment_mode === "physical_only" || row.supplier_enabled === false) return [];
+        const lastSeen = Date.parse(String(row.last_seen_at ?? ""));
+        const staleAfterMs = Number(row.supplier_stale_after_hours) * 60 * 60 * 1000;
+        if (!Number.isFinite(lastSeen) || !Number.isFinite(staleAfterMs) || staleAfterMs <= 0 || Date.now() - lastSeen > staleAfterMs) return [];
+      }
       return [
         {
           row,

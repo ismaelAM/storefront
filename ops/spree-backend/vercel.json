@@ -2,28 +2,24 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "git": {
     "deploymentEnabled": {
+      "main": false,
       "migration/spree-owned-backend": false
     }
   },
   "framework": "container",
-  "regions": [
-    "dub1"
-  ],
+  "regions": ["dub1"],
   "daemons": {
     "catalog_recovery": {
       "root": ".",
       "entrypoint": "Dockerfile.operations",
       "command": ["/bin/sh", "/rails/catalog-recovery.sh"],
-      "instances": {"dub1": 0},
-      "resources": {"requests": {"memory": "1Gi"}}
+      "instances": { "dub1": 0 },
+      "resources": { "requests": { "memory": "1Gi" } }
     },
     "worker": {
       "root": ".",
       "entrypoint": "Dockerfile.operations",
-      "command": [
-        "/bin/sh",
-        "/rails/worker.sh"
-      ],
+      "command": ["/bin/sh", "/rails/worker.sh"],
       "instances": {
         "dub1": 0
       },

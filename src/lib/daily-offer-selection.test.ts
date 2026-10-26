@@ -225,6 +225,45 @@ describe("Pure daily offer category selection", () => {
 });
 
 describe("Daily offer category rotation", () => {
+  it("reaches fresh offers without spending the request budget inspecting stale supplier candidates", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-26T10:00:00Z"));
+    const now = Date.now();
+    const stale = productsFor("tcg/stale", 130).map((product) => ({
+      ...product,
+      lastSeenAt: "2020-01-01T00:00:00Z",
+    }));
+    const f = fixture([...stale, ...balanced()], false, 700);
+    const rotation = f.api.rotateDailyOffersUnlocked({
+      request_budget: { deadline_at: now + 70_000 },
+    });
+    const result = rotation.catch((error: Error) => ({ error: error.name }));
+    await vi.runAllTimersAsync();
+    expect((await result).selected).toHaveLength(12);
+    expect(
+      f.requests.some((request) => request.path.includes("tcg-stale")),
+    ).toBe(false);
+    expect(Date.now() - now).toBeLessThan(70_000);
+  });
+
+  it("can still discount owned physical stock when its supplier observation has expired", async () => {
+    const f = fixture([
+      {
+        id: "owned-stock",
+        category: "tcg/mtg",
+        stock: 1,
+        lastSeenAt: "2020-01-01T00:00:00Z",
+        fulfillmentMode: "physical_only",
+        cost: 20,
+      },
+    ]);
+    const offers = (await f.api.rotateDailyOffersUnlocked({})).selected;
+    expect(
+      offers.map((offer: { productId: string }) => offer.productId),
+    ).toEqual(["owned-stock"]);
+    expect(offers[0].physicalStock).toBe(true);
+  });
+
   it("completes twelve offers with rejected candidates inside the expanded daily budget", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(0);

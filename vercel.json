@@ -1,5 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "git": { "deploymentEnabled": { "migration/spree-owned-backend": false } },
+  "git": {
+    "deploymentEnabled": {
+      "main": false,
+      "migration/spree-owned-backend": false
+    }
+  },
   "crons": [{ "path": "/api/cron/offers", "schedule": "0 4 * * *" }]
 }

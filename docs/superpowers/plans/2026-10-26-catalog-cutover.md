@@ -56,3 +56,44 @@ with unrelated new records. Fail closed and retain private staging for retries.
   credential retry, manual image preservation and identity-hold tests pass.
 - Existing RAILS_HOST is configured in Production. Revealing it requested MFA;
   no verification code was requested or read, and its value was not accessed.
+
+## Continuation on 26 October
+
+- Owner explicitly requests continuing directly on main and minimizing Vercel
+  publications. Automatic Git deployments on main are disabled in both Vercel
+  configs; release a reviewed, grouped deployment explicitly when needed.
+- Authenticated owned Admin API returned HTTP 200 and 5,000 products. All
+  10,013 destination mappings were loaded into a private, RLS-enabled table
+  `migration_checkpoint_20261015.owned_backend_map_20261026`, with API roles
+  denied access. The original checkpoints remain unchanged.
+- The guarded cutover passed a rollback rehearsal, then committed. Source
+  config now targets `https://project-7ck7q.vercel.app`; all 5,000 products and
+  5,013 mapped variants reconcile, the two ambiguous variant references are
+  cleared and backend identity holds remain, and all 26 physical-only policies
+  are preserved. Cron was not enabled.
+- Native bulk category API assigned 36 One Piece products and 12 accessory
+  products. The remaining exact-category batches are prepared. The 105 products
+  without canonical taxonomy remain unclassified rather than guessed.
+- One authenticated TcgFactory batch refreshed 18 offers and recovered 18
+  preorder variants. Physical on-hand quantities remain zero. Its historical
+  crawl still contains 997 failures; no partial run was marked complete.
+- A local transport diagnostic accidentally printed the scoped integration
+  credential when truncated stdin caused a JSON parse failure. The credential
+  was immediately revoked in owned Spree, its in-memory copy cleared, and the
+  supplier pipeline paused. No active supplier secret key remains. The helper
+  now reads batches from a private file, accepts only the short credential
+  input and handles parse failures without printing input.
+- Replacement requires access to Vercel project `bisontcg-spree`, currently
+  denied by the connector (404 project; 403 logs). Team consent was requested.
+  Before rerunning RecoveryAccess, remove only the revoked credential's named
+  Vault handoff in the owned backend; then issue the replacement through the
+  official model and transfer it privately to the source Vault/config.
+- Daily rotation was reproduced exhausting its budget on expired supplier
+  rows before reaching fresh candidates. It now discards known-ineligible
+  supplier-only candidates before the inspection cap and remote API calls;
+  owned physical stock and final live verification retain their behavior.
+  The regression failed before the fix, then all 24 focused tests passed.
+- Remaining: replacement key; remaining category memberships; clear/rebuild old
+  daily-offer backend references under guard; refresh both suppliers; restore
+  verified cron; publish actual offers and verify upcoming products. Markets,
+  shipping, payments and checkout remain a separate unfinished commerce phase.
