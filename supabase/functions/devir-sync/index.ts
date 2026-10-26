@@ -11702,8 +11702,8 @@ async function processProducts(
   let images = 0;
   let reviews = 0;
 
-  for (const job of jobs as JobRow[]) {
-    if (!canStartSyncWork(config)) break;
+  const processJob = async (job: JobRow): Promise<boolean> => {
+    if (!canStartSyncWork(config)) return false;
     const { error: claimError } = await supabase
       .from("devir_sync_jobs")
       .update({
@@ -11820,7 +11820,7 @@ async function processProducts(
       if (isSyncDeferred(err)) {
         const { error: requeueError } = await supabase.from("devir_sync_jobs").update({ status: "pending", attempts: job.attempts, error: null, updated_at: new Date().toISOString() }).eq("id", job.id);
         if (requeueError) throw requeueError;
-        break;
+        return false;
       }
       const message = String(err);
       const lockContention =
@@ -11835,6 +11835,18 @@ async function processProducts(
         })
         .eq("id", job.id);
     }
+    return true;
+  };
+  // Match the existing TcgFactory concurrency ceiling. Each job keeps its own
+  // durable acknowledgement; a yield stops the next group, not its siblings.
+  const rows = jobs as JobRow[];
+  for (let index = 0; index < rows.length && canStartSyncWork(config); index += 3) {
+    const finished = await Promise.allSettled(rows.slice(index, index + 3).map(processJob));
+    // Do not return the worker lock while a sibling still owns a product lock
+    // or has an unacknowledged inventory write after another job fails.
+    const failed = finished.find(result => result.status === "rejected");
+    if (failed?.status === "rejected") throw failed.reason;
+    if (finished.some(result => result.status === "fulfilled" && !result.value)) break;
   }
   return { done: false, processed, images, reviews };
 }

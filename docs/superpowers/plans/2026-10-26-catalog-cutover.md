@@ -149,3 +149,19 @@ supports partial inline custom_fields updates validated by definition, preservin
 unmentioned fields. The owned-host path now groups these values in one PATCH;
 the legacy endpoint path remains for other hosts. Regression exhausted a two-write
 budget before the fix, then 915 tests/94 files and TypeScript passed.
+
+
+Bounded Devir concurrency now matches TcgFactory's maximum of three. Each job
+retains its durable acknowledgement and canonical product lock. Groups use
+allSettled: a rejected claim/checkpoint waits for siblings before propagating to
+the worker lock owner. An independent review caught this early-release issue;
+the new claim-failure regression failed before the fix, then passed.
+
+The first General page was checked through the Store API: 11 of 12 cards were
+unpurchasable, confirming the user's report. Fauna's old source said unavailable;
+Robin Hood and Sound Box were old done jobs, while others remained pending.
+466 completed jobs with stale Devir offers were backed up privately in
+migration_checkpoint_20261015.requeued_devir_jobs_20261026 and requeued in the
+same active cycle. No supplier dates or stock were invented. Batch size is20,
+with the unchanged95s external-work budget. The first metadata-only optimized
+Devir tick processed7 (previously2–4); measure concurrency version separately.

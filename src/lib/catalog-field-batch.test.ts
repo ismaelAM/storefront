@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
+
 const source = ts.createSourceFile(
   "index.ts",
   readFileSync("supabase/functions/devir-sync/index.ts", "utf8"),
