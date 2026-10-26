@@ -17,6 +17,8 @@ export const PRODUCT_METADATA_EXPAND = [
   "primary_media",
   "default_variant",
   "variants",
+  "custom_fields",
+  "option_types",
 ];
 
 /** Minimal fields used by cards, analytics and the Puck product filters. */
