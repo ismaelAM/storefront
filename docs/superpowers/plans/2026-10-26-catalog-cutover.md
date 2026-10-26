@@ -134,3 +134,18 @@ This supersedes the paused/access-blocked state above.
   complete offer quotas as qualifying stock becomes fresh, inventory/runtime efficiency.
   Current crawl has historic TcgFactory failures; do not close it as complete.
   Markets, shipping, payments and checkout are still unfinished.
+
+
+## Availability recovery throughput
+
+User correctly reports that most category cards still show sold out. The previous
+public checks established selected products, not full inventory recovery. Supplier
+snapshots remain largely stale; do not claim stock recovery from a few successful
+items or change UI labels for unpurchasable variants.
+
+The private metadata writer performed an HTTP request per changed field before
+inventory reconciliation, consuming the 95-second budget. Owned Spree natively
+supports partial inline custom_fields updates validated by definition, preserving
+unmentioned fields. The owned-host path now groups these values in one PATCH;
+the legacy endpoint path remains for other hosts. Regression exhausted a two-write
+budget before the fix, then 915 tests/94 files and TypeScript passed.

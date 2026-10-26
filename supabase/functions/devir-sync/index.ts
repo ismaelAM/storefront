@@ -1589,6 +1589,19 @@ async function upsertProductFields(
 ): Promise<void> {
   const fields = current ?? (await productFields(config, productId));
   const byKey = new Map(fields.map((f) => [f.key, f]));
+  if (config.spree_api_url.replace(/\/$/, "") === "https://project-7ck7q.vercel.app") {
+    // Owned Spree supports validated inline custom fields. A separate HTTP write
+    // per private field used up the tick before inventory could be reconciled.
+    const changes = Object.entries(values).flatMap(([key, value]) => {
+      if (value === undefined || value === null || value === "") return [];
+      const def = defs.get(key);
+      const old = byKey.get(key);
+      if (!def || (old && String(old.value) === String(value))) return [];
+      return [{ ...(old ? { id: old.id } : {}), custom_field_definition_id: def.id, value }];
+    });
+    if (changes.length) await spreeRequest(config, "PATCH", "/products/" + encodeURIComponent(productId), { custom_fields: changes });
+    return;
+  }
   for (const [key, value] of Object.entries(values)) {
     if (value === undefined || value === null || value === "") continue;
     const def = defs.get(key);
