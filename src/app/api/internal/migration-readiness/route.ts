@@ -1,7 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-export const dynamic = "force-dynamic";
-
 // Read-only, fixed-provider probe. No credentials or provider error bodies are
 // returned, and no email, PaymentIntent, charge or customer is created.
 export async function GET(request: Request): Promise<Response> {
