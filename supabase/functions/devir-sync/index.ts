@@ -1823,7 +1823,7 @@ async function stockItemsForVariant(
         const sep = path.includes("?") ? "&" : "?";
         const payload = await spreeRequest<{
           data?: SpreeStockItem[];
-          meta?: { next?: number | null; pages?: number };
+          meta?: { next?: number | null; pages?: number; count?: number };
         }>(config, "GET", path + sep + "limit=100&page=" + page);
         if (!Array.isArray(payload.data) || payload.data.some((item) => !item.id || !item.variant_id)) {
           throw new Error("Spree devolvió inventario sin identidad verificable");
@@ -1831,6 +1831,15 @@ async function stockItemsForVariant(
         // Unsupported filters may be ignored by older Spree versions.
         items.push(...payload.data.filter((item) => item.variant_id === variantId));
         const pages = Number(payload.meta?.pages);
+        // This owned backend is verified to decode prefixed variant IDs in q.
+        // Its complete empty result is absence, not an unsupported filter:
+        // don't rescan the entire store via the compatibility paths below.
+        // Legacy backends still need those paths (some coerce prefixed IDs to 0).
+        if (
+          config.spree_api_url?.replace(/\/$/, "") === "https://project-7ck7q.vercel.app" &&
+          page === 1 && payload.data.length === 0 &&
+          payload.meta?.count === 0 && pages === 1 && payload.meta?.next === null
+        ) return [];
         const more = Number.isInteger(pages) && pages > 0
           ? page < pages
           : payload.meta?.next != null ||
