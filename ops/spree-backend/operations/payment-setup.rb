@@ -33,6 +33,16 @@ module PaymentSetup
     end
   end
 
+  def self.native_order_amount!(order, supplied)
+    due = order.total_minus_store_credits
+    currency = order.currency
+    if supplied && supplied.to_s != '' && Spree::Money.new(supplied, currency: currency).cents != Spree::Money.new(due, currency: currency).cents
+      raise Spree::Core::GatewayError, 'El importe no coincide con el carrito.'
+    end
+    guard_native_amount!(due, currency)
+    due
+  end
+
   def self.store!
     EmailHttpDrain.validate_target!
     raise Error, 'Unexpected stores' unless Spree::Store.count == 1
@@ -115,18 +125,38 @@ module PaymentSetup
 
   module NativeWebhookUrl
     def create_payment_session(order:, amount: nil, external_data: {})
-      PaymentSetup.guard_native_amount!(amount.presence || order.total_minus_store_credits, order.currency) if store&.code == 'bisontcg'
+      if store&.code == 'bisontcg'
+        due = PaymentSetup.native_order_amount!(order, amount)
+        return super(order: order, amount: due, external_data: external_data)
+      end
       super
     end
 
     def update_payment_session(payment_session:, amount: nil, external_data: {})
-      PaymentSetup.guard_native_amount!(amount.presence || payment_session.amount, payment_session.currency) if store&.code == 'bisontcg'
+      if store&.code == 'bisontcg'
+        due = PaymentSetup.native_order_amount!(payment_session.order, amount)
+        return super(payment_session: payment_session, amount: due, external_data: external_data)
+      end
       super
     end
 
     def webhook_url
       return super unless store&.code == 'bisontcg'
       "#{PaymentSetup::BACKEND_ORIGIN}/api/v3/webhooks/payments/#{prefixed_id}"
+    end
+  end
+
+  # Displaying a method only in Admin must also prevent direct Store API use.
+  # Native Store controllers otherwise resolve any method belonging to the
+  # store, including the Check ledger for payments verified by our server.
+  module StorePaymentVisibility
+    def create
+      method = current_store.payment_methods.find_by_prefix_id!(params[:payment_method_id])
+      unless method.active? && method.available_on_front_end?
+        return render_error(code: 'payment_method_unavailable',
+          message: 'Método de pago no disponible.', status: :unprocessable_content)
+      end
+      super
     end
   end
 end

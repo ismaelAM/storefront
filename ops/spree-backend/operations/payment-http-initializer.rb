@@ -3,6 +3,10 @@ Rails.application.config.to_prepare do
   if defined?(SpreeStripe::Gateway) && !(SpreeStripe::Gateway < PaymentSetup::NativeWebhookUrl)
     SpreeStripe::Gateway.prepend(PaymentSetup::NativeWebhookUrl)
   end
+  [Spree::Api::V3::Store::Carts::PaymentsController,
+   Spree::Api::V3::Store::Carts::PaymentSessionsController].each do |controller|
+    controller.prepend(PaymentSetup::StorePaymentVisibility) unless controller < PaymentSetup::StorePaymentVisibility
+  end
 end
 
 class BisonPaymentPrepareEndpoint < EmailHttpDrain::Endpoint
