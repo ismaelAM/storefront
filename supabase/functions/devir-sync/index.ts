@@ -109,6 +109,8 @@ interface JobRow {
 }
 
 interface SpreeProduct {
+  preorder?: boolean;
+  purchasable?: boolean;
   id: string;
   name: string;
   status?: string;
@@ -3077,6 +3079,9 @@ async function reconcileCatalogVariantUnlocked(
         selection.offers,
       );
     }
+    if (mapping.product?.tags?.includes("devir-preorder")) {
+      await syncHomePreorderMembership(config, await spreeRequest<SpreeProduct>(config, "GET", "/products/" + encodeURIComponent(mapping.product.id)));
+    }
     return {
       productId: mapping.product?.id ?? null,
       variantId: mapping.variant?.id ?? null,
@@ -3181,6 +3186,19 @@ async function ingestCatalogItem(
     defs,
   );
   return { resolution, synced };
+}
+
+// The existing storefront queries this legacy membership tag for every supplier.
+// Derive it from Spree's aggregate sellable preorder flag, including mixed products.
+async function syncHomePreorderMembership(config: ConfigRow, product: SpreeProduct): Promise<void> {
+  if (typeof product.preorder !== "boolean") return;
+  const tags = product.tags ?? [];
+  const eligible = product.status === "active" && product.preorder && product.purchasable !== false &&
+    !tags.some(tag => ["catalog-review", "devir-review", "REVISION-HUMANA", "NECESITA-TU-AYUDA"].includes(tag));
+  if (tags.includes("devir-preorder") === eligible) return;
+  await spreeRequest(config, "PATCH", "/products/" + encodeURIComponent(product.id), {
+    tags: eligible ? [...tags, "devir-preorder"] : tags.filter(tag => tag !== "devir-preorder"),
+  });
 }
 
 async function syncProductToSpree(
@@ -3656,7 +3674,7 @@ async function syncProductToSpree(
       ? shouldListCatalogProduct({ review, fulfillmentMode })
       : autoPublish;
   if (shouldList) {
-    await spreeRequest(
+    const published = await spreeRequest<SpreeProduct>(
       config,
       "PATCH",
       "/products/" + encodeURIComponent(productId),
@@ -3664,9 +3682,10 @@ async function syncProductToSpree(
         status: "active",
       },
     );
+    await syncHomePreorderMembership(config, published);
     await ensureProductsInDefaultChannel(config, [productId]);
   } else if (review || fulfillmentMode === "disabled") {
-    await spreeRequest(
+    const drafted = await spreeRequest<SpreeProduct>(
       config,
       "PATCH",
       "/products/" + encodeURIComponent(productId),
@@ -3674,6 +3693,7 @@ async function syncProductToSpree(
         status: "draft",
       },
     );
+    await syncHomePreorderMembership(config, drafted);
   }
 
   return {
