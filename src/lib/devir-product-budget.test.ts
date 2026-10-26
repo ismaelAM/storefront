@@ -21,7 +21,7 @@ const code = ts.transpileModule(
     .join("\n"),
   { compilerOptions: { target: ts.ScriptTarget.ES2022 } },
 ).outputText;
-function fixture(deferFirst = false, failClaim = false) {
+function fixture(deferFirst = false, failClaim = false, visibleFirst = false) {
   let clock = 0,
     active = 0,
     maximum = 0;
@@ -31,16 +31,38 @@ function fixture(deferFirst = false, failClaim = false) {
     id: i + 1,
     attempts: 0,
     url: `url-${i + 1}`,
+    recovery_priority: visibleFirst && i === 8 ? 100 : 0,
   }));
   const supabase = {
     from: (table: string) => {
       let write: Record<string, unknown> | undefined;
+      const ordering: Array<{
+        key: "id" | "recovery_priority";
+        ascending: boolean;
+      }> = [];
       const q = {
         select: () => q,
         eq: asyncOrQuery,
         in: () => q,
-        order: () => q,
-        limit: async () => ({ data: jobs, error: null }),
+        order: (
+          key: "id" | "recovery_priority",
+          options?: { ascending?: boolean },
+        ) => {
+          ordering.push({ key, ascending: options?.ascending !== false });
+          return q;
+        },
+        limit: async (count: number) => ({
+          data: [...jobs]
+            .sort((a, b) => {
+              for (const order of ordering) {
+                const delta = a[order.key] - b[order.key];
+                if (delta) return order.ascending ? delta : -delta;
+              }
+              return 0;
+            })
+            .slice(0, count),
+          error: null,
+        }),
         update: (value: Record<string, unknown>) => {
           write = value;
           return q;
@@ -105,7 +127,10 @@ function fixture(deferFirst = false, failClaim = false) {
   return {
     run: () =>
       process(
-        { batch_size: 9, request_budget: { deadline_at: 36_000 } },
+        {
+          batch_size: visibleFirst ? 3 : 9,
+          request_budget: { deadline_at: 36_000 },
+        },
         "cycle",
       ),
     completed,
@@ -114,6 +139,11 @@ function fixture(deferFirst = false, failClaim = false) {
   };
 }
 describe("Devir inventory progress under a fixed external-work budget", () => {
+  it("refreshes explicitly prioritized visible fiches before the older backlog within the same batch cap", async () => {
+    const f = fixture(false, false, true);
+    await f.run();
+    expect(f.completed.sort()).toEqual([1, 2, 9]);
+  });
   it("finishes sibling checkpoints before returning a failed claim to the worker lock owner", async () => {
     const f = fixture(false, true);
     await expect(f.run()).rejects.toThrow("claim failed");

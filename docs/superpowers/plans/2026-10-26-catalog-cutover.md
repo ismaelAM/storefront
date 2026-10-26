@@ -165,3 +165,16 @@ migration_checkpoint_20261015.requeued_devir_jobs_20261026 and requeued in the
 same active cycle. No supplier dates or stock were invented. Batch size is20,
 with the unchanged95s external-work budget. The first metadata-only optimized
 Devir tick processed7 (previously2–4); measure concurrency version separately.
+
+
+Recovery temporarily runs every2minutes, with a self-removing Supabase Cron job
+returning the cadence to5minutes at2026-10-26 18:39UTC (19:39Europe/Madrid).
+Do not create another restoration job or leave the faster cadence unbounded.
+
+The user's visible General page is explicitly prioritized using a nonnegative
+recovery_priority column(default0), with an index matching cycle/pending product
+selection and ordering. Migration was applied before the function update. Exact
+Store API product IDs from request49704 map to existing canonical Devir source
+URLs and jobs; no stock flags, quantities, prices or supplier timestamps are
+changed by prioritization. A regression proves the prioritized fiche enters a
+capped batch before the old backlog. Independent review found no important issues.

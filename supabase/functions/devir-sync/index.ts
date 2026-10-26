@@ -11691,6 +11691,7 @@ async function processProducts(
     .eq("cycle_id", cycleId)
     .eq("kind", "product")
     .eq("status", "pending")
+    .order("recovery_priority", { ascending: false })
     .order("id")
     .limit(config.batch_size);
   if (error) throw error;
