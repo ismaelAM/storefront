@@ -2,6 +2,7 @@ import "server-only";
 import { createHash, randomUUID } from "node:crypto";
 import { getStoreUrl } from "@/lib/store";
 import { madridCommercialDay } from "../../../supabase/functions/_shared/commercial-pricing-policy";
+import { verifyInstagramAccount } from "./connection";
 import { getDailySocialOffers } from "./data";
 import {
   type InstagramCheckpoint,
@@ -57,6 +58,7 @@ export interface PublicationDependencies {
   storeUrl: string;
   repo: PublicationRepository;
   prepareImages(snapshot: SocialOfferSnapshot, hash: string): Promise<string[]>;
+  verifyAccount(): Promise<{ accountId: string; username: string }>;
   publish(
     config: InstagramConfig,
     input: { imageUrls: string[]; caption: string },
@@ -107,6 +109,7 @@ export async function executeDailyPublication(deps: PublicationDependencies) {
     };
   let attempted = Boolean(claim.checkpoint?.publishAttempted);
   try {
+    if (deps.config.configured) await deps.verifyAccount();
     const hash = snapshotHash(snapshot);
     const imageUrls = await deps.prepareImages(snapshot, hash);
     if (!deps.config.configured) {
@@ -167,9 +170,11 @@ export async function runDailySocialPublication() {
   const storeUrl = getStoreUrl();
   if (!storeUrl?.startsWith("https://"))
     throw new Error("La dirección pública de la tienda no está configurada.");
+  const config = readInstagramConfig();
   return executeDailyPublication({
     getSnapshot: getDailySocialOffers,
-    config: readInstagramConfig(),
+    config,
+    verifyAccount: () => verifyInstagramAccount(config),
     storeUrl,
     repo: createPublicationRepository(),
     prepareImages: (snapshot, hash) =>
