@@ -97,3 +97,40 @@ with unrelated new records. Fail closed and retain private staging for retries.
   daily-offer backend references under guard; refresh both suppliers; restore
   verified cron; publish actual offers and verify upcoming products. Markets,
   shipping, payments and checkout remain a separate unfinished commerce phase.
+
+
+## Live catalog continuation — 26 October
+
+This supersedes the paused/access-blocked state above.
+
+- Replacement scoped integration key was issued by the official model, privately
+  handed off through Vault, and authenticated. All 4,894 safe category memberships
+  now exist; all 2,315 initially active products are categorized. The 105 unclassified
+  products and held ambiguous family remain excluded from guessed classification.
+- Vercel catalog_recovery and worker daemons are scaled to zero. Spend Management
+  is $1 on-demand with Pause On, after included credit. Auto Git deployment remains
+  disabled for main. No Vercel deployment exists for 27a49f2. Requests still incur usage.
+- Old daily offer state was cleared under paused/checkpoint guards and rebuilt through
+  the native API. Missing category margins were populated through existing setup rules.
+- devir-sync v136 is ACTIVE, main commit 27a49f28f6898289ed450c1df66798725b70065d.
+  Native aggregate preorder status now maintains the legacy home membership for any
+  supplier, preserving mixed variants and unrelated tags, removing ineligible membership.
+  912 tests /93 files and TypeScript passed. No frontend build was needed.
+- Source enabled=true; existing devir-cloud-sync-tick active every five minutes.
+  Both supplier lanes have successful live ticks. 72 old inventory-pagination error
+  jobs were requeued in the same active cycle; 8 unrecognizable SKU jobs remain errors.
+- Bounded preorder batch: 21 requests succeeded, four Supabase BOOT_ERROR responses.
+  Avoid 25 concurrent function cold starts again. Two later requests succeeded;
+  offset-based repair is unstable while selection changes. Prefer durable variant IDs
+  for future targeted repair; normal ingestion already locks canonical identity.
+- Last source snapshot: 14 fresh Devir available, 4 TcgFactory available, 43 TcgFactory
+  preorders. These are supplier states, not a claim every one is public or reviewed.
+  Last destination snapshot: 38 active preorder variants, 37 home memberships, eight
+  primary images, 59 backorderable stock items. Physical stock remains zero.
+- Native daily rotation request49695 activated pl_VqXmZF31wY with five real offers.
+  Browser confirms five offer cards and four valid upcoming cards. Shanks detail
+  explicitly shows Disponible, Preparación: 2–3 días laborables, Agregar al carrito.
+- Remaining: full supplier freshness recovery, images for newly published preorders,
+  complete offer quotas as qualifying stock becomes fresh, inventory/runtime efficiency.
+  Current crawl has historic TcgFactory failures; do not close it as complete.
+  Markets, shipping, payments and checkout are still unfinished.
