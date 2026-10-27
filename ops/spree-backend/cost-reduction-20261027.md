@@ -94,3 +94,17 @@ in social/template and was interrupted. A complete resource-adjusted rerun
 (`vitest run --maxWorkers=4 --testTimeout=20000`) passed all 953 tests in 99 files.
 No repository timeout or unrelated application code was changed. Independent
 review found no correctness blocker.
+
+Implementation committed directly to main as
+`a73e3a92fa2fd8fa19c79844f77ef6ad519cb3a5`. Supabase `devir-sync` v142 is
+ACTIVE; the entrypoint and all nine unchanged shared dependencies matched the
+verified upload on readback. Authentication is unchanged. This pass created no
+frontend or backend Vercel deployment.
+
+Live v142 check: one existing supplier-mapped variant reconciled through the
+authenticated operator action, returning HTTP 200, `reconciled: 1`, `failed: 0`,
+without timeout. Post-readback confirmed one nonzero physical stock row with six
+Tarkir units, zero native payments, no pending mail work, the minute-level mail
+cron still active, and the source cron active hourly. Source phase remains
+products with no configuration error or lock. Realized invoice savings remain
+unmeasured; the reduction is in scheduled work and proven redundant HTTP writes.
