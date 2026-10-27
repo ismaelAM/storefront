@@ -13,7 +13,9 @@ rescue LoadError
       class Post
         attr_accessor :body
         def initialize(*) = @headers = {}
-        def []=(key, value) = @headers[key.downcase] = value
+        def []=(key, value)
+          @headers[key.downcase] = value
+        end
         def [](key) = @headers[key.downcase]
       end
     end
