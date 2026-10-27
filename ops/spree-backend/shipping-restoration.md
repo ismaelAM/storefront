@@ -69,3 +69,8 @@ pasa con él para abandono repetido, cancelación/reanudación de pedidos
 completados y finalización previa a `completed_at`. La prueba aislada no acredita
 la carga de Rails: después de desplegar hay que crear y retirar un carrito de
 diagnóstico y confirmar que el inventario permanece exactamente igual.
+
+Verificado en producción el 27/10/2026 con el commit `114abd9`: un carrito
+contenía una unidad `on_hand` y otra `backordered`; su eliminación nativa
+devolvió 204 y mantuvo las existencias en 6 y 0, sin nuevos movimientos de
+stock ni unidades de inventario residuales. El carrito anterior se conservó.
