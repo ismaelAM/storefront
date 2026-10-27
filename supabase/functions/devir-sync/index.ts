@@ -1281,6 +1281,26 @@ interface SpreePrice {
   currency?: string | null;
   price_list_id?: string | null;
   variant_id?: string | null;
+  compare_at_amount?: string | number | null;
+}
+
+function nativePatchMatches(current: unknown, patch: Record<string, unknown>): boolean {
+  if (!current || typeof current !== "object" || Array.isArray(current)) return false;
+  const record = current as Record<string, unknown>;
+  return Object.entries(patch).every(([key, desired]) => {
+    if (!Object.prototype.hasOwnProperty.call(record, key)) return false;
+    const actual = record[key];
+    if (typeof desired === "number") {
+      if (typeof actual !== "number" && (typeof actual !== "string" || !actual.trim())) return false;
+      return Number.isFinite(desired) && Number.isFinite(Number(actual)) && Number(actual) === desired;
+    }
+    if (key === "preorder_ships_at" && typeof desired === "string") {
+      if (typeof actual !== "string") return false;
+      const expectedDate = Date.parse(desired);
+      return Number.isFinite(expectedDate) && Date.parse(actual) === expectedDate;
+    }
+    return actual === desired;
+  });
 }
 
 async function upsertBasePrice(
@@ -1303,6 +1323,10 @@ async function upsertBasePrice(
     ) ?? prices.find((price) => !price.price_list_id);
 
   if (basePrice) {
+    if ((basePrice.currency ?? "EUR").toUpperCase() === "EUR" && nativePatchMatches(basePrice, {
+      amount,
+      ...(compareAtAmount !== undefined ? { compare_at_amount: compareAtAmount } : {}),
+    })) return;
     await spreeRequest(
       config,
       "PATCH",
@@ -1760,10 +1784,19 @@ async function patchVariantInventory(
   preorderable: boolean,
   preorderShipsAt: string | null,
   initializeInventory = false,
+  current?: SpreeVariant,
 ): Promise<SpreeVariant> {
   if (initializeInventory && countOnHand !== 0) {
     throw new Error("Una variante nueva debe inicializarse con stock cero");
   }
+  // Only a caller's fresh native read of this exact variant may avoid a write.
+  // Missing fields and explicit zero-stock initialization retain native validation.
+  if (!initializeInventory && current?.id === variantId && nativePatchMatches(current, {
+    track_inventory: true,
+    backorderable,
+    preorderable,
+    preorder_ships_at: preorderable ? preorderShipsAt : null,
+  })) return current;
   // Replaying aggregate stock into one location can duplicate quantities or undo sales.
   // Only a just-created variant may initialize its zero inventory.
   const inventory = initializeInventory ? [
@@ -3552,7 +3585,10 @@ async function syncProductToSpree(
     );
     const refreshManagedMetadata =
       managed && (!active || forceDraftForSplit || needsManagedCleanup);
-    const markedProduct = await spreeRequest<SpreeProduct>(config, "PATCH", "/products/" + productId, {
+    const tagsMatch = JSON.stringify([...(existing.product.tags ?? [])].sort()) === JSON.stringify([...tags].sort());
+    const markedProduct = !review && !refreshManagedMetadata && tagsMatch
+      ? existing.product
+      : await spreeRequest<SpreeProduct>(config, "PATCH", "/products/" + productId, {
       tags,
       ...(review ? { status: "draft" } : {}),
       ...(refreshManagedMetadata ? { name: spreeProductName } : {}),
@@ -3563,14 +3599,7 @@ async function syncProductToSpree(
     if (review && markedProduct.status !== "draft") {
       throw new Error("Spree no confirmó el borrador; no registrar nuevos motivos de revisión");
     }
-    await spreeRequest(
-      config,
-      "PATCH",
-      "/products/" +
-        encodeURIComponent(productId) +
-        "/variants/" +
-        encodeURIComponent(existing.variant.id),
-      {
+    const variantPatch = {
         sku: spreeSku,
         cost_price: product.purchasePrice,
         cost_currency: catalogContext?.offer.currency ?? "EUR",
@@ -3579,8 +3608,11 @@ async function syncProductToSpree(
         backorder_limit: null,
         preorderable: supplierPreorderable,
         preorder_ships_at: supplierPreorderable ? product.releaseDate : null,
-      },
-    );
+    };
+    if (!nativePatchMatches(existing.variant, variantPatch)) {
+      await spreeRequest(config, "PATCH", "/products/" + encodeURIComponent(productId) +
+        "/variants/" + encodeURIComponent(existing.variant.id), variantPatch);
+    }
     if (canWritePrice) {
       await upsertBasePrice(config, existing.variant.id, pricing.retail);
     }
@@ -3702,6 +3734,8 @@ async function syncProductToSpree(
       }),
       supplierPreorderable,
       supplierPreorderable ? product.releaseDate : null,
+      false,
+      current,
     );
     backorderItems += 1;
   }

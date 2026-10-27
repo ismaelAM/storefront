@@ -53,10 +53,44 @@ a native mapping and a currently eligible supplier observation.
 
 The 3-to-1 result applies to metadata reads within the tested existing-product
 reconciliation. It is not a measured 67% reduction of total Vercel usage. The
-supplier cadence remains every 30 minutes, so catalogue progress and availability
-expiry are not delayed by this optimization.
+supplier cadence remained every 30 minutes during this first pass, so catalogue
+progress and availability expiry were not delayed by that optimization.
 
 Post-check: physical inventory remains one nonzero row with exactly six Tarkir
 units; native payments remain zero. Conditional mail work is false and its cron
 stays active. The catalogue is still progressing: 466 product jobs done, 559
 pending and 20 held errors, with phase products and no config error or lock.
+
+## Further economy pass
+
+The owner prioritizes a lower ongoing bill. The source supplier cron was changed
+from every 30 minutes to hourly using `operations/supplier-economy-cadence.sql`.
+Readback confirmed `0 * * * *`, active. This halves scheduled supplier activations
+from 48 to 24 per day. It also slows catalogue discovery and supplier freshness;
+supplier updates can take longer to reach the shop. Native checkout, physical
+stock checks and the conditional minute-level payment/email processor retain
+their own execution paths. No customer transaction waits for this crawl.
+
+Avoid repeated native writes when a fresh authoritative response already contains
+the desired values: existing product markers, variant costs/dimensions/flags,
+base prices and the TcgFactory fulfillment confirmation. Numeric strings are
+compared as finite decimal numbers; absent fields and malformed values force
+the normal write. Review-to-draft confirmation remains mandatory. New zero-stock
+initialization, changed prices, date changes, different variant identities and
+native errors retain existing validation and retry behavior. Never cache or
+replay physical stock quantities.
+
+Implementation plan: reproduce redundant native writes in production-function
+tests, add conservative comparisons, run tests/TypeScript, review and publish
+only the Supabase worker. Verify one bounded native reconciliation plus stock,
+cron and deployment readbacks. The hourly cadence is a deliberate cost/latency
+tradeoff, not an invoice savings percentage. No Vercel rebuild is needed.
+
+The no-op regressions first failed in four expected ways before implementation.
+All 89 targeted checks passed after it, and TypeScript passed. The default full
+suite initially passed 950/953 with five-second timeouts in MobileMenu,
+PuckProductGrid and social/template; a low-concurrency attempt still timed out
+in social/template and was interrupted. A complete resource-adjusted rerun
+(`vitest run --maxWorkers=4 --testTimeout=20000`) passed all 953 tests in 99 files.
+No repository timeout or unrelated application code was changed. Independent
+review found no correctness blocker.

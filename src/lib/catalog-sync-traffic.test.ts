@@ -161,7 +161,11 @@ describe("Supabase-managed supplier freshness without timestamp-only Spree write
 });
 
 it("reads existing product metadata once across pricing, review and provenance", async () => {
-  const product = { id: "prod1", status: "active", tags: ["catalog-managed"] };
+  const product = {
+    id: "prod1",
+    status: "active",
+    tags: ["catalog-managed", "catalog-ready"],
+  };
   const currentFields = [
     { id: "manual", key: "manual.keep", value: "operator value" },
   ];
@@ -169,7 +173,7 @@ it("reads existing product metadata once across pricing, review and provenance",
   const write = vi.fn(async (_config, _method, _path, _body) => product);
   const adopt = vi.fn(async () => null);
   const run = runInNewContext(
-    `${production("syncProductToSpree", "upsertProductFields", "upsertVariantProvenance", "catalogProvenanceSignature")}; syncProductToSpree`,
+    `${production("syncProductToSpree", "upsertProductFields", "upsertVariantProvenance", "catalogProvenanceSignature", "nativePatchMatches")}; syncProductToSpree`,
     {
       productFields: read,
       spreeRequest: write,
@@ -227,7 +231,17 @@ it("reads existing product metadata once across pricing, review and provenance",
       ...selected,
       offers,
       existingProduct: product,
-      existingVariant: { id: "variant1", sku: "EAN", total_on_hand: 6 },
+      existingVariant: {
+        id: "variant1",
+        sku: "EAN",
+        total_on_hand: 6,
+        cost_price: "10.00",
+        cost_currency: "EUR",
+        track_inventory: true,
+        backorder_limit: null,
+        preorderable: false,
+        preorder_ships_at: null,
+      },
     },
   );
   expect(read).toHaveBeenCalledTimes(1);
@@ -236,4 +250,10 @@ it("reads existing product metadata once across pricing, review and provenance",
   expect(
     write.mock.calls.some((call) => "count_on_hand" in (call[3] ?? {})),
   ).toBe(false);
+  expect(
+    write.mock.calls.filter((call) => call[1] === "PATCH" && call[3]?.tags),
+  ).toHaveLength(0);
+  expect(
+    write.mock.calls.filter((call) => String(call[2]).includes("/variants/")),
+  ).toHaveLength(0);
 });
