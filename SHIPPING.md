@@ -105,20 +105,23 @@ Método real: **Entrega en Madrid**, `dm_VeVXmZF31w`, Zone Madrid `4790`,
 FlatRate EUR **4,99 €**, categorías físicas Default y Predeterminado.
 Guardado y releído en el administrador el 10/10/2026. Correos no se modificó.
 
-**BISON3 gratis solo para este método: pendiente.** BISON3 corresponde a
-cuentas aprobadas en `special_pricing_requests`; su lista de precios nativa
-`pl_NJzXvxTk8u` utiliza `user_rule`, no un cupón público ni un grupo de clientes.
-La acción FreeShipping instalada no admite seleccionar métodos de entrega y
-descuenta todos los envíos del pedido. Las reglas instaladas no incluyen
-provincia/Zone ni método de envío. Activarla para usuarios BISON3 regalaría
-también Correos fuera de Madrid, contrario a la instrucción del propietario.
+**Implementación BISON3 del 27/10/2026:** el decorador nativo
+`ops/spree-backend/operations/madrid-delivery.rb` aplica cero exclusivamente al
+método restaurado `entrega-madrid-2026`, tienda 4 y dirección ES/provincia M.
+Usa el usuario autenticado propietario del pedido y consulta la aprobación
+vigente del programa activo en Supabase; deben coincidir ID de cliente y email.
+Invitados, solicitudes pendientes/revocadas, Correos y otros destinos conservan
+su tarifa. No existe cupón público que conceda el beneficio.
 
-Promoción preparada `promo_V0dXmZF31w` **inactiva**, inicio 01/01/2099,
-sin acciones ni reglas. No concede descuentos. Antes de activarla se necesita
-una implementación de backend que limite el beneficio al método local y use
-las aprobaciones/revocaciones BISON3 vigentes; probar invitados, pendientes,
-aprobados, revocados, Madrid local, Madrid Correos y otra provincia. No fingir
-un cero en Next.js ni aceptar un código que el cliente pueda usar en otro destino.
+La consulta privada usa el bot ya existente de Vault, plazo limitado y ninguna
+caché positiva. Si no se puede confirmar la aprobación se conserva la tarifa
+normal. Los pedidos completados conservan el precio de su envío aunque luego
+cambie la aprobación. Las antiguas identidades aprobadas no se transfieren a
+cuentas nuevas: requieren recuperar la cuenta original o una aprobación nueva.
+La antigua promoción global FreeShipping no se activa.
+
+El propietario confirmó 1 kg para el display Tarkir español EAN 5010996290557;
+se actualizó la variante nativa y el worker conserva ese peso en futuros syncs.
 
 La Zone, la Shipping Category, la tarifa y el plazo deben configurarse en
 Spree. Si el método aparece para una dirección fuera de Madrid, se corrige la

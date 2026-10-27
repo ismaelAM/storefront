@@ -4946,12 +4946,13 @@ function paymentAwareFloor(
   costNet: number,
   vatRate: number,
   targetProfitRate: number,
+  fixedContributionEur = 2,
 ): number {
   const denominator =
     1 / (1 + vatRate) - STANDARD_EEA_CARD_RATE - targetProfitRate;
   if (denominator <= 0)
     throw new Error("Margen objetivo incompatible con IVA/comisiones");
-  return (costNet + STANDARD_EEA_CARD_FIXED_EUR) / denominator;
+  return (costNet + STANDARD_EEA_CARD_FIXED_EUR + fixedContributionEur) / denominator;
 }
 
 const TCGFACTORY_MOQ_DEFAULT_THRESHOLD = 4;
@@ -5077,11 +5078,12 @@ function competitivePricing(
     supplierConfig,
   );
   const pricingCostNet = product.purchasePrice + minimumOrderSurchargeNet;
-  const floor = paymentAwareFloor(pricingCostNet, vatRate, targetProfitRate);
+  const floor = paymentAwareFloor(pricingCostNet, vatRate, targetProfitRate, book ? 0 : 2);
   // Convert the net inventory-risk amount into the gross checkout amount
   // required to recover it after VAT and Stripe's percentage fee.
   const surchargeRecoveryDenominator =
     1 / (1 + vatRate) - STANDARD_EEA_CARD_RATE;
+  const fixedContributionGross = book ? 0 : 2 / surchargeRecoveryDenominator;
   const minimumOrderSurchargeGross =
     minimumOrderSurchargeNet > 0 && surchargeRecoveryDenominator > 0
       ? minimumOrderSurchargeNet / surchargeRecoveryDenominator
@@ -5102,7 +5104,7 @@ function competitivePricing(
     });
     const discount = book ? 0.05 : commercialProfile.referenceDiscount;
     const marketTarget = referenceGross * (1 - discount);
-    raw = Math.max(floor, marketTarget + minimumOrderSurchargeGross);
+    raw = Math.max(floor, marketTarget + minimumOrderSurchargeGross + fixedContributionGross);
     ruleSource = book
       ? "devir_rrp_fixed_book_5pct"
       : "devir_rrp_competitive_discount";
@@ -5189,7 +5191,8 @@ function shippingDefaults(
   if (key === "tcg/mtg" || key === "tcg/yugioh") {
     if (/display|cart[oó]n|caja|\(\s*\d{2,}\s*\)|booster box/i.test(name)) {
       return {
-        weight: 1.5,
+        // Owner-confirmed Spanish Tarkir display weight, 27 October 2026.
+        weight: product.sku === "5010996290557" ? 1 : 1.5,
         height: 25,
         width: 18,
         depth: 15,
@@ -7955,7 +7958,7 @@ function specialProgramPrice(
 ): number {
   const vatRate = vatRateForSku(sku);
   return (
-    Math.ceil(paymentAwareFloor(cost, vatRate, targetMargin) * 100 - 1e-9) / 100
+    Math.ceil(paymentAwareFloor(cost, vatRate, targetMargin, isBookSku(sku) ? 0 : 2) * 100 - 1e-9) / 100
   );
 }
 
@@ -8013,6 +8016,22 @@ async function ensureSpecialPriceList(
 
   program.spree_price_list_id = created.id;
   return created;
+}
+
+async function specialShippingEligibility(body: Record<string, unknown>): Promise<boolean> {
+  const customerId = typeof body.customerId === "string" ? body.customerId.trim() : "";
+  const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+  if (!/^[a-z]+_[a-zA-Z0-9]+$/.test(customerId) || !email || email.length > 320) return false;
+  const { data: program, error: programError } = await supabase
+    .from("special_pricing_programs").select("active").eq("code", "BISON3").maybeSingle();
+  if (programError) throw new Error("Eligibility unavailable");
+  if (program?.active !== true) return false;
+  const { data: approval, error: approvalError } = await supabase
+    .from("special_pricing_requests").select("id")
+    .eq("program_code", "BISON3").eq("status", "approved")
+    .eq("spree_customer_id", customerId).eq("email", email).maybeSingle();
+  if (approvalError) throw new Error("Eligibility unavailable");
+  return Boolean(approval);
 }
 
 async function approvedSpecialCustomerIds(
@@ -8917,6 +8936,7 @@ async function applyMerchandisingOffers(
       purchasePrice,
       vatRate,
       book ? 0.02 : 0.01,
+      book ? 0 : 2,
     );
 
     if (offer.amount + 0.005 < safetyFloor) {
@@ -10511,6 +10531,10 @@ async function operatorAction(
     !(await operatorAuthorized(config, providedKey))
   ) {
     return json({ error: "unauthorized" }, 401);
+  }
+
+  if (action === "special-pricing-shipping-eligibility") {
+    return json({ ok: true, eligible: await specialShippingEligibility(body) });
   }
 
   if (action === "credentials") {

@@ -30,7 +30,9 @@ Usa únicamente las categorías físicas existentes 1 Default, 2 Predeterminado 
 productos. Correos conserva mínimos exclusivos, máximos inclusivos y límite de
 30 kg; un envío de peso cero no recibe Correos. Madrid conserva una tarifa fija
 sin introducir límites de peso que no estaban documentados. No se inventan
-tarifas para Portugal ni se activa la promoción BISON3 pendiente.
+tarifas para Portugal ni se activa una promoción global FreeShipping. El
+decorador `operations/madrid-delivery.rb` concede el beneficio BISON3 sólo al
+método local, con aprobación vigente por cuenta; véase `SHIPPING.md`.
 
 Las escrituras usan modelos Rails dentro de una transacción y un bloqueo
 consultivo transaccional. Cada fila lleva un identificador fijo de restauración.
