@@ -30,7 +30,7 @@ Plan:
 - [x] Reuse the scoped field snapshot and compare provenance without volatile dates.
 - [x] Verify meaningful changes, other variants, manual fields, failure/retry and
       unchanged native stock/price safeguards; run the full test suite and TypeScript.
-- [ ] Review, commit directly to main, deploy only the Supabase worker with its
+- [x] Review, commit directly to main, deploy only the Supabase worker with its
       existing dependency bundle/authentication, and verify a bounded real tick.
 
 Do not describe request savings as measured invoice savings. Supabase Free has
@@ -43,3 +43,20 @@ ways before the change and all nine passed after it. The full suite passed:
 review found no blocker. The upload was checked against the active v140 bundle:
 all nine shared dependencies are unchanged and the patched entrypoint matches
 the tested local file. Authentication remains unchanged.
+
+Published implementation: main commit `1912f0ee2a756d28b144523dd924f60e56161b40`.
+Supabase `devir-sync` v141 is ACTIVE; readback matched all ten uploaded files
+exactly, with existing authentication retained. No Vercel deployment was created.
+One authenticated, bounded supplier reconciliation returned HTTP 200,
+`reconciled: 1`, `failed: 0`, without a timeout. The sampled variant already had
+a native mapping and a currently eligible supplier observation.
+
+The 3-to-1 result applies to metadata reads within the tested existing-product
+reconciliation. It is not a measured 67% reduction of total Vercel usage. The
+supplier cadence remains every 30 minutes, so catalogue progress and availability
+expiry are not delayed by this optimization.
+
+Post-check: physical inventory remains one nonzero row with exactly six Tarkir
+units; native payments remain zero. Conditional mail work is false and its cron
+stays active. The catalogue is still progressing: 466 product jobs done, 559
+pending and 20 held errors, with phase products and no config error or lock.
