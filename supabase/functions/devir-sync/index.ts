@@ -1631,6 +1631,23 @@ async function upsertProductFields(
   }
 }
 
+function catalogProvenanceSignature(value: unknown): string {
+  const normalize = (entry: unknown, path: string): unknown => {
+    if (Array.isArray(entry)) {
+      const items = entry.map(item => normalize(item, path + ".*"));
+      return path === "offers"
+        ? items.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
+        : items;
+    }
+    if (!entry || typeof entry !== "object") return entry;
+    return Object.fromEntries(Object.entries(entry).sort(([a], [b]) => a.localeCompare(b))
+      .filter(([key]) => !(path === "selectedSupplier" && key === "selectedAt") &&
+        !(path === "offers.*" && key === "lastSeenAt"))
+      .map(([key, item]) => [key, normalize(item, path ? path + "." + key : key)]));
+  };
+  return JSON.stringify(normalize(value, "")) ?? "";
+}
+
 async function upsertVariantProvenance(
   config: ConfigRow,
   productId: string,
@@ -1640,8 +1657,9 @@ async function upsertVariantProvenance(
   options: Record<string, string>,
   selected: { supplier: CatalogSupplierRow; offer: CatalogOfferRow } | null,
   offers: CatalogOfferSelection["offers"],
+  currentFields?: SpreeCustomField[],
 ): Promise<void> {
-  const fields = await productFields(config, productId);
+  const fields = currentFields ?? (await productFields(config, productId));
   const current = fields.find(
     (field) =>
       field.key === "sourcing.variant_provenance" ||
@@ -1675,7 +1693,7 @@ async function upsertVariantProvenance(
     document = { version: 1, variants: {} };
   }
 
-  document.variants[variantId] = {
+  const nextEntry = {
     canonicalSku,
     options,
     selectedSupplier: selected
@@ -1693,6 +1711,11 @@ async function upsertVariantProvenance(
       : null,
     offers,
   };
+
+  // Supabase retains every observation and selection-history timestamp. Spree
+  // only needs a new private document when its commercial provenance changes.
+  if (catalogProvenanceSignature(document.variants[variantId]) === catalogProvenanceSignature(nextEntry)) return;
+  document.variants[variantId] = nextEntry;
 
   await upsertProductFields(
     config,
@@ -3408,8 +3431,9 @@ async function syncProductToSpree(
     );
   }
 
+  const currentFields = existing ? await productFields(config, existing.product.id) : undefined;
   if (existing && catalogContext) {
-    const adopted = await adoptPublishedCatalogReview(config, existing.product, reasons);
+    const adopted = await adoptPublishedCatalogReview(config, existing.product, reasons, currentFields);
     if (adopted) {
       catalogContext.reviewDecision = adopted.review_decision;
       catalogContext.approvedReviewFingerprint = adopted.approved_review_fingerprint;
@@ -3472,7 +3496,7 @@ async function syncProductToSpree(
   } else {
     productId = existing.product.id;
     variantId = existing.variant.id;
-    const fields = await productFields(config, productId);
+    const fields = currentFields ?? (await productFields(config, productId));
     let catalogLastAuto = Number(catalogContext?.lastAutoPrice);
     let needsManagedCleanup = false;
     if (sourceCode === "devir") {
@@ -3617,7 +3641,7 @@ async function syncProductToSpree(
     "pricing.cost_includes_vat": false,
     "pricing.last_synced_price": manualPrice ? undefined : pricing.retail,
     "pricing.manual_price_override": manualPrice,
-  });
+  }, currentFields);
 
   if (catalogContext && variantId) {
     await upsertVariantProvenance(
@@ -3629,6 +3653,7 @@ async function syncProductToSpree(
       catalogContext.options,
       { supplier: catalogContext.supplier, offer: catalogContext.offer },
       catalogContext.offers,
+      currentFields,
     );
   }
 
@@ -7385,6 +7410,7 @@ async function adoptPublishedCatalogReview(
   config: ConfigRow,
   product: SpreeProduct,
   currentReasons: Iterable<string> = [],
+  currentFields?: SpreeCustomField[],
 ): Promise<Pick<CatalogProductRow, "review_decision" | "approved_review_fingerprint"> | null> {
   const { data: policy, error } = await supabase.from("catalog_products")
     .select("id,review_decision,approved_review_fingerprint,updated_at")
@@ -7393,7 +7419,7 @@ async function adoptPublishedCatalogReview(
   if (!policy) return null;
   if (policy.review_decision === "rejected" || product.status !== "active" || !(product.tags ?? []).some(tag =>
     ["catalog-review", "devir-review", "REVISION-HUMANA", "NECESITA-TU-AYUDA"].includes(tag))) return policy;
-  const fields = await productFields(config, product.id);
+  const fields = currentFields ?? (await productFields(config, product.id));
   const recorded = String(fields.find(field => field.key === "catalog.review_pending_fingerprint")?.value ?? "");
   // Legacy products already have the human-readable reasons displayed in Spree.
   // Only adopt reasons actually displayed there, never newly discovered issues.
