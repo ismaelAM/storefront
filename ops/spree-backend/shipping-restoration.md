@@ -46,3 +46,26 @@ categorías. Se ejecuta con Ruby en la imagen oficial; si el gem no está en la
 ruta normal, `SPREE_FLAT_RATE_SOURCE` puede apuntar al archivo FlatRate de Spree
 5.6.1. Los dobles de persistencia no sustituyen la verificación posterior de
 recuentos y de un carrito real en el backend propio.
+
+## Inventario al abandonar un checkout
+
+La verificación real descubrió que los callbacks nativos `Shipment#after_cancel`
+y `after_resume` también reponen/descuentan el manifiesto de carritos sin
+completar, aunque la propuesta de envío nunca descontó esas unidades. Eliminar
+los dos carritos de diagnóstico añadió una unidad física de Tarkir y una unidad
+bajo pedido. Ambas cantidades se corrigieron mediante la Admin API nativa,
+comprobando antes los valores exactos y la ausencia de pedidos completados:
+Tarkir vuelve a 6, el otro producto vuelve a 0. No se modificaron otros carritos.
+
+`BisonShipmentInventoryGuard` limita esos dos callbacks de inventario a pedidos
+con `completed_at` o estado `complete`. Este último caso es necesario porque
+`Order#finalize!` llama a `Shipment#finalize!` antes de guardar `completed_at`.
+El guard conserva el descuento inicial y las devoluciones/reanudaciones de
+pedidos completados; no cambia transiciones ni los callbacks de eventos. Se
+instala con `to_prepare` tanto en la imagen web como en la imagen de operaciones.
+
+La regresión usa los callbacks del código Spree fijado: falla antes del guard y
+pasa con él para abandono repetido, cancelación/reanudación de pedidos
+completados y finalización previa a `completed_at`. La prueba aislada no acredita
+la carga de Rails: después de desplegar hay que crear y retirar un carrito de
+diagnóstico y confirmar que el inventario permanece exactamente igual.

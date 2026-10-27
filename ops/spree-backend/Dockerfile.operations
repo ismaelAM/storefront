@@ -5,6 +5,8 @@ FROM vcr.vercel.com/bison-tcg/bisontcg-spree/dockerfile@sha256:2f82d22c203457a8b
 COPY --chown=1000:1000 config/database.yml config/queue.yml /rails/config/
 COPY --chown=1000:1000 config/initializers/runtime_guard.rb /rails/config/initializers/
 COPY --chown=1000:1000 config/initializers/recovery_identity.rb /rails/config/initializers/
+COPY --chown=1000:1000 operations/shipment-inventory-guard.rb operations/shipment-inventory-guard.test.rb /rails/
+COPY --chown=1000:1000 operations/shipment-inventory-initializer.rb /rails/config/initializers/bison_shipment_inventory.rb
 COPY --chown=1000:1000 --chmod=644 operations/initialize.sh /rails/initialize.sh
 COPY --chown=1000:1000 --chmod=644 operations/configure-store.sh operations/configure-store.rb /rails/
 COPY --chown=1000:1000 --chmod=644 operations/catalog-plan.rb operations/catalog-plan.test.rb operations/import-catalog.rb operations/import-catalog.sh operations/worker.sh /rails/
@@ -23,4 +25,5 @@ RUN ruby /rails/media-source.test.rb && ruby -c /rails/import-media.rb && sh -n 
 RUN bundle exec ruby /rails/media-transform.test.rb
 RUN ruby /rails/catalog-recovery.test.rb && ruby -c /rails/catalog-recovery.rb && sh -n /rails/catalog-recovery.sh
 RUN ruby /rails/recovery-identity.test.rb
+RUN ruby -c /rails/shipment-inventory-guard.rb && ruby -c /rails/config/initializers/bison_shipment_inventory.rb && bundle exec ruby /rails/shipment-inventory-guard.test.rb
 ENTRYPOINT ["/bin/sh", "/rails/initialize.sh"]
