@@ -1,5 +1,15 @@
 # Catálogo multidistribuidor
 
+## Estado vigente — 28/10/2026
+
+Devir ha sido retirado por petición del propietario. Su crawler y sus ofertas
+están deshabilitados; TCGFactory y el mantenimiento siguen usando la función
+compartida `devir-sync` y el cron horario existente. No borrar esos recursos ni
+sus secretos por su nombre histórico. Productos exclusivos sin stock físico se
+archivan; productos compartidos y existencias reales se conservan. Ver
+`ops/spree-backend/devir-retirement-20261028.md` para alcance y evidencia.
+
+
 El catálogo separa la identidad comercial de Spree de las ofertas de compra. Un
 producto/variante existe una sola vez; cada distribuidor aporta una oferta para
 esa variante y el worker selecciona la oferta elegible de menor coste.
