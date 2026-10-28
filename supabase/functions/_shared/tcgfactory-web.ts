@@ -475,7 +475,12 @@ export function parseTcgFactoryPublicProduct(
   if (!officialUrl || !/\/es\/distribucion\//i.test(officialUrl)) {
     throw new Error("URL de producto TcgFactory no válida");
   }
-  const text = stripHtml(html);
+  // Header language selectors and recommended products are not attributes or
+  // purchase permissions for the current product.
+  const primaryHtml = html.replace(/<article\b[^>]*class=["'][^"']*product-miniature[^"']*["'][\s\S]*?<\/article>/gi, "");
+  const productStart = primaryHtml.search(/<h1\b/i);
+  const productHtml = productStart >= 0 ? primaryHtml.slice(productStart) : primaryHtml;
+  const text = stripHtml(productHtml);
   const lines = text.split("\n");
   const h1 = decodeHtml(
     html.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i)?.[1]?.replace(/<[^>]+>/g, " ") ??
@@ -547,6 +552,12 @@ export function parseTcgFactoryPublicProduct(
       .pop()!
       .replace(/\.html$/i, "");
 
+  const blockedControl = Array.from(productHtml.matchAll(/<(button|span)\b[^>]*>([\s\S]*?)<\/\1>/gi))
+    .some(match => /\b(?:bloquead[oa]s?|blocked)\b/i.test(stripHtml(match[2]))) ||
+    Array.from(productHtml.matchAll(/<input\b[^>]*>/gi)).some(match =>
+      /\btype=["'](?:button|submit)["']/i.test(match[0]) &&
+      /\b(?:bloquead[oa]s?|blocked)\b|\bsolo tiendas tcg\+(?:\s|$)/i.test(decodeHtml(match[0].match(/\bvalue=["']([^"']*)/i)?.[1] ?? "")));
+
   return {
     sourceUrl: officialUrl,
     externalProductId: officialUrl,
@@ -559,7 +570,7 @@ export function parseTcgFactoryPublicProduct(
     manufacturerSku: reference,
     options,
     referencePriceNet: referencePriceFromHtml(html),
-    availability: mapTcgFactoryPublicAvailability(reportedAvailability),
+    availability: blockedControl ? "unavailable" : mapTcgFactoryPublicAvailability(reportedAvailability),
     reportedAvailability,
     releaseDate,
     imageUrls: images(html, officialUrl),

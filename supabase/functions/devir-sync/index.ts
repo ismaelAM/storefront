@@ -2079,6 +2079,7 @@ async function enforceVariantFulfillmentFlags(
         "/variants/" +
         encodeURIComponent(variantId),
       {
+        track_inventory: true,
         preorderable: false,
         preorder_ships_at: null,
       },
@@ -3124,6 +3125,12 @@ async function reconcileCatalogVariantUnlocked(
   if (!selection.selected || !selection.selectedSupplier) {
     const mappedProductId =
       mapping.product?.id ?? resolution.product.spree_product_id;
+    const rejected = resolution.product.review_decision === "rejected";
+    if (mappedProductId && (rejected || resolution.variant.fulfillment_mode === "disabled")) {
+      const drafted = await spreeRequest<SpreeProduct>(config, "PATCH", "/products/" + encodeURIComponent(mappedProductId), { status: "draft" });
+      if (drafted.status !== "draft") throw new Error("Spree no confirmó el bloqueo del producto");
+      await syncHomePreorderMembership(config, drafted);
+    }
     if (resolution.variant.spree_variant_id) {
       await enforceVariantFulfillmentFlags(
         config,
@@ -3164,7 +3171,7 @@ async function reconcileCatalogVariantUnlocked(
       productId: mapping.product?.id ?? null,
       variantId: mapping.variant?.id ?? null,
       images: 0,
-      review: false,
+      review: rejected,
       reviewReasons: [],
       backorderItems: 0,
       lastAutoPrice: null,
@@ -11142,12 +11149,14 @@ async function operatorAction(
     }
 
     await markCatalogProductDirty(spreeProductId);
-    const prepared = await preparePublishBatch(
-      config,
-      0,
-      1,
-      spreeProductId,
-    );
+    // Canonical supplier products need not have a legacy devir_sync_catalog
+    // row. Enforce the decision on every actual variant immediately.
+    const categories = await spreeCategories(config);
+    const defs = await definitions(config);
+    for (const variantPolicy of variantPolicies ?? []) {
+      await reconcileCatalogVariant(config, await loadCatalogVariant(String(variantPolicy.id)), categories, defs);
+    }
+    const prepared = { processed_products: 1, variants_updated: (variantPolicies ?? []).length };
 
     const { data: refreshedProduct, error: refreshedProductError } =
       await supabase
