@@ -87,3 +87,48 @@ retiring a source does not establish a monetary saving percentage.
 The public home rendered its current catalogue, offers and upcoming products
 after withdrawal; removed Fauna/Star Realms cards were absent from the initial
 catalogue grid. This does not certify every public route.
+
+
+## Empty categories — 29 October 2026
+
+The owner subsequently authorized deleting empty categories after investigating
+TCGFactory content. No additional categories had become empty and no previously
+active unrelated product had been archived since retirement. Native Dungeons &
+Dragons retains 22 active products and eight drafts, backed by 30 canonical
+TCGFactory products/offers. Other TCGFactory Warhammer matches are accessories or
+merchandise; no role-playing product or discovery row requires the removed RPG
+subcategories in the inspected source catalog. The supplier crawl is incomplete,
+so this does not claim an exhaustive inventory of the supplier's external site.
+
+Seven categories were removed: Manga y cómic, Rol / Pathfinder, Rol / Warhammer,
+Rol / Otros juegos de rol, TCG / Topps, TCG / Icoins and TCG / Panini. All were
+leaves without active/draft products or physical stock. Preserve Cyberpunk's
+seven drafts and Infantil's unavailable TCGFactory discovery item, Make' N' Break
+Junior. These two categories remain empty publicly but have supplier content.
+
+Category bootstrap used to recreate all seven on a fresh supplier crawl. The
+minimal worker change respects `catalog_suppliers.config.retiredCategoryKeys`
+for TCGFactory during category creation and margin setup. Supabase `devir-sync`
+v154 is active, with its prior custom authentication and identical dependencies;
+source comparison confirmed the deployed files match the local change. No
+Vercel application deployment was needed. To restore a retired category for a
+new feed, remove its key from this setting before running category setup/import.
+
+The existing private checkpoint payload on each database now includes an
+`empty_categories_20261029` section. The native snapshot retains all 43 original
+nodes, 137 target classifications, translations, metafields, product statuses
+and stock identity/quantities. The source snapshot retains the supplier config,
+shared cron and TCGFactory cursor. Category DELETEs used official Admin API
+prefixed IDs matched by exact unique permalink, sequentially for tree callbacks.
+Requests49984–49990 each returned HTTP204. Initial numeric-ID request49982
+returned404 without changing anything; request49983 obtained authoritative IDs.
+
+Final native readback: 36 categories, all seven targets absent, no retained node
+parent/name/permalink changes, no dangling category parent, no product status or
+deletion changes, no missing products, and no stock identity, location, quantity
+or deletion changes. D&D, Rol, Infantil and Cyberpunk remain. Source readback
+confirms Devir stays disabled with zero selections, TCGFactory stays enabled,
+its other settings are unchanged, and shared cron/crawl cursor are unchanged.
+The regression failed before the fix and passed afterward; all 980 application
+tests, TypeScript and diff checks pass. Category listing has an existing remote
+cache; this operation does not certify immediate expiration of every cached menu.

@@ -12,3 +12,23 @@ Execute inline using the existing supported controls; avoid application deployme
 Implementation ruling: “remove” means reversible withdrawal from sale, retaining identities/history and backups. Existing supported runtime controls avoid a paid Vercel rebuild. A shared product is preserved even if the other supplier is temporarily stale; no equivalence is inferred from product titles or from the legacy `devir-*` tags used by both suppliers.
 
 Final evidence and the old-URL UI limitation: `ops/spree-backend/devir-retirement-20261028.md`.
+
+
+## Empty category follow-up — 29 October 2026
+
+Owner authorizes deleting empty categories only after checking pending TCGFactory
+content and whether other categories are still emptying. No additional category
+has become empty. D&D retains 22 active and eight draft products. Preserve
+Cyberpunk (seven drafts) and Infantil (one unavailable discovery item).
+
+- [x] Inspect canonical supplier offers/discovery and native descendants, draft
+  products, archived products and other status changes.
+- [x] Add and verify a failing regression for category bootstrap recreating
+  seven retired keys; honor persisted TCGFactory `config.retiredCategoryKeys`.
+- [x] Checkpoint categories, classifications, metadata and product/stock state
+  privately; deploy only the minimal Supabase worker change, preserving custom
+  authentication, disabled Devir, shared cron and TCGFactory cursor.
+- [x] Persist the seven retired keys; delete only the verified leaf categories
+  through native Admin API, sequentially to preserve tree callbacks.
+- [x] Verify seven removals, retained hierarchy, products and stock; record the
+  resulting Edge version and checks. No Vercel deploy or main merge.
