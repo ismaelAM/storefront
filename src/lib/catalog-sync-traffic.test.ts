@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
+import { canWriteManagedCatalogPrice } from "../../supabase/functions/_shared/catalog-publish-policy";
 
 const source = ts.createSourceFile(
   "index.ts",
@@ -160,7 +161,12 @@ describe("Supabase-managed supplier freshness without timestamp-only Spree write
   });
 });
 
-it("reads existing product metadata once across pricing, review and provenance", async () => {
+it.each([
+  null,
+  20,
+])("preserves metadata while reconciling an existing native price of %s", async (price) => {
+  let storedAutoPrice: number | null = null;
+  let nativePrice = price;
   const product = {
     id: "prod1",
     status: "active",
@@ -173,7 +179,7 @@ it("reads existing product metadata once across pricing, review and provenance",
   const write = vi.fn(async (_config, _method, _path, _body) => product);
   const adopt = vi.fn(async () => null);
   const run = runInNewContext(
-    `${production("syncProductToSpree", "upsertProductFields", "upsertVariantProvenance", "catalogProvenanceSignature", "nativePatchMatches")}; syncProductToSpree`,
+    `${production("syncProductToSpree", "upsertProductFields", "upsertVariantProvenance", "catalogProvenanceSignature", "nativePatchMatches", "variantPrice", "checkpointCatalogSpreeMapping")}; syncProductToSpree`,
     {
       productFields: read,
       spreeRequest: write,
@@ -197,8 +203,21 @@ it("reads existing product metadata once across pricing, review and provenance",
       shouldRequireCatalogReview: () => false,
       effectiveCatalogFulfillmentMode: () => "supplier_or_physical",
       shouldAllowSupplierBackorder: () => true,
-      variantPrice: () => 20,
-      canWriteManagedCatalogPrice: () => false,
+      canWriteManagedCatalogPrice,
+      upsertBasePrice: async (_: unknown, __: unknown, amount: number) => {
+        nativePrice = amount;
+      },
+      supabase: {
+        from: () => ({
+          update: (patch: { last_auto_price?: number }) => ({
+            eq: async () => {
+              if (patch.last_auto_price !== undefined)
+                storedAutoPrice = patch.last_auto_price;
+              return { error: null };
+            },
+          }),
+        }),
+      },
       STANDARD_EEA_CARD_RATE: 0.015,
       STANDARD_EEA_CARD_FIXED_EUR: 0.25,
       catalogReviewFingerprint: () => "none",
@@ -212,7 +231,7 @@ it("reads existing product metadata once across pricing, review and provenance",
       ensureProductsInDefaultChannel: async () => {},
     },
   );
-  await run(
+  const result = await run(
     config,
     {
       sku: "EAN",
@@ -233,6 +252,7 @@ it("reads existing product metadata once across pricing, review and provenance",
       existingProduct: product,
       existingVariant: {
         id: "variant1",
+        price: { amount: price },
         sku: "EAN",
         total_on_hand: 6,
         cost_price: "10.00",
@@ -244,6 +264,9 @@ it("reads existing product metadata once across pricing, review and provenance",
       },
     },
   );
+  expect(nativePrice).toBe(20);
+  expect(storedAutoPrice).toBe(price === null ? 20 : null);
+  expect(result.lastAutoPrice).toBe(price === null ? 20 : null);
   expect(read).toHaveBeenCalledTimes(1);
   expect(adopt).toHaveBeenCalledWith(config, product, [], currentFields);
   expect(currentFields[0].value).toBe("operator value");

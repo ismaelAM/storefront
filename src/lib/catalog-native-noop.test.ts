@@ -16,6 +16,7 @@ const code = ts.transpileModule(
       (node) =>
         ts.isFunctionDeclaration(node) &&
         [
+          "variantPrice",
           "nativePatchMatches",
           "upsertBasePrice",
           "patchVariantInventory",
@@ -45,7 +46,7 @@ function fixture(prices: object[] = []) {
     ) => ({ ...current }),
   );
   const run = runInNewContext(
-    `${code}; ({ upsertBasePrice, patchVariantInventory, matches: typeof nativePatchMatches === 'function' ? nativePatchMatches : () => false })`,
+    `${code}; ({ variantPrice, upsertBasePrice, patchVariantInventory, matches: typeof nativePatchMatches === 'function' ? nativePatchMatches : () => false })`,
     {
       spreeRequest: request,
       spreeList: async () => prices,
@@ -181,5 +182,23 @@ describe("native synchronization skips only verified no-op writes", () => {
     await expect(f.run.upsertBasePrice({}, "variant1", 17)).rejects.toThrow(
       "native unavailable",
     );
+  });
+});
+
+describe("missing native variant prices", () => {
+  it.each([
+    { price: { amount: null } },
+    { price: { amount: "" } },
+    { prices: [{ currency: "EUR", amount: null }] },
+  ])("keeps an absent amount distinct from a free price", (variant) => {
+    expect(fixture().run.variantPrice(variant)).toBeNull();
+  });
+  it.each([
+    0,
+    "0",
+    { amount: 0 },
+    { amount: "0.00" },
+  ])("preserves an explicit zero", (price) => {
+    expect(fixture().run.variantPrice({ price })).toBe(0);
   });
 });

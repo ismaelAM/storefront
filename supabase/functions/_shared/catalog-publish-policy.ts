@@ -129,7 +129,7 @@ export function canWriteManagedCatalogPrice(input: {
 }): boolean {
   if (input.createdVariant) return true;
   if (!input.managed) return false;
-  return input.forceDraftForSplit ||
+  return input.currentPrice === null || input.forceDraftForSplit ||
     isAutoManagedPrice({
       currentPrice: input.currentPrice,
       lastAutoPrice: input.lastAutoPrice,

@@ -4,6 +4,7 @@
     "deploymentEnabled": {
       "main": false,
       "chore/retire-devir": false,
+      "fix/daily-offers": false,
       "migration/spree-owned-backend": false
     }
   },

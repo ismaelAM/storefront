@@ -609,21 +609,7 @@ describe("Manga grouping review policy", () => {
 });
 
 describe("Catalog safety boundaries", () => {
-  it("runs the lightweight stale-supply guard before an active Devir cycle", () => {
-    const staleGuard = rawSource.indexOf(
-      "await reconcileStaleCatalogBatch({ ...config, request_budget:",
-    );
-    const cyclePriority = rawSource.indexOf(
-      "return await processDevirCycleTick(config);",
-    );
-    const optionalMaintenance = rawSource.indexOf(
-      "const maintenance = await runtimeMaintenanceTick(config);",
-    );
-    expect(staleGuard).toBeGreaterThan(0);
-    expect(cyclePriority).toBeGreaterThan(staleGuard);
-    expect(optionalMaintenance).toBeGreaterThan(cyclePriority);
-  });
-
+  // Scheduler order is exercised by the real-entrypoint traces in devir-sync-runtime.test.ts.
   it("keeps the active-crawl stale guard sellability-only", () => {
     expect(rawSource).toContain(
       "async function reconcileStaleCatalogBatch(\n  config: ConfigRow,\n  limit = 20,\n  refreshPublishState = true,",

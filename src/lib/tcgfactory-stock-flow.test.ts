@@ -45,6 +45,8 @@ function fixture(
     refreshCursor?: string;
     slowRefresh?: boolean;
     failDiscovery?: boolean;
+    dailyPriority?: boolean;
+    refreshTurn?: number;
   } = {},
 ) {
   let elapsed = 0;
@@ -61,7 +63,7 @@ function fixture(
   const ingest = vi.fn();
   const state = {
     status: settings.idle ? "idle" : "running",
-    refresh_turn: 1,
+    refresh_turn: settings.refreshTurn ?? 1,
     refresh_after_id: settings.refreshCursor ?? null,
     run_id: "run_1",
     section,
@@ -165,6 +167,16 @@ function fixture(
         ],
       },
     }),
+    loadDailyOfferRefresh: async () =>
+      settings.dailyPriority
+        ? [
+            {
+              id: "priority_offer",
+              source_url:
+                "https://tcgfactory.com/es/distribucion/fundas.html?daily=1",
+            },
+          ]
+        : [],
     tcgFactoryCredentialsConfigured: async () => true,
     tcgFactoryLogin: async () => ({}),
     tcgFactoryTextFetch: async (url: string, session?: unknown) => {
@@ -215,15 +227,23 @@ function fixture(
       fulfillment_mode: "supplier_or_physical",
     }),
     spreeRequest,
-  }) as (config: object) => Promise<Record<string, unknown>>;
+  }) as (
+    config: object,
+    force?: boolean,
+    dailyOnly?: boolean,
+  ) => Promise<Record<string, unknown>>;
   return {
-    tick: (config: object) =>
-      tick({
-        ...config,
-        request_budget: {
-          deadline_at: new Date("2026-10-09T17:01:00Z").getTime() + 95_000,
+    tick: (config: object, force = false, dailyOnly = false) =>
+      tick(
+        {
+          ...config,
+          request_budget: {
+            deadline_at: new Date("2026-10-09T17:01:00Z").getTime() + 95_000,
+          },
         },
-      }),
+        force,
+        dailyOnly,
+      ),
     writes,
     reconcile,
     spreeRequest,
@@ -396,4 +416,63 @@ describe("TcgFactory restock transition", () => {
     expect(f.reconcile).toHaveBeenCalledOnce();
     expect(f.spreeRequest).not.toHaveBeenCalled();
   });
+});
+
+it("uses bounded daily candidates without moving the ordinary refresh or discovery cursor", async () => {
+  const f = fixture(0, false, false, "merchandising", 133, true, {
+    dailyPriority: true,
+    refreshCursor: "ordinary_cursor",
+  });
+  const result = await f.tick({});
+  expect(result.status).toBe("refreshing_offers");
+  expect(f.fetches[0]).toContain("?daily=1");
+  expect(
+    f.writes
+      .filter((w) => w.table === "catalog_supplier_crawl_state")
+      .every(
+        (w) =>
+          !("refresh_after_id" in w.body) &&
+          !("item_offset" in w.body) &&
+          !("page" in w.body),
+      ),
+  ).toBe(true);
+  expect(f.complete).not.toHaveBeenCalled();
+});
+
+it("reserves every third ordinary tick for discovery even if daily candidates are still missing", async () => {
+  const f = fixture(0, false, false, "merchandising", 133, false, {
+    dailyPriority: true,
+    refreshTurn: 0,
+  });
+  const result = await f.tick({});
+  expect(result.status).toBe("running");
+  expect(f.fetches[0]).not.toContain("?daily=1");
+  expect(f.writes.some((w) => "item_offset" in w.body)).toBe(true);
+});
+
+it("allows a bounded operator daily refresh without advancing normal scheduler turns", async () => {
+  const f = fixture(0, false, false, "merchandising", 133, false, {
+    dailyPriority: true,
+    refreshTurn: 0,
+  });
+  const result = await f.tick({}, false, true);
+  expect(result.status).toBe("refreshing_offers");
+  expect(f.fetches[0]).toContain("?daily=1");
+  expect(
+    f.writes
+      .filter((w) => w.table === "catalog_supplier_crawl_state")
+      .every(
+        (w) =>
+          !("refresh_turn" in w.body) &&
+          !("refresh_after_id" in w.body) &&
+          !("item_offset" in w.body),
+      ),
+  ).toBe(true);
+});
+it("does not launch a full crawl when an operator daily refresh has no candidates", async () => {
+  const f = fixture(0, false, false, "merchandising", 133, false);
+  const result = await f.tick({}, false, true);
+  expect(result.skipped).toBe("no_due_daily_candidates");
+  expect(f.fetches).toEqual([]);
+  expect(f.writes).toEqual([]);
 });

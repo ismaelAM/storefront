@@ -13,6 +13,7 @@ const source = ts.createSourceFile(
   true,
 );
 const functions = [
+  "dailyOfferPrice",
   "rotateDailyOffersUnlocked",
   "resumeDailyOfferRotation",
   "variantPrice",
@@ -167,7 +168,14 @@ function fixture(products: ProductFixture[], saturday = false, latencyMs = 0) {
       console,
     },
   );
-  return { api, requests, state: () => state };
+  return {
+    api,
+    requests,
+    state: () => state,
+    setState: (value: Record<string, unknown>) => {
+      state = value;
+    },
+  };
 }
 afterEach(() => vi.useRealTimers());
 function productsFor(category: string, count: number): ProductFixture[] {
@@ -257,7 +265,7 @@ describe("Daily offer category rotation", () => {
         cost: 20,
       },
     ]);
-    const offers = (await f.api.rotateDailyOffersUnlocked({})).selected;
+    const offers = (await f.api.rotateDailyOffersUnlocked({}, true)).selected;
     expect(
       offers.map((offer: { productId: string }) => offer.productId),
     ).toEqual(["owned-stock"]);
@@ -336,7 +344,7 @@ describe("Daily offer category rotation", () => {
       { id: "unknown", category: null },
       { id: "paint", category: "pinturas" },
     ]);
-    const offers = (await f.api.rotateDailyOffersUnlocked({})).selected;
+    const offers = (await f.api.rotateDailyOffersUnlocked({}, true)).selected;
     expect(offers).toHaveLength(7);
     expect(
       offers.map((offer: { productId: string }) => offer.productId),
@@ -428,7 +436,7 @@ describe("Daily offer category rotation", () => {
       })),
       ...productsFor("accesorios", 3),
     ]);
-    const offers = (await f.api.rotateDailyOffersUnlocked({})).selected;
+    const offers = (await f.api.rotateDailyOffersUnlocked({}, true)).selected;
     expect(offers).toHaveLength(3);
     expect(
       offers.every(
@@ -454,7 +462,7 @@ describe("Daily offer category rotation", () => {
       },
       { id: "rpg-starter", category: "rol/otros", name: "Set de inicio" },
     ]);
-    const offers = (await f.api.rotateDailyOffersUnlocked({})).selected;
+    const offers = (await f.api.rotateDailyOffersUnlocked({}, true)).selected;
     expect(
       offers.map((offer: { productId: string }) => offer.productId).sort(),
     ).toEqual(["clearance", "rpg-starter"]);
@@ -465,5 +473,38 @@ describe("Daily offer category rotation", () => {
     expect(
       physical.amount / 1.21 - 20 - physical.amount * 0.015 - 0.25,
     ).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe("complete automatic daily rotations", () => {
+  it("does not spend native product requests or replace the list while a category lacks candidates", async () => {
+    const f = fixture(productsFor("tcg/mtg", 3));
+    const result = await f.api.rotateDailyOffersUnlocked({});
+    expect(result.status).toBe("waiting_supply");
+    expect(f.requests).toEqual([]);
+    expect(f.state()).toBeNull();
+  });
+  it("retries an incomplete selection on the same day after supply is repaired", async () => {
+    const f = fixture(balanced());
+    f.setState({
+      day_key: "2026-10-11",
+      spree_price_list_id: "incomplete",
+      last_rotated_at: "done",
+      active_products: [],
+    });
+    expect((await f.api.rotateDailyOffersUnlocked({})).selected).toHaveLength(
+      12,
+    );
+    expect(f.state()!.active_products).toHaveLength(12);
+  });
+  it("keeps the existing price list when live guards reject a category", async () => {
+    const products = balanced().map((p) =>
+      p.category === "merchandising" ? { ...p, purchasable: false } : p,
+    );
+    const f = fixture(products);
+    const result = await f.api.rotateDailyOffersUnlocked({});
+    expect(result.status).toBe("waiting_catalog");
+    expect(f.requests.some((r) => r.method !== "GET")).toBe(false);
+    expect(f.state()).toBeNull();
   });
 });
