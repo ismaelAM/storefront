@@ -46,9 +46,9 @@ Files: worker daily-offer functions, daily-offer/runtime tests.
 
 - [x] Run complete application tests, TypeScript and diff checks.
 - [x] Back up source/native affected pricing and daily state privately; deploy the minimal worker with existing authentication.
-- [ ] Refresh a bounded cohort, regenerate twelve, verify current native/public prices and inventory.
-- [ ] Render and inspect four JPEGs; repair a proven image transport issue if necessary, using one grouped deployment.
-- [ ] Record exact evidence, publish a reviewable PR and report Instagram connection separately.
+- [x] Refresh a bounded cohort, regenerate twelve, verify current native/public prices and inventory.
+- [x] Render and inspect four JPEGs; repair a proven image transport issue if necessary, using one grouped deployment.
+- [x] Record exact evidence, publish a reviewable PR and report Instagram connection separately.
 
 ## Live progress
 
@@ -91,5 +91,49 @@ Files: worker daily-offer functions, daily-offer/runtime tests.
 - Existing authorized reconciliation repaired the remaining absent Funko price.
   A scoped native POST also created the absent Reality Fracture base price and
   native SQL verified the exact amount, currency and variant.
-- Normal rotation validation is still pending complete public/native readback;
-  do not describe today's twelve offers or the four JPEGs as verified yet.
+- Normal rotation completed with twelve products, exactly three per group,
+  price list `pl_nJqfPa3Cpe`, native ID 9. It contains twelve EUR price rows and
+  expires at 23:00 UTC (midnight Madrid). Public variant prices, comparison
+  prices, purchasability, daily tags and list IDs match the saved selection.
+
+## Image completion and final verification
+
+- Four newly synchronized products lacked photos. The pinned official
+  `spree_api-5.6.1` MediaController confirms URL uploads return HTTP 202 and
+  enqueue `Spree::Images::SaveFromUrlJob`; the general worker intentionally
+  remains at zero. This was an actual missing attachment, not a redirect issue.
+- Worker v158 uses the official direct-upload flow: fetch bounded validated
+  supplier image bytes, create upload metadata with an MD5 checksum, PUT to the
+  signed owned storage destination, and attach the signed blob to the product.
+  No background worker or additional cron is started. Existing galleries remain.
+- The real-worker regression failed with the queued-only behavior, then passed
+  with a confirmed native attachment. Full suite 1,017/1,017; TypeScript/diff clean.
+  The initial pricing/scheduling repair received independent review; the last
+  image change was self-reviewed against the pinned official controller and its
+  real API contract after the reviewer became unavailable.
+- The four missing primary photos were downloaded from their exact supplier
+  offers, checked as raster images, uploaded with the same official flow and
+  attached with HTTP 201 and a nonempty `original_url`. Historical queued image
+  jobs remain untouched; keep the general worker off as previously configured.
+- All twelve public photo URLs returned HTTP 200 and valid JPEG/WebP bytes.
+  The production `buildSocialOffers` function accepts all twelve current public
+  products. One transient HTTP 500 in the final public reread succeeded on retry;
+  the installed Spree SDK already retries 500s twice. No pool-limit error was
+  returned by the scoped native log lookup; the existing backend connection
+  budget remains a separate operational limit.
+- Rendered and visually inspected four real 1080×1350 JPEGs, three offers each:
+  TCG 160,576 bytes, games 146,501, accessories 160,920, merchandising 121,154.
+  The workspace's Node DNS route is unavailable, so public images were fetched
+  and validated through its HTTP proxy and the exact captured bytes passed to
+  the unchanged production renderer. The public transport and render were
+  checked separately. No generated placeholder or altered price was used.
+- These JPEGs are local verification outputs. The production publication cron
+  was not manually triggered and no Instagram post was sent. Production has
+  `STORE_INSTAGRAM` only; publishing account/token variables are still absent.
+- Final native checks: zero physical quantity differences, 899 archived
+  products preserved; Devir crawler disabled, zero active/selected Devir offers.
+  Shared supplier cron remains active hourly. Native mail checks continue to
+  succeed in milliseconds after the separate #95 recovery.
+- Public Home returns HTTP 200 with products and no error digest. No Vercel
+  frontend/backend rebuild, daemon activation or automatic main merge was needed.
+- Source is published for review in PR #96; incident recovery is PR #95.

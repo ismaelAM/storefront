@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { createHash } from "node:crypto";
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import {
   canWriteManagedCatalogPrice,
@@ -2168,6 +2169,81 @@ async function syncApprovedSupplierPackChildren(
   return changed;
 }
 
+async function supplierImageBytes(config: ConfigRow, rawUrl: string): Promise<{ bytes: Uint8Array; contentType: string }> {
+  const url = new URL(rawUrl);
+  if (url.protocol !== "https:" || url.username || url.password || url.port ||
+    !["tcgfactory.com", "devirinvestments.s3.eu-west-1.amazonaws.com"].includes(url.hostname)) {
+    throw new Error("Unsupported supplier image origin");
+  }
+  const remaining = Math.min(12_000, (config.request_budget?.deadline_at ?? Date.now() + 12_000) - Date.now());
+  if (remaining <= 0) throw syncDeferred();
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      (async () => {
+        const response = await fetch(url.href, { signal: controller.signal, redirect: "error" });
+        const contentType = response.headers.get("content-type")?.split(";")[0].trim().toLowerCase() ?? "";
+        const limit = 5 * 1024 * 1024;
+        if (!response.ok || !["image/jpeg", "image/png", "image/webp"].includes(contentType) ||
+          Number(response.headers.get("content-length")) > limit || !response.body) {
+          await response.body?.cancel();
+          throw new Error("Supplier image unavailable or unsupported");
+        }
+        const reader = response.body.getReader();
+        const chunks: Uint8Array[] = [];
+        let length = 0;
+        for (;;) {
+          const chunk = await reader.read();
+          if (chunk.done) break;
+          length += chunk.value.length;
+          if (length > limit) { await reader.cancel(); throw new Error("Supplier image exceeds byte limit"); }
+          chunks.push(chunk.value);
+        }
+        const bytes = new Uint8Array(length);
+        let offset = 0;
+        for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+        const jpeg = bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255;
+        const png = [137, 80, 78, 71, 13, 10, 26, 10].every((b, i) => bytes[i] === b);
+        const webp = new TextDecoder().decode(bytes.subarray(0, 4)) === "RIFF" &&
+          new TextDecoder().decode(bytes.subarray(8, 12)) === "WEBP";
+        if (!(contentType === "image/jpeg" && jpeg || contentType === "image/png" && png || contentType === "image/webp" && webp)) {
+          throw new Error("Invalid supplier image signature");
+        }
+        return { bytes, contentType };
+      })(),
+      new Promise<never>((_, reject) => { timer = setTimeout(() => { controller.abort(); reject(syncDeferred()); }, remaining); }),
+    ]);
+  } finally { clearTimeout(timer); }
+}
+
+async function uploadSupplierImage(config: ConfigRow, productId: string, productName: string, url: string, position: number): Promise<void> {
+  const { bytes, contentType } = await supplierImageBytes(config, url);
+  const upload = await spreeRequest<{ signed_id: string; direct_upload: { url: string; headers: Record<string, string> } }>(
+    config, "POST", "/direct_uploads", { blob: {
+      filename: new URL(url).pathname.split("/").pop() || "supplier-image",
+      byte_size: bytes.length, checksum: createHash("md5").update(bytes).digest("base64"), content_type: contentType,
+    } },
+  );
+  const destination = new URL(upload.direct_upload.url);
+  const ownedStorage = ["dtrospakebdiqihhcrub.storage.supabase.co", "dtrospakebdiqihhcrub.supabase.co"].includes(destination.hostname) &&
+    destination.pathname.startsWith("/storage/v1/s3/");
+  const s3 = /^(?:[a-z0-9][a-z0-9.-]*\.)?s3(?:[.-][a-z0-9-]+)?\.amazonaws\.com$/.test(destination.hostname);
+  if (destination.protocol !== "https:" || destination.username || destination.password || destination.port ||
+    !(ownedStorage || s3) || !destination.searchParams.has("X-Amz-Signature") || !upload.signed_id) {
+    throw new Error("Unsupported direct image upload destination");
+  }
+  const { response } = await fetchSyncText(destination.href, {
+    method: "PUT", headers: upload.direct_upload.headers, body: bytes,
+  }, config.request_budget);
+  if (!response.ok) throw new Error("Native image object upload failed");
+  const media = await spreeRequest<{ id?: string; original_url?: string | null }>(
+    config, "POST", "/products/" + encodeURIComponent(productId) + "/media",
+    { signed_id: upload.signed_id, alt: productName, position },
+  );
+  if (!media.id || !media.original_url) throw new Error("Native image attachment was not confirmed");
+}
+
 async function syncImages(
   config: ConfigRow,
   productId: string,
@@ -2182,11 +2258,9 @@ async function syncImages(
   let uploaded = 0;
   for (const [index, url] of product.imageUrls.entries()) {
     try {
-      await spreeRequest(config, "POST", "/products/" + productId + "/media", {
-        url,
-        alt: product.name,
-        position: index + 1,
-      });
+      // URL imports enqueue a job. Direct uploads attach the image now, even
+      // while the general background worker is intentionally scaled to zero.
+      await uploadSupplierImage(config, productId, product.name, url, index + 1);
       uploaded += 1;
     } catch (error) {
       if (isSyncDeferred(error)) throw error;
