@@ -3,6 +3,7 @@ import {
   commercialPricingProfile,
   deterministicOfferScore,
   madridCommercialDay,
+  madridCommercialDayEndsAt,
   rotatingOfferDiscount,
   rotatingOfferFloorMargin,
 } from "../../supabase/functions/_shared/commercial-pricing-policy";
@@ -106,4 +107,13 @@ describe("commercial pricing policy", () => {
       deterministicOfferScore("2026-09-26", "variant-a"),
     );
   });
+});
+
+
+it.each([
+  ["2026-10-29T12:00:00Z","2026-10-29T23:00:00.000Z"],
+  ["2026-03-29T12:00:00Z","2026-03-29T22:00:00.000Z"],
+  ["2026-10-25T12:00:00Z","2026-10-25T23:00:00.000Z"],
+])("expires a Madrid daily offer at the next local midnight, including DST (%s)", (now, expected) => {
+  expect(madridCommercialDayEndsAt(new Date(now))).toBe(expected);
 });

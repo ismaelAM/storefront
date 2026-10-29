@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { createHash } from "node:crypto";
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import {
   canWriteManagedCatalogPrice,
@@ -36,14 +37,19 @@ import {
   commercialPricingProfile,
   deterministicOfferScore,
   madridCommercialDay,
+  madridCommercialDayEndsAt,
   rotatingOfferDiscount,
   rotatingOfferFloorMargin,
 } from "../_shared/commercial-pricing-policy.ts";
 import {
   dailyOfferCategory,
+  dailyOfferSelectionComplete,
+  DAILY_OFFER_CATEGORIES,
   DAILY_OFFERS_PER_CATEGORY,
   DAILY_OFFER_TARGET_COUNT,
   interleaveDailyOfferCandidates,
+  planDailyOfferRefresh,
+  type DailyOfferRefreshCandidate,
   type DailyOfferCategory,
 } from "../_shared/daily-offer-selection.ts";
 import {
@@ -1259,19 +1265,22 @@ async function spreeListAll<T>(
 }
 
 function variantPrice(variant: SpreeVariant): number | null {
-  if (typeof variant.price === "number") return variant.price;
+  if (typeof variant.price === "number") return Number.isFinite(variant.price) ? variant.price : null;
   if (typeof variant.price === "string") {
+    if (!variant.price.trim()) return null;
     const n = Number(variant.price);
     return Number.isFinite(n) ? n : null;
   }
   if (variant.price && typeof variant.price === "object") {
-    const n = Number(variant.price.amount);
+    const amount = variant.price.amount;
+    const n = amount == null || String(amount).trim() === "" ? NaN : Number(amount);
     if (Number.isFinite(n)) return n;
   }
   const eur =
     variant.prices?.find((p) => p.currency?.toUpperCase() === "EUR") ??
     variant.prices?.[0];
-  const n = Number(eur?.amount);
+  const amount = eur?.amount;
+  const n = amount == null || String(amount).trim() === "" ? NaN : Number(amount);
   return Number.isFinite(n) ? n : null;
 }
 
@@ -2160,6 +2169,81 @@ async function syncApprovedSupplierPackChildren(
   return changed;
 }
 
+async function supplierImageBytes(config: ConfigRow, rawUrl: string): Promise<{ bytes: Uint8Array; contentType: string }> {
+  const url = new URL(rawUrl);
+  if (url.protocol !== "https:" || url.username || url.password || url.port ||
+    !["tcgfactory.com", "devirinvestments.s3.eu-west-1.amazonaws.com"].includes(url.hostname)) {
+    throw new Error("Unsupported supplier image origin");
+  }
+  const remaining = Math.min(12_000, (config.request_budget?.deadline_at ?? Date.now() + 12_000) - Date.now());
+  if (remaining <= 0) throw syncDeferred();
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      (async () => {
+        const response = await fetch(url.href, { signal: controller.signal, redirect: "error" });
+        const contentType = response.headers.get("content-type")?.split(";")[0].trim().toLowerCase() ?? "";
+        const limit = 5 * 1024 * 1024;
+        if (!response.ok || !["image/jpeg", "image/png", "image/webp"].includes(contentType) ||
+          Number(response.headers.get("content-length")) > limit || !response.body) {
+          await response.body?.cancel();
+          throw new Error("Supplier image unavailable or unsupported");
+        }
+        const reader = response.body.getReader();
+        const chunks: Uint8Array[] = [];
+        let length = 0;
+        for (;;) {
+          const chunk = await reader.read();
+          if (chunk.done) break;
+          length += chunk.value.length;
+          if (length > limit) { await reader.cancel(); throw new Error("Supplier image exceeds byte limit"); }
+          chunks.push(chunk.value);
+        }
+        const bytes = new Uint8Array(length);
+        let offset = 0;
+        for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+        const jpeg = bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255;
+        const png = [137, 80, 78, 71, 13, 10, 26, 10].every((b, i) => bytes[i] === b);
+        const webp = new TextDecoder().decode(bytes.subarray(0, 4)) === "RIFF" &&
+          new TextDecoder().decode(bytes.subarray(8, 12)) === "WEBP";
+        if (!(contentType === "image/jpeg" && jpeg || contentType === "image/png" && png || contentType === "image/webp" && webp)) {
+          throw new Error("Invalid supplier image signature");
+        }
+        return { bytes, contentType };
+      })(),
+      new Promise<never>((_, reject) => { timer = setTimeout(() => { controller.abort(); reject(syncDeferred()); }, remaining); }),
+    ]);
+  } finally { clearTimeout(timer); }
+}
+
+async function uploadSupplierImage(config: ConfigRow, productId: string, productName: string, url: string, position: number): Promise<void> {
+  const { bytes, contentType } = await supplierImageBytes(config, url);
+  const upload = await spreeRequest<{ signed_id: string; direct_upload: { url: string; headers: Record<string, string> } }>(
+    config, "POST", "/direct_uploads", { blob: {
+      filename: new URL(url).pathname.split("/").pop() || "supplier-image",
+      byte_size: bytes.length, checksum: createHash("md5").update(bytes).digest("base64"), content_type: contentType,
+    } },
+  );
+  const destination = new URL(upload.direct_upload.url);
+  const ownedStorage = ["dtrospakebdiqihhcrub.storage.supabase.co", "dtrospakebdiqihhcrub.supabase.co"].includes(destination.hostname) &&
+    destination.pathname.startsWith("/storage/v1/s3/");
+  const s3 = /^(?:[a-z0-9][a-z0-9.-]*\.)?s3(?:[.-][a-z0-9-]+)?\.amazonaws\.com$/.test(destination.hostname);
+  if (destination.protocol !== "https:" || destination.username || destination.password || destination.port ||
+    !(ownedStorage || s3) || !destination.searchParams.has("X-Amz-Signature") || !upload.signed_id) {
+    throw new Error("Unsupported direct image upload destination");
+  }
+  const { response } = await fetchSyncText(destination.href, {
+    method: "PUT", headers: upload.direct_upload.headers, body: bytes,
+  }, config.request_budget);
+  if (!response.ok) throw new Error("Native image object upload failed");
+  const media = await spreeRequest<{ id?: string; original_url?: string | null }>(
+    config, "POST", "/products/" + encodeURIComponent(productId) + "/media",
+    { signed_id: upload.signed_id, alt: productName, position },
+  );
+  if (!media.id || !media.original_url) throw new Error("Native image attachment was not confirmed");
+}
+
 async function syncImages(
   config: ConfigRow,
   productId: string,
@@ -2174,11 +2258,9 @@ async function syncImages(
   let uploaded = 0;
   for (const [index, url] of product.imageUrls.entries()) {
     try {
-      await spreeRequest(config, "POST", "/products/" + productId + "/media", {
-        url,
-        alt: product.name,
-        position: index + 1,
-      });
+      // URL imports enqueue a job. Direct uploads attach the image now, even
+      // while the general background worker is intentionally scaled to zero.
+      await uploadSupplierImage(config, productId, product.name, url, index + 1);
       uploaded += 1;
     } catch (error) {
       if (isSyncDeferred(error)) throw error;
@@ -3085,6 +3167,7 @@ async function checkpointCatalogSpreeMapping(
   context: CatalogSpreeContext,
   spreeProductId: string,
   spreeVariantId: string | null,
+  lastAutoPrice?: number,
 ): Promise<void> {
   const now = new Date().toISOString();
   const { error: productError } = await supabase
@@ -3095,7 +3178,9 @@ async function checkpointCatalogSpreeMapping(
   if (!spreeVariantId) return;
   const { error: variantError } = await supabase
     .from("catalog_variants")
-    .update({ spree_variant_id: spreeVariantId, updated_at: now })
+    .update({ spree_variant_id: spreeVariantId, updated_at: now,
+      ...(lastAutoPrice !== undefined ? { last_auto_price: lastAutoPrice } : {}),
+    })
     .eq("id", context.catalogVariantId);
   if (variantError) throw variantError;
 }
@@ -3181,7 +3266,7 @@ async function reconcileCatalogVariantUnlocked(
 
   const selectedItem = offerItem(selection.selected);
   const product = supplierItemAsProduct(selectedItem);
-  const lastAutoPrice = Number(resolution.variant.last_auto_price);
+  const lastAutoPrice = resolution.variant.last_auto_price == null ? NaN : Number(resolution.variant.last_auto_price);
   const synced = await syncProductToSpree(config, product, categories, defs, {
     catalogProductId: resolution.product.id,
     catalogVariantId: resolution.variant.id,
@@ -3537,7 +3622,7 @@ async function syncProductToSpree(
     productId = existing.product.id;
     variantId = existing.variant.id;
     const fields = currentFields ?? (await productFields(config, productId));
-    let catalogLastAuto = Number(catalogContext?.lastAutoPrice);
+    let catalogLastAuto = catalogContext?.lastAutoPrice == null ? NaN : Number(catalogContext.lastAutoPrice);
     let needsManagedCleanup = false;
     if (sourceCode === "devir") {
       const { data: catalogPricing } = await supabase
@@ -3546,7 +3631,7 @@ async function syncProductToSpree(
         .eq("supplier_sku", product.sku)
         .maybeSingle();
       if (!catalogContext) {
-        catalogLastAuto = Number(catalogPricing?.last_auto_price);
+        catalogLastAuto = catalogPricing?.last_auto_price == null ? NaN : Number(catalogPricing.last_auto_price);
       }
       needsManagedCleanup =
         catalogPricing?.title_cleanup_version !== "devir-title-v3";
@@ -3561,7 +3646,11 @@ async function syncProductToSpree(
     const active = existing.product.status === "active";
     const managed =
       (existing.product.tags ?? []).includes("devir") ||
-      (existing.product.tags ?? []).includes("catalog-managed");
+      (existing.product.tags ?? []).includes("catalog-managed") ||
+      // Imported variants can lack the native managed tag. Adopt only an
+      // absent price or a positive price matching the canonical auto baseline.
+      Boolean(catalogContext && (currentPrice === null ||
+        (currentPrice > 0 && lastAuto > 0 && Math.abs(currentPrice - lastAuto) < 0.005)));
     const forceDraftForSplit = packRequiresSplit && managed && review;
     const canWritePrice = canWriteManagedCatalogPrice({
       createdVariant,
@@ -3623,6 +3712,12 @@ async function syncProductToSpree(
     if (canWritePrice) {
       await upsertBasePrice(config, existing.variant.id, pricing.retail);
     }
+  }
+
+  // Price has committed in Spree. Retain its baseline even if later image or
+  // fulfillment work yields; a retry must not mistake it for a manual price.
+  if (!manualPrice && catalogContext && variantId) {
+    await checkpointCatalogSpreeMapping(catalogContext, productId, variantId, pricing.retail);
   }
 
   const effectivePrice =
@@ -8433,6 +8528,51 @@ async function resumeDailyOfferRotation(config: ConfigRow, state: DailyOfferStat
   return { status: "rotated", dayKey: state.day_key, saturday: state.special, priceListId: state.spree_price_list_id, products: products.length };
 }
 
+function dailyOfferPrice(input: {
+  product: DevirProduct;
+  currentPrice: number;
+  supplierCode: string;
+  supplierConfig?: Record<string, unknown> | null;
+  profile: ReturnType<typeof commercialPricingProfile>;
+  physicalStock: boolean;
+  saturday: boolean;
+}): { amount: number; discount: number } | null {
+      const surchargeNet = minimumOrderRiskSurcharge(
+    input.product,
+    input.supplierCode,
+    input.supplierConfig,
+  );
+  const vatRate = supplierVatRate({
+    supplierCode: input.supplierCode,
+    isBook: false,
+  });
+  const offerFloor = paymentAwareFloor(
+    input.product.purchasePrice! + (input.physicalStock ? 0 : surchargeNet),
+    vatRate,
+    rotatingOfferFloorMargin(
+      input.profile,
+      input.physicalStock,
+    ),
+  );
+  const discount = rotatingOfferDiscount(
+    input.profile,
+    input.saturday,
+    input.physicalStock,
+  );
+  const desired = input.currentPrice * (1 - discount);
+  const amount = roundUpToProfessionalPrice(Math.max(offerFloor, desired));
+  const realisedDiscount = (input.currentPrice - amount) / input.currentPrice;
+  if (
+    amount + 0.005 >= input.currentPrice ||
+    realisedDiscount < 0.025 ||
+    input.currentPrice - amount < 0.5
+  ) {
+    return null;
+  }
+
+  return { amount, discount: realisedDiscount };
+}
+
 async function rotateDailyOffersUnlocked(
   config: ConfigRow,
   force = false,
@@ -8442,7 +8582,7 @@ async function rotateDailyOffersUnlocked(
   if (currentState?.day_key && currentState.spree_price_list_id && !currentState.last_rotated_at) {
     return await resumeDailyOfferRotation(config, currentState);
   }
-  if (!force && currentState?.day_key === calendar.dayKey) {
+  if (!force && currentState?.day_key === calendar.dayKey && dailyOfferSelectionComplete(currentState.active_products)) {
     return {
       status: "current",
       dayKey: calendar.dayKey,
@@ -8487,7 +8627,7 @@ async function rotateDailyOffersUnlocked(
   );
 
   const physicalStockByVariant = new Map<string, number>();
-  const stockItems = await spreeListAll<SpreeStockItem>(config, "/stock_items");
+  const stockItems = await spreeListAll<SpreeStockItem>(config, "/stock_items?q[count_on_hand_gt]=0");
   for (const item of stockItems) {
     const variantId = String(item.variant_id ?? "");
     const countOnHand = Number(item.count_on_hand ?? 0);
@@ -8559,6 +8699,15 @@ async function rotateDailyOffersUnlocked(
         left.score - right.score ||
         String(left.row.variant_id).localeCompare(String(right.row.variant_id)),
     );
+
+  if (!force) {
+    const counts = Object.fromEntries(DAILY_OFFER_CATEGORIES.map(category => [category,
+      new Set(ranked.filter(candidate => candidate.category === category).map(candidate => candidate.row.spree_product_id)).size,
+    ]));
+    if (DAILY_OFFER_CATEGORIES.some(category => counts[category] < DAILY_OFFERS_PER_CATEGORY)) {
+      return { status: "waiting_supply", dayKey: calendar.dayKey, counts };
+    }
+  }
 
   const selected: Array<{
     variantId: string;
@@ -8659,38 +8808,11 @@ async function rotateDailyOffersUnlocked(
       };
       if (isBookProduct(product, candidate.key)) continue;
 
-      const surchargeNet = minimumOrderRiskSurcharge(
-        product,
-        selectedSupply.supplier_code,
-        selectedSupply.supplier_config,
-      );
-      const vatRate = supplierVatRate({
-        supplierCode: selectedSupply.supplier_code,
-        isBook: false,
-      });
-      const offerFloor = paymentAwareFloor(
-        purchasePrice + (physicalStock ? 0 : surchargeNet),
-        vatRate,
-        rotatingOfferFloorMargin(
-          candidate.profile,
-          physicalStock,
-        ),
-      );
-      const discount = rotatingOfferDiscount(
-        candidate.profile,
-        calendar.saturday,
-        physicalStock,
-      );
-      const desired = currentPrice * (1 - discount);
-      const amount = roundUpToProfessionalPrice(Math.max(offerFloor, desired));
-      const realisedDiscount = (currentPrice - amount) / currentPrice;
-      if (
-        amount + 0.005 >= currentPrice ||
-        realisedDiscount < 0.025 ||
-        currentPrice - amount < 0.5
-      ) {
-        continue;
-      }
+      const price = dailyOfferPrice({ product, currentPrice, supplierCode: selectedSupply.supplier_code,
+        supplierConfig: selectedSupply.supplier_config, profile: candidate.profile,
+        physicalStock, saturday: calendar.saturday });
+      if (!price) continue;
+      const { amount, discount: realisedDiscount } = price;
 
       selected.push({
         variantId: String(row.variant_id ?? ""),
@@ -8718,6 +8840,12 @@ async function rotateDailyOffersUnlocked(
     }
   }
 
+  if (!force && !dailyOfferSelectionComplete(selected)) {
+    return { status: "waiting_catalog", dayKey: calendar.dayKey,
+      counts: Object.fromEntries(DAILY_OFFER_CATEGORIES.map(category => [category, categoryCounts.get(category) ?? 0])),
+    };
+  }
+
   const priceList = await spreeRequest<SpreePriceList>(
     config,
     "POST",
@@ -8731,6 +8859,7 @@ async function rotateDailyOffersUnlocked(
         : "Selección automática diaria de hasta 3 productos por categoría. Respeta precios manuales y suelos de contribución.",
       match_policy: "all",
       starts_at: new Date().toISOString(),
+      ends_at: madridCommercialDayEndsAt(),
     },
   );
 
@@ -10051,9 +10180,61 @@ async function finishTcgFactoryCrawl(
   return { status: "complete", credentialsConfigured: true, ...completed };
 }
 
+async function loadDailyOfferRefresh(supplier: CatalogSupplierRow): Promise<Array<{ id: string; source_url: string }>> {
+  type Row = {
+    id: string; source_url: string; last_seen_at: string; updated_at: string; normalized_cost: number | string;
+    minimum_order_quantity: number | string | null;
+    variant: { canonical_sku: string; last_auto_price: number | string | null;
+      fulfillment_mode: string; spree_variant_id: string | null;
+      product: { id: string; name: string; category_key: string | null;
+        spree_product_id: string | null; requires_review: boolean; review_decision: string } };
+  };
+  const candidates: DailyOfferRefreshCandidate[] = [];
+  for (let offset = 0; offset < 10000; offset += 500) {
+    const { data, error } = await supabase.from("catalog_supplier_offers")
+      .select("id,source_url,last_seen_at,updated_at,normalized_cost,minimum_order_quantity:raw_payload->metadata->minimumOrderQuantity,variant:catalog_variants!catalog_supplier_offers_variant_id_fkey!inner(canonical_sku,last_auto_price,fulfillment_mode,spree_variant_id,product:catalog_products!catalog_variants_product_id_fkey!inner(id,name,category_key,spree_product_id,requires_review,review_decision))")
+      .eq("supplier_id", supplier.id).eq("active", true).eq("availability", "available")
+      .gt("normalized_cost", 0).not("source_url", "is", null).order("id").range(offset, offset + 499);
+    if (error) throw error;
+    const rows = (data ?? []) as unknown as Row[];
+    for (const row of rows) {
+      const variant = row.variant;
+      const product = variant.product;
+      const category = dailyOfferCategory(product.category_key);
+      if (!category || !variant.spree_variant_id || !product.spree_product_id ||
+        variant.fulfillment_mode !== "supplier_or_physical" || product.review_decision === "rejected" ||
+        (product.requires_review && product.review_decision !== "approved") ||
+        isBookProduct({ sku: variant.canonical_sku, name: product.name }, product.category_key ?? "")) continue;
+      const cost = Number(row.normalized_cost);
+      if (!Number.isFinite(cost) || cost <= 0) continue;
+      const profile = commercialPricingProfile({ name: product.name, categoryKey: product.category_key, unitCostNet: cost });
+      if (!profile.offerEligible) continue;
+      const currentPrice = Number(variant.last_auto_price);
+      const item: DevirProduct = { sku: variant.canonical_sku, name: product.name,
+        url: row.source_url, purchasePrice: cost, referencePriceNet: null,
+        availability: "available", availabilityLabel: null, releaseDate: null, imageUrls: [],
+        categoryKeyOverride: product.category_key,
+        supplierMinimumQuantity: Number.isInteger(Number(row.minimum_order_quantity)) && Number(row.minimum_order_quantity) > 1
+          ? Number(row.minimum_order_quantity) : null,
+      };
+      // Supplier packs require physical splitting and cannot satisfy a supplier
+      // cohort, even when an older canonical review flag still says false.
+      if (isPack(item)) continue;
+      const priceReady = Number.isFinite(currentPrice) && currentPrice > 0 &&
+        dailyOfferPrice({ product: item, currentPrice, supplierCode: supplier.code, supplierConfig: supplier.config,
+          profile, physicalStock: false, saturday: madridCommercialDay().saturday }) !== null;
+      candidates.push({ id: row.id, source_url: row.source_url, productId: product.id,
+        category, lastSeenAt: row.last_seen_at, lastAttemptedAt: row.updated_at, priceReady, cost });
+    }
+    if (rows.length < 500) break;
+  }
+  return planDailyOfferRefresh(candidates, Date.now(), Math.min(6, supplier.stale_after_hours * 0.75) * 60 * 60 * 1000).offers;
+}
+
 async function tcgFactoryTick(
   config: ConfigRow,
   force = false,
+  dailyOnly = false,
 ): Promise<Record<string, unknown>> {
   if (!canStartSyncWork(config)) throw syncDeferred();
   const supplier = await tcgFactorySupplierRow();
@@ -10073,6 +10254,7 @@ async function tcgFactoryTick(
   if (stateError) throw stateError;
   let state = currentState as TcgFactoryCrawlState | null;
   if (state?.status === "running" && state.run_id && state.run_id === supplier.last_completed_run_id) {
+    if (dailyOnly) return { skipped: "supplier_completion_pending" };
     // The canonical close already committed. Drain its durable queue before
     // any refresh/discovery ingestion tries to write into the closed run.
     return await finishTcgFactoryCrawl(config, supplier.id, sectionKeys[0], state);
@@ -10088,15 +10270,19 @@ async function tcgFactoryTick(
   const refreshCutoff = new Date(Date.now() - refreshHours * 60 * 60 * 1000).toISOString();
   const refreshBatchSize = Math.min(24, Math.max(6, Math.floor(Number(supplier.config?.refreshBatchSize) || 24)));
   const refreshTurn = state?.refresh_turn ?? 0;
-  if (!force) {
+  const dailyRefresh = credentialsAvailable && !force && (dailyOnly || refreshTurn !== 0)
+    ? await loadDailyOfferRefresh(supplier) : [];
+  const refreshingDaily = dailyRefresh.length > 0;
+  if (dailyOnly && !refreshingDaily) return { skipped: "no_due_daily_candidates" };
+  if (!force && !dailyOnly) {
     const { error } = await supabase.from("catalog_supplier_crawl_state").upsert({
       supplier_id: supplier.id, refresh_turn: (refreshTurn + 1) % 3,
       updated_at: new Date().toISOString(),
     }, { onConflict: "supplier_id" });
     if (error) throw error;
   }
-  let refreshOffers: Array<{ id: string; source_url: string }> = [];
-  if (credentialsAvailable && !force && (!crawlDue || refreshTurn !== 0)) {
+  let refreshOffers: Array<{ id: string; source_url: string }> = dailyRefresh;
+  if (!refreshingDaily && credentialsAvailable && !force && (!crawlDue || refreshTurn !== 0)) {
     const readDueOffers = async (afterId: string | null) => {
       let query = supabase.from("catalog_supplier_offers")
         .select("id,source_url")
@@ -10215,6 +10401,15 @@ async function tcgFactoryTick(
   const processUrl = async (url: string) => {
     const outcome = { finished: true, discovered: 0, processed: 0, failed: 0, skipped: 0 };
     const ingestUrl = async () => {
+      if (refreshingDaily) {
+        const offer = refreshOffers.find(offer => offer.source_url === url);
+        if (!offer) throw new Error("Missing daily refresh identity");
+        // A failed attempt advances fairness only. Never update last_seen_at,
+        // availability or cost until authenticated ingestion succeeds.
+        const { error } = await supabase.from("catalog_supplier_offers")
+          .update({ updated_at: new Date().toISOString() }).eq("id", offer.id);
+        if (error) throw error;
+      }
       const publicDetail = await tcgFactoryTextFetch(url, undefined, config.request_budget);
       const publicProduct = parseTcgFactoryPublicProduct(
         publicDetail.html,
@@ -10313,7 +10508,7 @@ async function tcgFactoryTick(
       skipped += outcome.skipped;
     }
     const checkpoint = refreshingOffers
-      ? { refresh_after_id: consumed > 0 ? refreshOffers[consumed - 1].id : state.refresh_after_id }
+      ? (refreshingDaily ? {} : { refresh_after_id: consumed > 0 ? refreshOffers[consumed - 1].id : state.refresh_after_id })
       : { item_offset: offset + consumed, total_pages: parsed.totalPages,
           discovered_items: state.discovered_items + discovered,
           processed_items: state.processed_items + processed,
@@ -11520,6 +11715,10 @@ async function operatorAction(
     return json({ ok: true, state: await dailyOfferState() });
   }
 
+  if (action === "daily-offers-refresh") {
+    return json({ ok: true, ...(await tcgFactoryTick(config, false, true)) });
+  }
+
   if (action === "daily-offers-rotate") {
     return json({
       ok: true,
@@ -12228,7 +12427,7 @@ async function dueDailyOfferMaintenanceTick(config: ConfigRow): Promise<Record<s
     const state = await dailyOfferState();
     const calendar = madridCommercialDay();
     const pending = Boolean(state?.day_key && state.spree_price_list_id && !state.last_rotated_at);
-    if (!pending && state?.day_key === calendar.dayKey) return null;
+    if (!pending && state?.day_key === calendar.dayKey && dailyOfferSelectionComplete(state.active_products)) return null;
     // Daily publication must not wait for a multi-day supplier crawl. Keep a
     // supplier-work reserve within the same invocation and retain the outer
     // cleanup deadline for the existing activation/tag recovery checkpoints.
@@ -12306,7 +12505,8 @@ Deno.serve((req) => syncRuntime.run({ database_budget: { deadline_at: Date.now()
     }
 
     const dailyMaintenance = await dueDailyOfferMaintenanceTick(config);
-    if (dailyMaintenance?.status === "deferred") {
+    const dailyDeferred = dailyMaintenance?.status === "deferred";
+    if (dailyDeferred && !canStartSyncWork(config)) {
       return json({ ok: true, status: "deferred", reason: "request_budget", maintenance: dailyMaintenance });
     }
 
@@ -12321,18 +12521,20 @@ Deno.serve((req) => syncRuntime.run({ database_budget: { deadline_at: Date.now()
       Boolean(config.session_state) &&
       (runnableActiveCycle || newCycleDue)
     ) {
-      // Availability safety is allowed to preempt a long Devir crawl. Keep the
-      // batch small and skip publish-state recomputation: reconcileCatalogVariant
-      // is enough to deselect stale supplier offers and turn supplier
-      // backorder/preorder off without touching physical quantities or hiding
-      // the product page.
-      try {
-        await reconcileStaleCatalogBatch({ ...config, request_budget: { deadline_at: Math.min(requestBudget.deadline_at, Date.now() + 20_000) } }, 3, false);
-      } catch (error) {
-        if (!isSyncDeferred(error)) console.error(
-          "Critical stale supplier reconciliation failed",
-          error instanceof Error ? error.message : String(error),
-        );
+      if (!dailyDeferred) {
+        // Availability safety is allowed to preempt a long Devir crawl. Keep the
+        // batch small and skip publish-state recomputation: reconcileCatalogVariant
+        // is enough to deselect stale supplier offers and turn supplier
+        // backorder/preorder off without touching physical quantities or hiding
+        // the product page.
+        try {
+          await reconcileStaleCatalogBatch({ ...config, request_budget: { deadline_at: Math.min(requestBudget.deadline_at, Date.now() + 20_000) } }, 3, false);
+        } catch (error) {
+          if (!isSyncDeferred(error)) console.error(
+            "Critical stale supplier reconciliation failed",
+            error instanceof Error ? error.message : String(error),
+          );
+        }
       }
       if (!canStartSyncWork(config)) throw syncDeferred();
       // Persist the turn before work: a long request or timeout must still
@@ -12353,7 +12555,7 @@ Deno.serve((req) => syncRuntime.run({ database_budget: { deadline_at: Date.now()
       return await processDevirCycleTick(config);
     }
 
-    const maintenance = await runtimeMaintenanceTick(config);
+    const maintenance = dailyDeferred ? dailyMaintenance : await runtimeMaintenanceTick(config);
     const tcgFactoryResult = await scheduledTcgFactoryTick(config);
 
     if (!config.enabled) {

@@ -12,10 +12,31 @@ import {
 
 describe("catalog publish policy", () => {
   it("keeps approval when already reviewed issues disappear", () => {
-    const approvedFingerprint = catalogReviewFingerprint(["product_image_missing", "catalan_requires_operator_review"]);
-    expect(shouldRequireCatalogReview({ reasons: ["catalan_requires_operator_review"], decision: "approved", approvedFingerprint })).toBe(false);
-    expect(isCatalogReviewApproved({ reasons: [], decision: "approved", approvedFingerprint })).toBe(true);
-    expect(shouldRequireCatalogReview({ reasons: ["grouping_requires_operator_review"], decision: "approved", approvedFingerprint })).toBe(true);
+    const approvedFingerprint = catalogReviewFingerprint([
+      "product_image_missing",
+      "catalan_requires_operator_review",
+    ]);
+    expect(
+      shouldRequireCatalogReview({
+        reasons: ["catalan_requires_operator_review"],
+        decision: "approved",
+        approvedFingerprint,
+      }),
+    ).toBe(false);
+    expect(
+      isCatalogReviewApproved({
+        reasons: [],
+        decision: "approved",
+        approvedFingerprint,
+      }),
+    ).toBe(true);
+    expect(
+      shouldRequireCatalogReview({
+        reasons: ["grouping_requires_operator_review"],
+        decision: "approved",
+        approvedFingerprint,
+      }),
+    ).toBe(true);
   });
   it("publishes supplier-backed products only when they do not need review", () => {
     expect(
@@ -215,5 +236,43 @@ describe("catalog publish policy", () => {
         lastAutoPrice: 19.5,
       }),
     ).toBe(true);
+  });
+});
+
+describe("managed missing base prices", () => {
+  it("initializes an absent price for an existing managed imported variant", () => {
+    expect(
+      canWriteManagedCatalogPrice({
+        createdVariant: false,
+        managed: true,
+        forceDraftForSplit: false,
+        currentPrice: null,
+        lastAutoPrice: null,
+      }),
+    ).toBe(true);
+  });
+  it.each([
+    0, 18.99,
+  ])("preserves an explicit existing price with no automatic baseline", (currentPrice) => {
+    expect(
+      canWriteManagedCatalogPrice({
+        createdVariant: false,
+        managed: true,
+        forceDraftForSplit: false,
+        currentPrice,
+        lastAutoPrice: null,
+      }),
+    ).toBe(false);
+  });
+  it("does not take over an unmanaged product without a price", () => {
+    expect(
+      canWriteManagedCatalogPrice({
+        createdVariant: false,
+        managed: false,
+        forceDraftForSplit: false,
+        currentPrice: null,
+        lastAutoPrice: null,
+      }),
+    ).toBe(false);
   });
 });

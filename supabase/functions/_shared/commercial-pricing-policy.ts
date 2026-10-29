@@ -304,7 +304,8 @@ export function commercialPricingProfile(
 
   if (key === "manga-comic") return PROFILES.manga;
   if (key.startsWith("rol/")) return PROFILES.rpg;
-  if (key === "juegos-de-mesa/expansiones") return PROFILES.board_game_expansion;
+  if (key === "juegos-de-mesa/expansiones")
+    return PROFILES.board_game_expansion;
   if (key === "juegos-de-mesa/infantil") return PROFILES.board_game_kids;
   if (key === "juegos-de-mesa/general") return PROFILES.board_game;
 
@@ -331,14 +332,32 @@ export function madridCommercialDay(now = new Date()): {
     day: "2-digit",
     weekday: "short",
   }).formatToParts(now);
-  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const value = Object.fromEntries(
+    parts.map((part) => [part.type, part.value]),
+  );
   return {
     dayKey: `${value.year}-${value.month}-${value.day}`,
     saturday: value.weekday === "Sat",
   };
 }
 
-export function deterministicOfferScore(dayKey: string, variantId: string): number {
+/** First instant of the next Madrid date, including 23/25-hour DST days. */
+export function madridCommercialDayEndsAt(now = new Date()): string {
+  const dayKey = madridCommercialDay(now).dayKey;
+  let low = now.getTime();
+  let high = low + 30 * 60 * 60 * 1000;
+  while (high - low > 1) {
+    const mid = Math.floor((low + high) / 2);
+    if (madridCommercialDay(new Date(mid)).dayKey === dayKey) low = mid;
+    else high = mid;
+  }
+  return new Date(high).toISOString();
+}
+
+export function deterministicOfferScore(
+  dayKey: string,
+  variantId: string,
+): number {
   const input = `${dayKey}:${variantId}`;
   let hash = 2166136261;
   for (let index = 0; index < input.length; index += 1) {
@@ -347,7 +366,6 @@ export function deterministicOfferScore(dayKey: string, variantId: string): numb
   }
   return hash >>> 0;
 }
-
 
 export function rotatingOfferDiscount(
   profile: CommercialPricingProfile,

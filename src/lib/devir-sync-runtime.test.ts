@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { dailyOfferSelectionComplete } from "../../supabase/functions/_shared/daily-offer-selection";
 
 const source = ts.createSourceFile(
   "index.ts",
@@ -35,6 +36,7 @@ const names = [
   "validateSpreeAdminKey",
   "completeCatalogSupplierRun",
   "reconcileCompletedSupplierVariants",
+  "dailyOfferPrice",
   "rotateDailyOffersUnlocked",
   "resumeDailyOfferRotation",
 ];
@@ -60,6 +62,8 @@ function fixture(overrides: Record<string, unknown> = {}, entry = false) {
     `${code}; Object.assign(globalThis, __overrides); ${entryCode}; ({ handler: globalThis.__handler, runtime: syncRuntime, syncDatabaseFetch: typeof syncDatabaseFetch === "function" ? syncDatabaseFetch : undefined, spreeRequest, processCategories, scheduledTcgFactoryTick, maintenance: typeof runtimeMaintenanceTick === 'function' ? runtimeMaintenanceTick : undefined, tcgFactoryTick, tcgFactoryTextFetch, tcgFactoryLogin, reconcileCatalogVariant, processProducts, retireMissingDevirOffers, validateSpreeAdminKey, completeCatalogSupplierRun, rotateDailyOffersUnlocked })`,
     {
       normalizeSupplierCode: (value: string) => value,
+      dailyOfferSelectionComplete,
+      loadDailyOfferRefresh: async () => [],
       Request,
       Response,
       AbortController,
@@ -73,6 +77,20 @@ function fixture(overrides: Record<string, unknown> = {}, entry = false) {
       dailyOfferState: async () => ({
         day_key: "fixture-day",
         last_rotated_at: "done",
+        active_products: [
+          "tcg",
+          "juegos-de-mesa",
+          "accesorios",
+          "merchandising",
+        ].flatMap((category) =>
+          Array.from({ length: 3 }, (_, i) => ({
+            productId: category + i,
+            variantId: category + i,
+            category,
+            amount: 10,
+            compareAtAmount: 12,
+          })),
+        ),
       }),
       madridCommercialDay: () => ({ dayKey: "fixture-day", saturday: false }),
       ...overrides,
@@ -321,7 +339,10 @@ describe("Fair maintenance and checkpoint cleanup", () => {
   });
 });
 
-function activeWorkerFixture(overrides: Record<string, unknown> = {}) {
+function activeWorkerFixture(
+  overrides: Record<string, unknown> = {},
+  enabled = true,
+) {
   const trace: string[] = [];
   const writes: Record<string, unknown>[] = [];
   const query = {
@@ -334,7 +355,7 @@ function activeWorkerFixture(overrides: Record<string, unknown> = {}) {
     single: async () => ({
       data: {
         ...config,
-        enabled: true,
+        enabled,
         phase: "products",
         active_cycle_id: "cycle",
         session_state: {},
@@ -426,23 +447,61 @@ describe("Due daily offers during an active supplier crawl", () => {
     expect((await f.invoke()).status).toBe(200);
     expect(f.trace).toContain("devir");
   });
-  it("returns a deferred result and releases the lock before supplier work when daily rotation yields", async () => {
+  it("continues supplier work and releases the lock after repeated daily-only budget yields", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
     const f = activeWorkerFixture({
-      dailyOfferState: async () => null,
+      dailyOfferState: async () => ({
+        day_key: "fixture-day",
+        last_rotated_at: "done",
+        active_products: [],
+      }),
       rotateDailyOffers: async () => {
+        f.trace.push("daily");
+        vi.advanceTimersByTime(70_000);
         throw Object.assign(new Error("budget"), { name: "SyncDeferred" });
       },
     });
-    expect(await (await f.invoke()).json()).toMatchObject({
-      ok: true,
-      status: "deferred",
-      reason: "request_budget",
-    });
+    for (let i = 0; i < 2; i++) {
+      expect((await f.invoke()).status).toBe(200);
+    }
     expect(f.trace).toEqual([
       "devir_sync_acquire_lock",
+      "daily",
+      "devir",
+      "devir_sync_release_lock",
+      "devir_sync_acquire_lock",
+      "daily",
+      "devir",
       "devir_sync_release_lock",
     ]);
-    expect(f.writes).toEqual([]);
+  });
+  it("uses the reserved time for TCGFactory rather than a second maintenance pass when Devir is disabled", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const f = activeWorkerFixture(
+      {
+        dailyOfferState: async () => null,
+        rotateDailyOffers: async () => {
+          vi.advanceTimersByTime(70_000);
+          throw Object.assign(new Error("budget"), { name: "SyncDeferred" });
+        },
+        runtimeMaintenanceTick: async () => {
+          throw new Error("must preserve supplier reserve");
+        },
+        scheduledTcgFactoryTick: async () => {
+          f.trace.push("tcgfactory");
+          return { status: "refreshing_offers" };
+        },
+      },
+      false,
+    );
+    expect((await f.invoke()).status).toBe(200);
+    expect(f.trace).toEqual([
+      "devir_sync_acquire_lock",
+      "tcgfactory",
+      "devir_sync_release_lock",
+    ]);
   });
   it("reserves 20 seconds for supplier work and does not start a crawl with an exhausted budget", async () => {
     vi.useFakeTimers();
