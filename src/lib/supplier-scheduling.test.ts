@@ -36,6 +36,7 @@ function fixture(
   tcgError = false,
   lastSupplier = "devir",
   skippedItems = 0,
+  devirEnabled = true,
 ) {
   let handler!: (req: Request) => Promise<Response>;
   const turns: string[] = [];
@@ -54,7 +55,7 @@ function fixture(
   });
   const config = {
     last_supplier_tick: lastSupplier,
-    enabled: true,
+    enabled: devirEnabled,
     active_cycle_id: "cycle_1",
     phase: "products",
     session_state: {},
@@ -101,6 +102,10 @@ function fixture(
     madridCommercialDay: () => ({ dayKey: "2026-10-09", saturday: false }),
     tcgFactoryTick: tcg,
     processDevirCycleTick: devir,
+    runtimeMaintenanceTick: async () => {
+      turns.push("maintenance");
+      return { lane: "stale" };
+    },
     tcgFactorySupplierRow: async () => ({ id: "supplier_tcg" }),
   });
   return { handler, tcg, devir, turns, writes };
@@ -155,5 +160,27 @@ describe("scheduled supplier fairness", () => {
     );
     expect(response.status).toBe(200);
     expect(f.turns).toEqual(["guard", "tcg", "devir"]);
+  });
+});
+
+// Devir's enable flag is deliberately narrower than the shared worker/cron.
+describe("Devir retirement preserves the shared scheduler", () => {
+  it("keeps maintenance and TCGFactory active with Devir disabled", async () => {
+    const f = fixture(0, false, "devir", 0, false);
+    const response = await f.handler(
+      new Request("https://worker.invalid", {
+        method: "POST",
+        headers: { "x-devir-worker-token": "fixture_token" },
+        body: "{}",
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(f.turns).toEqual(["maintenance", "tcg"]);
+    expect(f.devir).not.toHaveBeenCalled();
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      skipped: "disabled",
+      tcgfactory: { status: "running" },
+    });
   });
 });

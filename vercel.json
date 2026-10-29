@@ -3,6 +3,7 @@
   "git": {
     "deploymentEnabled": {
       "main": false,
+      "chore/retire-devir": false,
       "migration/spree-owned-backend": false
     }
   },

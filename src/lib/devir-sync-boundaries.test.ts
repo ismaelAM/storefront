@@ -85,6 +85,7 @@ function fixture(overrides: Record<string, unknown> = {}) {
         createHash("sha256").update(value).digest("hex"),
       supabase: { from: () => ({ update }) },
       defaultStockLocationId: async () => "sl_1",
+      tcgFactorySupplierRow: async () => ({ config: {} }),
       categoryKey: (product: { name?: string }) =>
         /Pathfinder/i.test(String(product.name ?? ""))
           ? "rol/pathfinder"
@@ -1184,5 +1185,67 @@ describe("catalog category setup", () => {
     });
     await f.api.setupCatalogCategoriesAndMargins(config);
     expect(setMargin).not.toHaveBeenCalled();
+  });
+});
+
+describe("retired empty categories", () => {
+  it("does not recreate retired categories while retaining D&D, Infantil and Cyberpunk", async () => {
+    const retired = [
+      "manga-comic",
+      "rol/pathfinder",
+      "rol/warhammer",
+      "rol/otros",
+      "tcg/topps",
+      "tcg/icoins",
+      "tcg/panini",
+    ];
+    const created: string[] = [];
+    const margins: string[] = [];
+    const f = fixture({
+      tcgFactorySupplierRow: async () => ({
+        config: { retiredCategoryKeys: retired },
+      }),
+      spreeCategories: async () => [],
+      ensureCategory: async (
+        _: unknown,
+        __: unknown,
+        name: string,
+        key: string,
+      ) => {
+        if (retired.includes(key)) created.push(key);
+        return { id: key, name, permalink: key };
+      },
+      categoryForKey: (_: unknown, key: string) =>
+        retired.includes(key) ? undefined : { id: key, name: key },
+      spreeRequest: async (
+        _: unknown,
+        method: string,
+        path: string,
+        body: { permalink: string },
+      ) => {
+        if (method === "POST" && path === "/categories")
+          created.push(body.permalink);
+        return { id: body.permalink };
+      },
+      categoryMargin: async (_: unknown, category: { id: string }) => {
+        margins.push(category.id);
+        return 0.22;
+      },
+      setCategoryMargin: async () => {},
+      DEFAULT_CATEGORY_MARGINS: {},
+      TCGFACTORY_TCG_CATEGORY_SPECS: [
+        "cyberpunk",
+        "topps",
+        "icoins",
+        "panini",
+      ].map((slug) => ({ key: `tcg/${slug}`, name: slug, slug })),
+      TCGFACTORY_ACCESSORY_CATEGORY_SPECS: [],
+    });
+    await f.api.setupCatalogCategoriesAndMargins(config);
+    expect(created).toEqual([]);
+    expect(margins).toContain("rol/dungeons-dragons");
+    expect(margins).toContain("juegos-de-mesa/infantil");
+    expect(margins).toContain("tcg/cyberpunk");
+    expect(margins.some((key) => retired.includes(key))).toBe(false);
   });
 });

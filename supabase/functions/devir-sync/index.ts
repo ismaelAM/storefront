@@ -5373,6 +5373,16 @@ async function setupCatalogCategoriesAndMargins(config: ConfigRow): Promise<
     target_margin: number;
   }>
 > {
+  // Persisted retirement prevents the next supplier crawl from rebuilding
+  // deliberately removed empty categories. Existing products are untouched.
+  const supplier = await tcgFactorySupplierRow();
+  const retiredCategoryKeys = new Set(
+    Array.isArray(supplier.config?.retiredCategoryKeys)
+      ? supplier.config.retiredCategoryKeys.filter(
+        (key): key is string => typeof key === "string",
+      )
+      : [],
+  );
   let categories = await spreeCategories(config);
   const juegos = await ensureCategory(
     config,
@@ -5382,7 +5392,9 @@ async function setupCatalogCategoriesAndMargins(config: ConfigRow): Promise<
   );
   const rol = await ensureCategory(config, categories, "Rol", "rol");
   const tcg = await ensureCategory(config, categories, "TCG", "tcg");
-  await ensureCategory(config, categories, "Manga y cómic", "manga-comic");
+  if (!retiredCategoryKeys.has("manga-comic")) {
+    await ensureCategory(config, categories, "Manga y cómic", "manga-comic");
+  }
   const accesorios = await ensureCategory(
     config,
     categories,
@@ -5475,6 +5487,7 @@ async function setupCatalogCategoriesAndMargins(config: ConfigRow): Promise<
   ];
 
   for (const spec of specs) {
+    if (retiredCategoryKeys.has(spec.key)) continue;
     if (categoryForKey(categories, spec.key)) continue;
     const created = await spreeRequest<SpreeCategory>(
       config,
@@ -5498,6 +5511,7 @@ async function setupCatalogCategoriesAndMargins(config: ConfigRow): Promise<
 
   const output = [];
   for (const spec of specs) {
+    if (retiredCategoryKeys.has(spec.key)) continue;
     const category = categoryForKey(categories, spec.key);
     if (!category) continue;
     const configuredMargin = await categoryMargin(config, category);

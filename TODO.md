@@ -1,5 +1,14 @@
 # Pendientes del storefront
 
+## Retirada de Devir — 28/10/2026
+
+- [x] Deshabilitado exclusivamente Devir como proveedor y crawler; infraestructura compartida con TCGFactory conservada.
+- [x] Archivados 899 productos exclusivos sin stock físico; preservadas 30 familias compartidas, las seis unidades físicas de Tarkir y una familia ambigua ya retenida.
+- [x] Readback final: cero selecciones/ofertas activas Devir, 899 archivados, stock físico conservado y tick compartido con TCGFactory activo; ver ops/spree-backend/devir-retirement-20261028.md.
+- [ ] Corregir el manejo público de fichas inexistentes: Spree devuelve404, pero el frontend actual muestra error genérico (digest2887412968).
+- Las cuentas antiguas quedan fuera de las prioridades por indicación del propietario.
+
+
 Rama principal: `main`
 
 Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras. Tras cada edición relevante del proyecto, actualizaré este documento con lo hecho y cualquier comprobación nueva que haya quedado pendiente.
