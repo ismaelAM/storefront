@@ -3,6 +3,7 @@
 -- Verify the stable backend hostname before applying. pg_cron and pg_net must
 -- already be installed in this owned project. Vault plaintext is never emitted.
 SELECT cron.schedule('bison-transactional-mail-tick', '* * * * *', $cron$
+  SET statement_timeout='5s';
   SELECT net.http_post(
     url := 'https://project-7ck7q.vercel.app/internal/bison-email/drain',
     headers := jsonb_build_object('Content-Type','application/json','Authorization',

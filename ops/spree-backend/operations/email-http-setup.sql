@@ -38,21 +38,33 @@ AS $function$
       AND e.subscriptions @> '["order.completed","order.canceled","order.shipped","customer.password_reset_requested"]'::jsonb
       AND jsonb_array_length(e.subscriptions)=4
   ), eligible_jobs AS (
+    -- Keep each job class in an independent branch so PostgreSQL can use the
+    -- partial indexes above. A correlated OR scans every unfinished job,
+    -- including unrelated catalog/media work, on every minute of the cron.
     SELECT j.id FROM solid_queue_jobs j
-    WHERE j.finished_at IS NULL AND (
-      EXISTS (SELECT 1 FROM endpoint e WHERE (
-       (j.queue_name='spree_events' AND j.class_name='Spree::Events::SubscriberJob'
+    JOIN endpoint e ON
+        j.arguments::jsonb->'arguments'->1->>'store_id'=e.store_id::text
+        AND j.created_at>=e.created_at
+    WHERE j.finished_at IS NULL
+        AND j.queue_name='spree_events' AND j.class_name='Spree::Events::SubscriberJob'
         AND j.arguments::jsonb->'arguments'->>0='Spree::WebhookEventSubscriber'
         AND j.arguments::jsonb->'arguments'->1->>'name' IN
           ('order.completed','order.canceled','order.shipped','customer.password_reset_requested')
-        AND j.arguments::jsonb->'arguments'->1->>'store_id'=e.store_id::text
-        AND j.created_at>=e.created_at)
-      OR (j.queue_name='spree_webhooks' AND j.class_name='Spree::WebhookDeliveryJob'
-        AND j.arguments::jsonb->'arguments'->>0 IN
-          (SELECT d.id::text FROM spree_webhook_deliveries d
-            WHERE d.webhook_endpoint_id=e.id AND d.created_at>=e.created_at
-              AND d.event_name IN ('order.completed','order.canceled','order.shipped','customer.password_reset_requested')))))
-      OR (j.class_name='Spree::Payments::HandleWebhookJob'
+
+    UNION ALL
+    SELECT j.id FROM solid_queue_jobs j
+    WHERE j.finished_at IS NULL
+        AND j.queue_name='spree_webhooks' AND j.class_name='Spree::WebhookDeliveryJob'
+        AND EXISTS (SELECT 1 FROM endpoint e
+          JOIN spree_webhook_deliveries d ON d.webhook_endpoint_id=e.id
+          WHERE d.created_at>=e.created_at
+            AND d.event_name IN ('order.completed','order.canceled','order.shipped','customer.password_reset_requested')
+            AND j.arguments::jsonb->'arguments'->>0=d.id::text)
+
+    UNION ALL
+    SELECT j.id FROM solid_queue_jobs j
+    WHERE j.finished_at IS NULL
+        AND j.class_name='Spree::Payments::HandleWebhookJob'
         AND j.arguments::jsonb->'arguments'->0->>'action' IN ('captured','authorized','failed')
         AND EXISTS (SELECT 1 FROM spree_payment_sessions ps
           JOIN spree_payment_methods pm ON pm.id=ps.payment_method_id
@@ -61,8 +73,7 @@ AS $function$
             AND pm.active AND pm.deleted_at IS NULL
             AND ps.id::text=j.arguments::jsonb->'arguments'->0->>'payment_session_id'
             AND pm.id::text=j.arguments::jsonb->'arguments'->0->>'payment_method_id'
-            AND j.created_at>=pm.created_at))
-    )
+            AND j.created_at>=pm.created_at)
   )
   SELECT EXISTS (SELECT 1 FROM solid_queue_ready_executions r JOIN eligible_jobs j ON j.id=r.job_id)
     OR EXISTS (SELECT 1 FROM solid_queue_scheduled_executions s JOIN eligible_jobs j ON j.id=s.job_id WHERE s.scheduled_at<=CURRENT_TIMESTAMP)

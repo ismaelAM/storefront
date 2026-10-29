@@ -4,6 +4,7 @@
     "deploymentEnabled": {
       "main": false,
       "chore/retire-devir": false,
+      "fix/email-pending-query": false,
       "migration/spree-owned-backend": false
     }
   },
