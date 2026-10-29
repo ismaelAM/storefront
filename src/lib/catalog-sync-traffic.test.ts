@@ -162,15 +162,25 @@ describe("Supabase-managed supplier freshness without timestamp-only Spree write
 });
 
 it.each([
-  null,
-  20,
-])("preserves metadata while reconciling an existing native price of %s", async (price) => {
+  { price: null, managed: true, lastAuto: null, expectedAuto: 20 },
+  { price: null, managed: false, lastAuto: null, expectedAuto: 20 },
+  { price: 20, managed: true, lastAuto: null, expectedAuto: null },
+  { price: 20, managed: false, lastAuto: null, expectedAuto: null },
+  { price: 20, managed: false, lastAuto: 20, expectedAuto: 20 },
+  { price: 21, managed: false, lastAuto: 20, expectedAuto: null },
+  { price: 0, managed: false, lastAuto: 0, expectedAuto: null },
+])("preserves metadata while reconciling price $price with managed tag $managed and baseline $lastAuto", async ({
+  price,
+  managed,
+  lastAuto,
+  expectedAuto,
+}) => {
   let storedAutoPrice: number | null = null;
   let nativePrice = price;
   const product = {
     id: "prod1",
     status: "active",
-    tags: ["catalog-managed", "catalog-ready"],
+    tags: managed ? ["catalog-managed", "catalog-ready"] : [],
   };
   const currentFields = [
     { id: "manual", key: "manual.keep", value: "operator value" },
@@ -245,6 +255,7 @@ it.each([
     {
       catalogProductId: "catprod1",
       catalogVariantId: "catvar1",
+      lastAutoPrice: lastAuto,
       canonicalSku: "EAN",
       options: {},
       ...selected,
@@ -264,9 +275,9 @@ it.each([
       },
     },
   );
-  expect(nativePrice).toBe(20);
-  expect(storedAutoPrice).toBe(price === null ? 20 : null);
-  expect(result.lastAutoPrice).toBe(price === null ? 20 : null);
+  expect(nativePrice).toBe(price === null ? 20 : price);
+  expect(storedAutoPrice).toBe(expectedAuto);
+  expect(result.lastAutoPrice).toBe(expectedAuto);
   expect(read).toHaveBeenCalledTimes(1);
   expect(adopt).toHaveBeenCalledWith(config, product, [], currentFields);
   expect(currentFields[0].value).toBe("operator value");
@@ -275,7 +286,7 @@ it.each([
   ).toBe(false);
   expect(
     write.mock.calls.filter((call) => call[1] === "PATCH" && call[3]?.tags),
-  ).toHaveLength(0);
+  ).toHaveLength(managed ? 0 : 1);
   expect(
     write.mock.calls.filter((call) => String(call[2]).includes("/variants/")),
   ).toHaveLength(0);

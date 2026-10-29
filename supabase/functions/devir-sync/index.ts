@@ -3572,7 +3572,11 @@ async function syncProductToSpree(
     const active = existing.product.status === "active";
     const managed =
       (existing.product.tags ?? []).includes("devir") ||
-      (existing.product.tags ?? []).includes("catalog-managed");
+      (existing.product.tags ?? []).includes("catalog-managed") ||
+      // Imported variants can lack the native managed tag. Adopt only an
+      // absent price or a positive price matching the canonical auto baseline.
+      Boolean(catalogContext && (currentPrice === null ||
+        (currentPrice > 0 && lastAuto > 0 && Math.abs(currentPrice - lastAuto) < 0.005)));
     const forceDraftForSplit = packRequiresSplit && managed && review;
     const canWritePrice = canWriteManagedCatalogPrice({
       createdVariant,
@@ -10139,6 +10143,9 @@ async function loadDailyOfferRefresh(supplier: CatalogSupplierRow): Promise<Arra
         supplierMinimumQuantity: Number.isInteger(Number(row.minimum_order_quantity)) && Number(row.minimum_order_quantity) > 1
           ? Number(row.minimum_order_quantity) : null,
       };
+      // Supplier packs require physical splitting and cannot satisfy a supplier
+      // cohort, even when an older canonical review flag still says false.
+      if (isPack(item)) continue;
       const priceReady = Number.isFinite(currentPrice) && currentPrice > 0 &&
         dailyOfferPrice({ product: item, currentPrice, supplierCode: supplier.code, supplierConfig: supplier.config,
           profile, physicalStock: false, saturday: madridCommercialDay().saturday }) !== null;

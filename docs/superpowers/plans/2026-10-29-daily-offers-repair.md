@@ -66,8 +66,10 @@ Files: worker daily-offer functions, daily-offer/runtime tests.
   products. A partial nine-product list is not treated as a completed rotation.
 - Initial deployment verification: all ten deployed files matched the payload;
   v156 changes only the refresh planner's candidate order.
-- Stock checkpoint comparison: zero physical quantity differences and zero
-  amount changes to existing native base-price rows. Missing prices were filled.
+- Initial stock/price checkpoint comparison: zero physical quantity differences
+  and zero existing base-price amount changes. Later authenticated refreshes
+  updated managed automatic prices where current B2B costs require it; physical
+  quantities still have zero differences.
 - Native image probe returned a real WebP via the existing Rails proxy, HTTP 200;
   there is no evidence requiring a social-image allowlist change.
 - Instagram credentials remain unconfigured; no publication or manual mail
@@ -77,3 +79,17 @@ Files: worker daily-offer functions, daily-offer/runtime tests.
   shipping panel, mobile menu and two JPEG tests; all pass at bounded concurrency.
 - The revised priority refreshed all three current accessory candidates in one
   call (3 processed, zero skipped/errors), replacing the repeated old-URL misses.
+- Native readback found imported products without the managed tag: their first
+  pass could record an automatic baseline without writing a price. Worker v157
+  adopts canonical variants only for an absent price or a positive price equal
+  to their known automatic baseline; unknown/changed manual prices and explicit
+  zero stay protected. The regression failed then passed with these cases.
+- Supplier packs requiring physical splitting no longer count toward a ready
+  supplier cohort when an old canonical review flag is false. The real loader
+  regression failed then passed. Native review/fulfillment guards are unchanged.
+- Full final suite after these live findings: 1,016/1,016 pass; TypeScript clean.
+- Existing authorized reconciliation repaired the remaining absent Funko price.
+  A scoped native POST also created the absent Reality Fracture base price and
+  native SQL verified the exact amount, currency and variant.
+- Normal rotation validation is still pending complete public/native readback;
+  do not describe today's twelve offers or the four JPEGs as verified yet.
