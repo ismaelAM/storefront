@@ -2,7 +2,7 @@
 
 ## Revisión vigente — 30/10/2026
 
-- [x] Código preparado y revisión independiente sin incidencias abiertas: errores de catálogo, comprobación de cuenta Instagram y uso horario de claves API de Spree. Suite 1084 pruebas/109 archivos, TypeScript y contratos Ruby pasan. El estado de despliegue se documenta por separado.
+- [x] Código preparado y revisión independiente sin incidencias abiertas: errores de catálogo, comprobación de cuenta Instagram y uso horario de claves API de Spree. Suite 1084 pruebas/109 archivos, TypeScript y contratos Ruby pasan. Frontend desplegado y verificado en producción: `dpl_9LuC8pFkCudcZYyR5nHiwsmh6TLD`, fuente `274dada`. Home correcta; categoría y producto inexistentes muestran no encontrado/noindex, sin digest genérico. Backend pendiente según el punto siguiente.
 - [x] Primera publicación automática de Instagram acreditada: 30/10, 05:01 Madrid, media 17980210826918766.
 - [x] Análisis de recursos en ops/spree-backend/cost-analysis-20261030.md. No activar worker ni limpiar trabajos para reducir el contador.
 - [ ] Aplicar/verificar el cambio de claves API en el backend: el conector actual no ofrece acceso al proyecto.

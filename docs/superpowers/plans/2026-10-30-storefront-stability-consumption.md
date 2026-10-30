@@ -79,4 +79,13 @@ The first grouped frontend deployment `dpl_GeLiHb47HqZw7LZM931vgKQidsL9` (source
 - [x] Return null only for native SDK404 inside cached detail fetchers; reconstruct404 in request wrappers and skip absent alternate translations.
 - [x] Preserve cache tags, market/surface/JWT/expand/version arguments and DTC legacy redirects; independent review no findings.
 - [x] Full suite1084/109, TypeScript and focused83 tests pass.
-- [ ] Verify real retired category and product responses after the corrective release. Backend access remains separately blocked.
+- [x] Verify real retired category and product responses after the corrective release. Backend access remains separately blocked.
+
+## Production closeout — 30/10/2026
+
+- Corrective frontend release READY: `dpl_9LuC8pFkCudcZYyR5nHiwsmh6TLD`, source `274dada8072a9c20593757b261830712d33030a5`, custom domains assigned.
+- Platform fetches confirm the exact new deployment: home200 with29 product links, correct title and no generic error digest; retired category and deliberately missing product show the corresponding not-found title, noindex and404 navigation marker, without a generic digest. Their already-streamed responses retain HTTP200, as expected for Next streaming. Shell proxy timeouts were transport failures, not evidence of site failure; platform fetches completed successfully.
+- Private Instagram GET on the preceding release (identical route) returns401 and private/no-store anonymously. The authenticated identity check was unit-tested, not invoked with production operations credentials.
+- Private publication readback for account17841436955437970 confirms four child images, published media17980210826918766,30/10 at05:01Madrid. No additional publication.
+- PR97 remains open, stacked on fix/daily-offers, without merge to main. Local and remote code trees match. Two frontend builds were necessary: the first exposed the real serialization defect; the second contains its reviewed/tested correction. No backend build or worker activation occurred.
+- Backend patch, boot verification and project-level billing remain pending access. Current connector lists only storefront, returns404 for known backend resources and403 for project Observability. Obtain explicit approval before browser fallback; no repeated denied requests or bypass attempted.

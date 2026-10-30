@@ -22,7 +22,7 @@ La propiedad de prefijo `https://www.bisontcg.com/` ya existía y se comprobó c
 - Sitemap `/sitemap/0.xml`: enviado el **13/10**, última lectura **26/10**, estado **Correcto**, 2378 URLs descubiertas.
 - Informe de indexación, actualizado el **23/10**: **325 páginas indexadas y 43 excluidas**. Es información de Google con retraso, no una lectura en tiempo real.
 - Exclusiones: 36 alternativas con canonical correcto, cuatro con otro error 4xx, dos noindex y una duplicada sin canonical seleccionada por el usuario. Cero errores 5xx en ese informe.
-- Las cuatro muestras 4xx históricas son `/es/es/c/juegos-de-mesa`, `/es/es/c/rol/rol-otros`, `/es/en` y `/`. La comprobación pública del 30/10 encontró home, inglés y juegos de mesa con200 y contenido; rol-otros retirada. El primer release de esta revisión expuso un fallo de serialización del404 a través de la caché; el ajuste de ese transporte requiere readback tras su despliegue. No se pidió validación global de Google.
+- Las cuatro muestras 4xx históricas son `/es/es/c/juegos-de-mesa`, `/es/es/c/rol/rol-otros`, `/es/en` y `/`. La comprobación pública del 30/10 encontró home, inglés y juegos de mesa con 200 y contenido. Tras corregir el transporte de errores en la caché, rol-otros retirada muestra «Category Not Found» y noindex, sin error genérico. En respuestas ya transmitidas Next conserva HTTP200; el404 queda en la respuesta renderizada y se excluye de indexación. No se pidió validación global de Google.
 
 Las alternativas con canonical y las páginas privadas noindex pueden ser exclusiones deliberadas. No retirar estas protecciones para aumentar el contador. Search Console no acredita una cuenta activa de Merchant Center ni garantiza indexación inmediata.
 
