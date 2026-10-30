@@ -27,7 +27,15 @@ export async function generateCategoryMetadata({
       "ancestors",
       "children",
     ]);
-  } catch {
+  } catch (error) {
+    if (
+      typeof error !== "object" ||
+      error === null ||
+      !("status" in error) ||
+      error.status !== 404
+    ) {
+      throw error;
+    }
     return { title: "Category Not Found" };
   }
 

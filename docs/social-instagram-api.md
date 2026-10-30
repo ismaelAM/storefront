@@ -29,6 +29,10 @@ endpoints must be checked for the configured Meta app before enabling real
 publishing. Mock tests verify the request contract and failure boundaries, not
 account permissions or successful publication to Instagram.
 
+## Activation evidence — 2026-10-30
+
+The owner connected `bisontcg` through Instagram Login with API `v26.0`. Meta’s token debugger confirmed basic and content-publishing scopes. Credentials were saved only in production. The scheduled run for 2026-10-30 persisted `published` and media ID `17980210826918766` at 04:01 UTC (05:01 Madrid); no additional test post was sent. The current token expires 2026-12-29 at 00:51 Madrid and must be renewed before then. Identity checking is readonly and does not itself prove publishing permission.
+
 ## Server configuration
 
 `readInstagramConfig()` requires all of these server variables:

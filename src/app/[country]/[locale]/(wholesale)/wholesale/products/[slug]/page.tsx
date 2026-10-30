@@ -51,7 +51,15 @@ async function WholesaleProductContent({
   let product;
   try {
     product = await getWholesaleProduct(slug, { expand: PRODUCT_PAGE_EXPAND });
-  } catch {
+  } catch (error) {
+    if (
+      typeof error !== "object" ||
+      error === null ||
+      !("status" in error) ||
+      error.status !== 404
+    ) {
+      throw error;
+    }
     notFound();
   }
 

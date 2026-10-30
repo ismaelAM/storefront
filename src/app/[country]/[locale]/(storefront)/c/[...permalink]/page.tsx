@@ -49,7 +49,15 @@ export default async function CategoryPage({
       expand: ["ancestors", "children"],
     });
   } catch (error) {
-    console.error("Failed to fetch category:", error);
+    // Match the HTTP status even when the remote cache normalizes SDK errors.
+    if (
+      typeof error !== "object" ||
+      error === null ||
+      !("status" in error) ||
+      error.status !== 404
+    ) {
+      throw error;
+    }
     notFound();
   }
 

@@ -15,20 +15,16 @@ Los cambios de código y configuración pública están desplegados en producci�
 
 Comprobación pública Googlebot: home, categoría, producto, carrito, robots, imagen/iconos y sitemap devolvieron 200; canonical al dominio final, marca y noindex privados correctos. Sitemap 2321 URLs únicas, siete categorías principales y sin producto inglés duplicado. Home y política de devoluciones también 200 con InspectionTool. La generación del sitemap tarda 75 s en primera lectura y 53 s en segunda: optimización pendiente, aunque ambas respuestas fueron válidas. Los índices comparativos se cachean en bloques de hasta 10.000 recursos y guardia de tamaño 1,9 MB.
 
-## Alta en Search Console: pendiente
+## Search Console: comprobado el 30/10/2026
 
-El 12/10/2026 no se pudo acceder a Search Console desde el navegador remoto: las dos navegaciones acabaron en timeout antes de devolver una página. **No se ha creado ni verificado una propiedad, enviado un sitemap ni solicitado indexación en Google.** El acceso existente de Gmail no equivale a acceso a Search Console.
+La propiedad de prefijo `https://www.bisontcg.com/` ya existía y se comprobó con la cuenta propietaria. No fue necesario crear otra propiedad, cambiar DNS ni configurar un nuevo token de verificación.
 
-Para completar el alta:
+- Sitemap `/sitemap/0.xml`: enviado el **13/10**, última lectura **26/10**, estado **Correcto**, 2378 URLs descubiertas.
+- Informe de indexación, actualizado el **23/10**: **325 páginas indexadas y 43 excluidas**. Es información de Google con retraso, no una lectura en tiempo real.
+- Exclusiones: 36 alternativas con canonical correcto, cuatro con otro error 4xx, dos noindex y una duplicada sin canonical seleccionada por el usuario. Cero errores 5xx en ese informe.
+- Las cuatro muestras 4xx históricas son `/es/es/c/juegos-de-mesa`, `/es/es/c/rol/rol-otros`, `/es/en` y `/`. Revisar su respuesta actual antes de pedir validación; una categoría retirada puede conservar un 404 correcto.
 
-1. Acceder a Google Search Console con la cuenta propietaria de la tienda y añadir una propiedad de **prefijo de URL** para `https://www.bisontcg.com/`.
-2. Elegir la verificación por etiqueta HTML. El valor `content` de la etiqueta `google-site-verification` es un token público de verificación de la web.
-3. Configurar ese valor exacto en `GOOGLE_SITE_VERIFICATION` en Vercel y desplegar. El código ya incluye la etiqueta cuando existe un valor configurado; nunca se publica un token ficticio.
-4. Comprobar la etiqueta pública y pulsar Verificar en Search Console.
-5. En Sitemaps, enviar `https://www.bisontcg.com/sitemap/0.xml`. Si el catálogo crece, `robots.txt` enumera los demás archivos válidos. La ruta actual no es `/sitemap.xml`.
-6. Inspeccionar la home y una categoría/producto representativos, solicitar indexación y observar errores/cobertura. La solicitud y el sitemap no garantizan indexación inmediata.
-
-La propiedad de dominio completa es una alternativa con verificación DNS. No modificar DNS ni añadir un registro de Google sin el valor exacto emitido para la cuenta propietaria.
+Las alternativas con canonical y las páginas privadas noindex pueden ser exclusiones deliberadas. No retirar estas protecciones para aumentar el contador. Search Console no acredita una cuenta activa de Merchant Center ni garantiza indexación inmediata.
 
 ## Límites y mejoras posteriores
 

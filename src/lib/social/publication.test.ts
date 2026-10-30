@@ -49,6 +49,10 @@ function setup() {
     prepareImages: vi.fn(async () =>
       [1, 2, 3, 4].map((n) => `https://cdn.example.com/${n}.jpg`),
     ),
+    verifyAccount: vi.fn(async () => ({
+      accountId: "123",
+      username: "bisontcg",
+    })),
     publish: vi.fn(async (_config, _input, opts) => {
       const checkpoint = {
         inputHash: "test",
@@ -65,6 +69,16 @@ function setup() {
   return { deps, repo, snapshot };
 }
 describe("daily social publication orchestration", () => {
+  it("stops before preparing or publishing if the token belongs to another Instagram account", async () => {
+    const { deps, repo } = setup();
+    vi.mocked(deps.verifyAccount).mockRejectedValue(
+      new Error("Instagram account mismatch"),
+    );
+    await expect(executeDailyPublication(deps)).rejects.toThrow("mismatch");
+    expect(deps.prepareImages).not.toHaveBeenCalled();
+    expect(deps.publish).not.toHaveBeenCalled();
+    expect(repo.finish).toHaveBeenCalledWith(expect.anything(), "failed", null);
+  });
   it("does not render or send another published day", async () => {
     const { deps, repo } = setup();
     repo.claim.mockResolvedValueOnce({

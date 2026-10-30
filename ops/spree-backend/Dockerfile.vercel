@@ -16,6 +16,8 @@ COPY --chown=1000:1000 operations/shipment-inventory-guard.rb operations/shipmen
 COPY --chown=1000:1000 operations/shipment-inventory-initializer.rb ./config/initializers/bison_shipment_inventory.rb
 COPY --chown=1000:1000 operations/madrid-delivery.rb operations/madrid-delivery.test.rb ./
 COPY --chown=1000:1000 operations/madrid-delivery-initializer.rb ./config/initializers/bison_madrid_delivery.rb
+COPY --chown=1000:1000 operations/api-key-usage.rb operations/api-key-usage.test.rb ./
+COPY --chown=1000:1000 operations/api-key-usage-initializer.rb ./config/initializers/bison_api_key_usage.rb
 COPY --chown=1000:1000 app/views/admin_users/registrations/new.html.erb ./app/views/admin_users/registrations/new.html.erb
 # The mounted Spree engine shares the admin_user Devise mapping and uses a singular scoped path.
 COPY --chown=1000:1000 app/views/admin_users/registrations/new.html.erb ./app/views/admin_user/registrations/new.html.erb
@@ -25,6 +27,7 @@ RUN ruby -c payment-setup.rb && ruby -c config/initializers/bison_payment_http.r
 RUN ruby -c shipping-setup.rb && ruby -c config/initializers/bison_shipping_http.rb && bundle exec ruby shipping-setup.test.rb
 RUN ruby -c shipment-inventory-guard.rb && ruby -c config/initializers/bison_shipment_inventory.rb && bundle exec ruby shipment-inventory-guard.test.rb
 RUN ruby -c madrid-delivery.rb && ruby -c config/initializers/bison_madrid_delivery.rb && bundle exec ruby madrid-delivery.test.rb
+RUN ruby -c api-key-usage.rb && ruby -c config/initializers/bison_api_key_usage.rb && bundle exec ruby api-key-usage.test.rb
 ENV RAILS_ENV=production PORT=3000 RAILS_MAX_THREADS=3 SOLID_QUEUE_IN_PUMA=false PIDFILE=/tmp/spree.pid TARGET_SUPABASE_PROJECT_REF=dtrospakebdiqihhcrub
 # Bypass upstream entrypoint: it runs db:prepare on each web startup.
 ENTRYPOINT ["/bin/sh", "/rails/start.sh"]

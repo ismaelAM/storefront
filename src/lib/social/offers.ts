@@ -10,6 +10,12 @@ export const OFFER_CATEGORIES: Record<DailyOfferCategory, string> = {
   accesorios: "Accesorios",
   merchandising: "Merchandising",
 };
+const CATEGORY_HASHTAGS: Record<DailyOfferCategory, string> = {
+  tcg: "#TCG",
+  "juegos-de-mesa": "#JuegosDeMesa",
+  accesorios: "#AccesoriosTCG",
+  merchandising: "#Merchandising",
+};
 export interface DailyOfferState {
   day_key: string | null;
   spree_price_list_id: string | null;
@@ -179,7 +185,14 @@ export function offerCaption(
   lines.push(
     `Compra en ${storeUrl}`,
     "Precios con IVA. Envío aparte. Válidas hoy mientras haya disponibilidad. Consulta las condiciones en la tienda.",
-    "#BisonTCG #Ofertas #TCG #JuegosDeMesa",
+    [
+      "#BisonTCG",
+      ...Object.entries(CATEGORY_HASHTAGS)
+        .filter(([category]) =>
+          snapshot.offers.some((offer) => offer.category === category),
+        )
+        .map(([, hashtag]) => hashtag),
+    ].join(" "),
   );
   return lines.join("\n");
 }

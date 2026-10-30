@@ -12,7 +12,7 @@ La rotación usa el día de Madrid y tiene prioridad sobre los rastreos largos d
 
 `vercel.json` programa `/api/cron/offers` cada día a las 04:00 UTC: 06:00 en verano y 05:00 en invierno en Madrid. En Hobby puede ejecutarse dentro de esa hora; se deja margen para preparar las imágenes antes del correo de las 08:00. `CRON_SECRET` protege la llamada; la credencial está solo en producción. Si falta conectar Instagram, prepara imágenes para descarga. Un reparto incompleto impide el carrusel automático, aunque se puedan descargar categorías disponibles desde el panel.
 
-El propietario ha autorizado el correo con las cuatro imágenes a `ayuda@bisontcg.com`. Una automatización de ChatGPT usa Gmail y consultas de solo lectura a Supabase, a las **08:00 Europe/Madrid**, desde el 13/10/2026. Adjunta las imágenes del día y sus enlaces; comprueba los correos enviados para evitar duplicados. Si faltan imágenes actuales, informa del fallo sin enviar fotos de otro día. La publicación en Instagram sigue pendiente y manual.
+El propietario ha autorizado el correo con las cuatro imágenes a `ayuda@bisontcg.com`. Una automatización de ChatGPT usa Gmail y consultas de solo lectura a Supabase, a las **08:00 Europe/Madrid**, desde el 13/10/2026. Adjunta las imágenes del día y sus enlaces; comprueba los correos enviados para evitar duplicados. Si faltan imágenes actuales, informa del fallo sin enviar fotos de otro día. Instagram quedó conectado el 30/10/2026. El registro privado confirma la publicación automática del carrusel del 30/10 a las **05:01 Madrid**, con media ID `17980210826918766`. No se lanzó una publicación de prueba adicional.
 
 Las imágenes públicas de publicación se guardan en el bucket `daily-offers` con fecha y hash inmutable. Solo contienen catálogo público. La tabla `social_offer_publications` y sus checkpoints son privados y solo el servidor puede escribirlos. Cada cuenta publica como máximo una vez al día. Ante una respuesta ambigua se bloquean reenvíos; primero debe comprobarse Instagram.
 
@@ -20,7 +20,9 @@ Las imágenes públicas de publicación se guardan en el bucket `daily-offers` c
 
 La cuenta debe ser profesional. La integración implementada utiliza Instagram Login. Tras autorizar la aplicación de Meta y comprobar su versión/contrato de publicación, configurar **solo en producción** `INSTAGRAM_ACCOUNT_ID`, `INSTAGRAM_ACCESS_TOKEN` y `INSTAGRAM_API_VERSION`; nunca con prefijo `NEXT_PUBLIC_`. Mantener/renovar el token según las condiciones de Meta. Detalles y fuentes primarias en [docs/social-instagram-api.md](docs/social-instagram-api.md).
 
-Sin estas credenciales, el botón de publicación está desactivado y no se envía nada a Instagram. No se ha conectado ni publicado en una cuenta de Instagram durante la implementación.
+Configuración comprobada el 30/10/2026: perfil `bisontcg`, Instagram Login, API `v26.0`, permisos básicos y de publicación; las tres variables se guardaron únicamente en producción. El token actual caduca el **29/12/2026 a las 00:51 Madrid**: renovar antes de esa fecha. No hay renovación automática implementada.
+
+El código revisado añade al panel «Comprobar conexión con Instagram», una consulta de identidad sin publicar, y verifica la cuenta antes de preparar/publicar. Una consulta de identidad correcta no acredita por sí sola el permiso de publicación. Sin credenciales válidas no se publica.
 
 ## Recuperación
 

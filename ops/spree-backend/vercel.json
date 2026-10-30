@@ -5,6 +5,7 @@
       "main": false,
       "chore/retire-devir": false,
       "fix/daily-offers": false,
+      "fix/storefront-stability-consumption": false,
       "migration/spree-owned-backend": false
     }
   },

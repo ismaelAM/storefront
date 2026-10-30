@@ -19,6 +19,7 @@ export function OffersPanel() {
   const [data, setData] = useState<OfferResponse | null>(null);
   const [busy, setBusy] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [checkingConnection, setCheckingConnection] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [revision, setRevision] = useState(0);
@@ -75,6 +76,35 @@ export function OffersPanel() {
       setMessage(
         "No se pudo copiar automáticamente. Selecciona y copia el texto del recuadro.",
       );
+    }
+  }
+
+  async function checkConnection() {
+    setCheckingConnection(true);
+    setMessage("");
+    setError("");
+    try {
+      const response = await fetch("/api/internal/offers/instagram", {
+        method: "GET",
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      const result = await response.json();
+      if (!response.ok)
+        throw new Error(
+          response.status === 401
+            ? "La sesión ha caducado. Vuelve a entrar con la clave de operaciones."
+            : result.error || "No se pudo comprobar la conexión.",
+        );
+      setMessage(result.message);
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "No se pudo comprobar la conexión.",
+      );
+    } finally {
+      setCheckingConnection(false);
     }
   }
 
@@ -173,6 +203,16 @@ export function OffersPanel() {
             copia el texto para publicarlas manualmente.
           </p>
         ) : null}
+        <button
+          type="button"
+          className={`${buttonClass} mt-4`}
+          disabled={checkingConnection || publishing}
+          onClick={() => void checkConnection()}
+        >
+          {checkingConnection
+            ? "Comprobando conexión…"
+            : "Comprobar conexión con Instagram"}
+        </button>
         {data && data.snapshot.offers.length < 12 ? (
           <p className="mt-3 text-sm leading-6 text-neutral-600">
             Hay menos de 12 ofertas válidas disponibles. Solo se incluyen
@@ -267,6 +307,7 @@ export function OffersPanel() {
                   !data.instagramConfigured ||
                   !data.snapshot.offers.length ||
                   publishing ||
+                  checkingConnection ||
                   busy
                 }
                 onClick={() => void publish()}
