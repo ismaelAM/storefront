@@ -26,6 +26,7 @@ import {
 import {
   inferDevirCategoryKey,
   isCatalanCatalogProduct,
+  isExcludedCatalogLanguage,
   normalizeDevirCatalogTitle,
   normalizeDevirRetailUnit,
 } from "../_shared/devir-catalog-policy.ts";
@@ -2902,6 +2903,7 @@ async function persistCatalogOffer(
   rawItem: SupplierCatalogItem,
   runId: string | null,
 ): Promise<CatalogResolution> {
+  if (isExcludedCatalogLanguage(rawItem)) throw new Error("CATALOG_LANGUAGE_EXCLUDED");
   const item = normalizeSupplierItem(rawItem);
   const identity = buildCanonicalIdentity(item);
   const supplier = await configuredCatalogSupplier(item.supplierCode);
@@ -3205,6 +3207,13 @@ async function reconcileCatalogVariantUnlocked(
   lastAutoPrice: number | null;
   selectedSupplierCode: string | null;
 }> {
+  if (isExcludedCatalogLanguage({ name: resolution.product.name,
+      variantName: resolution.variant.name, options: resolution.variant.option_values,
+      categoryKey: resolution.product.category_key })) {
+    return { productId: resolution.product.spree_product_id, variantId: resolution.variant.spree_variant_id,
+      images: 0, review: true, reviewReasons: ["language_excluded_by_owner"],
+      backorderItems: 0, lastAutoPrice: null, selectedSupplierCode: null };
+  }
   const selection = await chooseCatalogOffer(resolution.variant);
   const mapping = await catalogSpreeMapping(
     config,
@@ -3391,6 +3400,9 @@ async function syncProductToSpree(
   backorderItems: number;
   lastAutoPrice: number | null;
 }> {
+  if (isExcludedCatalogLanguage({ name: product.name, url: product.url, options: catalogContext?.options })) {
+    throw new Error("CATALOG_LANGUAGE_EXCLUDED");
+  }
   if (!product.purchasePrice || product.purchasePrice <= 0) {
     throw new Error("Producto sin coste comparable: " + product.sku);
   }
@@ -9289,6 +9301,10 @@ async function ingestCatalogItemsAction(
     const value =
       raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
     try {
+      if (isExcludedCatalogLanguage(value as unknown as SupplierCatalogItem)) {
+        results.push({ ok: true, skipped: true, reason: "language_excluded_by_owner", externalVariantId: String(value.externalVariantId ?? "") });
+        continue;
+      }
       const { resolution, synced } = await ingestCatalogItem(
         config,
         { ...value, supplierCode } as unknown as SupplierCatalogItem,
@@ -9928,6 +9944,7 @@ async function tcgFactoryDiscoverPublicBatch(
     try {
       const detail = await tcgFactoryTextFetch(url);
       const product = parseTcgFactoryPublicProduct(detail.html, url, section);
+      if (isExcludedCatalogLanguage(product)) continue;
       await upsertTcgFactoryDiscovery(supplier.id, product, runId);
       discovered += 1;
     } catch (error) {
@@ -10452,12 +10469,14 @@ async function tcgFactoryTick(
           .update({ updated_at: new Date().toISOString() }).eq("id", offer.id);
         if (error) throw error;
       }
+      if (isExcludedCatalogLanguage({ url })) return;
       const publicDetail = await tcgFactoryTextFetch(url, undefined, config.request_budget);
       const publicProduct = parseTcgFactoryPublicProduct(
         publicDetail.html,
         url,
         refreshingOffers ? undefined : state.section,
       );
+      if (isExcludedCatalogLanguage(publicProduct)) return;
       await upsertTcgFactoryDiscovery(supplier.id, publicProduct, itemRunId);
       outcome.discovered = 1;
 
@@ -10480,6 +10499,7 @@ async function tcgFactoryTick(
         url,
         refreshingOffers ? undefined : state.section,
       );
+      if (isExcludedCatalogLanguage(authenticatedProduct)) return;
       if (authenticatedProduct.availability !== "available" && authenticatedProduct.availability !== "preorder") {
         await reconcileUnavailableTcgFactoryProduct(config, supplier.id, authenticatedProduct, itemRunId, categories, defs);
         return;

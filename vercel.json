@@ -7,6 +7,7 @@
       "fix/daily-offers": false,
       "fix/storefront-stability-consumption": false,
       "fix/owned-stock-offer-limits": false,
+      "fix/exclude-french-italian": false,
       "migration/spree-owned-backend": false
     }
   },

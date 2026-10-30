@@ -3,7 +3,7 @@ import {
   type SupplierAvailability,
 } from "./catalog-sourcing.ts";
 import { mapTcgFactoryAvailability } from "./tcgfactory-adapter.ts";
-import { inferDevirCategoryKey } from "./devir-catalog-policy.ts";
+import { inferDevirCategoryKey, isExcludedCatalogLanguage } from "./devir-catalog-policy.ts";
 
 export const TCGFACTORY_BASE_URL = "https://tcgfactory.com";
 export const TCGFACTORY_ACCESSORIES_URL =
@@ -459,7 +459,7 @@ export function parseTcgFactoryListing(
       : 1,
   );
   return {
-    productUrls: unique,
+    productUrls: unique.filter((url) => !isExcludedCatalogLanguage({ url })),
     page: currentPage,
     totalPages,
     totalItems,
