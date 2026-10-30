@@ -172,3 +172,43 @@ export function inferDevirCategoryKey(product: DevirCategoryCandidate): string {
   }
   return "juegos-de-mesa/general";
 }
+
+/** Retail edition languages excluded by the owner; preserve other languages and multilingual editions. */
+
+export function isExcludedCatalogLanguage(candidate: {
+  name?: string | null;
+  productName?: string | null;
+  variantName?: string | null;
+  url?: string | null;
+  sourceUrl?: string | null;
+  options?: Record<string, unknown> | null;
+  categoryKey?: string | null;
+}): boolean {
+  const normalize = (value: unknown) => String(value ?? "")
+    .normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  const excludedWords = /\b(?:frances|francesa|francais|francaise|italiano|italiana|italien|italienne)\b/;
+  const excludedLanguage = /\b(?:fr|fra|fre|it|ita|french|italian|frances|francesa|francais|francaise|italiano|italiana|italien|italienne)\b/;
+  const allowedLanguage = /\b(?:es|esp|en|eng|espanol|castellano|spanish|ingles|english)\b/;
+  for (const [key, value] of Object.entries(candidate.options ?? {})) {
+    if (!/^(?:idioma|language|lang|lengua)$/.test(normalize(key))) continue;
+    const language = normalize(value);
+    // A multilingual retail edition containing Spanish/English remains valid.
+    if (excludedLanguage.test(language)) return !allowedLanguage.test(language);
+  }
+  const name = normalize(`${candidate.name || candidate.productName || ""} ${candidate.variantName || ""}`);
+  let url = normalize(candidate.url || candidate.sourceUrl);
+  try { url = normalize(decodeURIComponent(url)); } catch { /* Keep the literal source path. */ }
+  const languageGroup = /\b(?:espanol|spanish|castellano|ingles|english)\s*(?:[/+,&-]|\band\b|\by\b)\s*(?:frances|francais|french|italiano|italian)\b|\b(?:frances|francais|french|italiano|italian)\s*(?:[/+,&-]|\band\b|\by\b)\s*(?:espanol|spanish|castellano|ingles|english)\b/;
+  const basename = url.split(/[/?#]/).filter(Boolean).pop() ?? "";
+  if (languageGroup.test(name) || languageGroup.test(basename)) return false;
+  if (/\bmultiling(?:ual|ue)\b/.test(name) && allowedLanguage.test(name) && excludedLanguage.test(name)) return false;
+  if (excludedWords.test(name) || excludedWords.test(url.replace(/[-_]/g, " "))) return true;
+  const tcg = String(candidate.categoryKey ?? "").startsWith("tcg") ||
+    /\b(?:mtg|magic|booster|pokemon|lorcana|yugioh|yu-gi-oh)\b/.test(name + " " + url.replace(/[-_]/g, " "));
+  if (tcg && (/\b(?:french|italian)\b/.test(name + " " + url.replace(/[-_]/g, " ")) || /-(?:fr|it)(?:\.html)?$/.test(basename))) return true;
+  // Do not mistake character/product names such as French Bulldog or The
+  // Italian Job for an edition language outside the TCG catalog.
+  return /[\[(]\s*(?:fr|it|french|italian)\s*[\])]/.test(name) ||
+    /(?:idioma|language|edition|edicion)\s*[:=-]?\s*(?:fr|it|french|italian)\b/.test(name) ||
+    /(?:\s[-–—]\s*|\s)(?:french|italian)\s*$/.test(name);
+}
