@@ -313,18 +313,29 @@ sitúan alrededor de 8,5 %, expansiones en 10 % y accesorios entre 13 % y 15 %
 según familia. Los precios manuales de Spree siguen teniendo prioridad.
 
 Las ofertas públicas se implementan como una Price List de Spree separada del
-precio base. Rotan una vez por día según calendario Europe/Madrid, con 8 productos
-en un día normal y 16 los sábados. La selección es determinista por fecha,
-diversificada por perfil y respeta un suelo de contribución específico para
+precio base. Rotan una vez por día según calendario Europe/Madrid, con12 productos
+(tres de cada grupo: TCG, juegos de mesa/rol, accesorios y merchandising), también
+los sábados. La selección es determinista por fecha y respeta un suelo de contribución específico para
 ofertas. Manga/libros de precio fijo y productos en revisión quedan excluidos.
 
 El stock físico real de Spree (`count_on_hand > 0`) se prioriza frente al stock
 meramente disponible por proveedor. No depende de la antigüedad: duplica el
-descuento rotativo del perfil, con un máximo del 35 %, pero nunca baja del
+descuento rotativo del perfil, con un máximo del35%, salvo los límites expresos
+del propietario: los precons Commander tienen un máximo del3% y las cajas de
+sobres MTG/coleccionista y Yugioh, de10€ por caja. Los topes se aplican sobre el
+PVP base real, con redondeo hacia arriba al céntimo, también los sábados. No se
+acumulan sobre una promoción anterior. Con un coste conocido nunca baja del
 break-even calculado con coste neto, IVA y comisión estándar de tarjeta. Para
 stock físico no se añade el recargo estratégico de riesgo MOQ al suelo de
 liquidación; para stock de proveedor se mantienen el margen de oferta y el
-recargo MOQ normales. Los PVP manuales siguen excluidos de la rotación.
+recargo MOQ normales. Los PVP manuales siguen excluidos salvo stock propio
+`physical_only` expresamente registrado por el propietario, con unidades
+vendibles confirmadas en Spree y un precio base que aún coincide con el importe
+autorizado. Esta excepción solo se aplica a las familias con los topes anteriores;
+puede participar aunque no exista proveedor u oferta activa. Sin coste de compra
+no se inventa un margen: se usa únicamente ese descuento limitado autorizado.
+El precio base, las cantidades, la prohibición de backorders y los bloqueos de
+revisión permanecen protegidos.
 
 ## Revisión humana persistente y fulfillment seguro
 

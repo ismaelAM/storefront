@@ -40,6 +40,7 @@ import {
   madridCommercialDayEndsAt,
   rotatingOfferDiscount,
   rotatingOfferFloorMargin,
+  rotatingOfferMinimumAmount,
 } from "../_shared/commercial-pricing-policy.ts";
 import {
   dailyOfferCategory,
@@ -115,6 +116,7 @@ interface JobRow {
 }
 
 interface SpreeProduct {
+  metadata?: Record<string, unknown>;
   preorder?: boolean;
   purchasable?: boolean;
   id: string;
@@ -124,11 +126,14 @@ interface SpreeProduct {
 }
 
 interface SpreeVariant {
+  original_price?: {amount?: string | number | null; currency?: string | null; price_list_id?: string | null} | null;
+  available_stock?: number;
   id: string;
   sku?: string | null;
   cost_price?: string | number | null;
+  cost_currency?: string | null;
   price?:
-    | { amount?: string | number | null; currency?: string | null }
+    | { amount?: string | number | null; currency?: string | null; price_list_id?: string | null }
     | string
     | number
     | null;
@@ -8443,7 +8448,7 @@ async function restoreDailyOfferTags(
   }
 }
 
-async function loadDailyOfferSupplyRows(): Promise<Array<Record<string, unknown>>> {
+async function loadDailyOfferSupplyRows(physicalVariantIds: string[] = []): Promise<Array<Record<string, unknown>>> {
   const rows: Array<Record<string, unknown>> = [];
   for (let offset = 0; offset < 5000; offset += 500) {
     const { data, error } = await supabase
@@ -8461,6 +8466,20 @@ async function loadDailyOfferSupplyRows(): Promise<Array<Record<string, unknown>
     const batch = (data ?? []) as Array<Record<string, unknown>>;
     rows.push(...batch);
     if (batch.length < 500) break;
+  }
+  // Owned retail units do not need an active supplier offer. Resolve exact
+  // native variant IDs, retaining canonical identity and fulfillment guards.
+  const seen = new Set(rows.map(row => String(row.spree_variant_id)));
+  for (let index = 0; index < physicalVariantIds.length; index += 200) {
+    const {data, error} = await supabase.from("catalog_variants")
+      .select("id,product_id,canonical_sku,spree_variant_id,fulfillment_mode")
+      .in("spree_variant_id", physicalVariantIds.slice(index, index + 200));
+    if (error) throw error;
+    for (const variant of data ?? []) {
+      if (seen.has(variant.spree_variant_id) || variant.fulfillment_mode === "disabled") continue;
+      rows.push({...variant,variant_id:variant.id,availability:"unavailable",supplier_code:null});
+      seen.add(variant.spree_variant_id);
+    }
   }
   return rows;
 }
@@ -8528,6 +8547,16 @@ async function resumeDailyOfferRotation(config: ConfigRow, state: DailyOfferStat
   return { status: "rotated", dayKey: state.day_key, saturday: state.special, priceListId: state.spree_price_list_id, products: products.length };
 }
 
+function dailyOfferBasePrice(variant: SpreeVariant): number | null {
+  const regular = variant.original_price;
+  if (regular && !regular.price_list_id && regular.currency === "EUR") {
+    return variantPrice({id: variant.id, price: regular});
+  }
+  if (variant.price && typeof variant.price === "object" &&
+      (variant.price.price_list_id || (variant.price.currency && variant.price.currency !== "EUR"))) return null;
+  return variantPrice(variant);
+}
+
 function dailyOfferPrice(input: {
   product: DevirProduct;
   currentPrice: number;
@@ -8536,8 +8565,13 @@ function dailyOfferPrice(input: {
   profile: ReturnType<typeof commercialPricingProfile>;
   physicalStock: boolean;
   saturday: boolean;
+  authorizedOwnedStock?: boolean;
 }): { amount: number; discount: number } | null {
-      const surchargeNet = minimumOrderRiskSurcharge(
+  const minimumAmount = rotatingOfferMinimumAmount(input.profile, input.currentPrice);
+  const cost = Number(input.product.purchasePrice);
+  const knownCost = Number.isFinite(cost) && cost > 0;
+  if (!knownCost && !(input.authorizedOwnedStock && input.physicalStock && minimumAmount > 0)) return null;
+  const surchargeNet = minimumOrderRiskSurcharge(
     input.product,
     input.supplierCode,
     input.supplierConfig,
@@ -8546,21 +8580,24 @@ function dailyOfferPrice(input: {
     supplierCode: input.supplierCode,
     isBook: false,
   });
-  const offerFloor = paymentAwareFloor(
-    input.product.purchasePrice! + (input.physicalStock ? 0 : surchargeNet),
+  const offerFloor = knownCost ? paymentAwareFloor(
+    cost + (input.physicalStock ? 0 : surchargeNet),
     vatRate,
     rotatingOfferFloorMargin(
       input.profile,
       input.physicalStock,
     ),
-  );
+  ) : 0;
   const discount = rotatingOfferDiscount(
     input.profile,
     input.saturday,
     input.physicalStock,
   );
   const desired = input.currentPrice * (1 - discount);
-  const amount = roundUpToProfessionalPrice(Math.max(offerFloor, desired));
+  const raw = Math.max(offerFloor, desired, minimumAmount);
+  // Cent rounding keeps a narrow 3% precon offer usable without ever exceeding
+  // its cap; commercial endings can otherwise erase that small discount.
+  const amount = minimumAmount > 0 ? Math.ceil(raw * 100 - 1e-8) / 100 : roundUpToProfessionalPrice(raw);
   const realisedDiscount = (input.currentPrice - amount) / input.currentPrice;
   if (
     amount + 0.005 >= input.currentPrice ||
@@ -8592,7 +8629,15 @@ async function rotateDailyOffersUnlocked(
     };
   }
 
-  const supplyRows = await loadDailyOfferSupplyRows();
+  const physicalStockByVariant = new Map<string, number>();
+  const stockItems = await spreeListAll<SpreeStockItem>(config, "/stock_items?q[count_on_hand_gt]=0");
+  for (const item of stockItems) {
+    const variantId = String(item.variant_id ?? "");
+    const countOnHand = Number(item.count_on_hand ?? 0);
+    if (!variantId || !Number.isFinite(countOnHand) || countOnHand <= 0) continue;
+    physicalStockByVariant.set(variantId, (physicalStockByVariant.get(variantId) ?? 0) + countOnHand);
+  }
+  const supplyRows = await loadDailyOfferSupplyRows([...physicalStockByVariant.keys()]);
   const variantIds = Array.from(
     new Set(supplyRows.map((row) => String(row.variant_id ?? "")).filter(Boolean)),
   );
@@ -8613,7 +8658,7 @@ async function rotateDailyOffersUnlocked(
   for (let index = 0; index < productIds.length; index += 200) {
     const { data, error } = await supabase
       .from("catalog_products")
-      .select("id,name,category_key")
+      .select("id,name,category_key,spree_product_id,requires_review,review_decision")
       .in("id", productIds.slice(index, index + 200));
     if (error) throw error;
     productRows.push(...((data ?? []) as Array<Record<string, unknown>>));
@@ -8626,30 +8671,21 @@ async function rotateDailyOffersUnlocked(
     productRows.map((row) => [String(row.id), row]),
   );
 
-  const physicalStockByVariant = new Map<string, number>();
-  const stockItems = await spreeListAll<SpreeStockItem>(config, "/stock_items?q[count_on_hand_gt]=0");
-  for (const item of stockItems) {
-    const variantId = String(item.variant_id ?? "");
-    const countOnHand = Number(item.count_on_hand ?? 0);
-    if (!variantId || !Number.isFinite(countOnHand) || countOnHand <= 0) continue;
-    physicalStockByVariant.set(
-      variantId,
-      (physicalStockByVariant.get(variantId) ?? 0) + countOnHand,
-    );
-  }
-
   const ranked = supplyRows
     .flatMap((row) => {
       const variant = variantsById.get(String(row.variant_id ?? ""));
       const productRow = productsById.get(String(row.product_id ?? ""));
       if (!variant || !productRow) return [];
+      if (productRow.review_decision === "rejected" || (productRow.requires_review && productRow.review_decision !== "approved")) return [];
       const lastAutoPrice = Number(variant.last_auto_price);
       const cost = Number(row.normalized_cost);
+      const spreeVariantId = String(row.spree_variant_id ?? "");
+      const stockOnHand = physicalStockByVariant.get(spreeVariantId) ?? 0;
       if (
-        !Number.isFinite(lastAutoPrice) ||
+        stockOnHand <= 0 && (!Number.isFinite(lastAutoPrice) ||
         lastAutoPrice <= 0 ||
         !Number.isFinite(cost) ||
-        cost <= 0
+        cost <= 0)
       ) {
         return [];
       }
@@ -8665,8 +8701,6 @@ async function rotateDailyOffersUnlocked(
       if (!profile.offerEligible || isBookSku(String(row.canonical_sku ?? ""))) {
         return [];
       }
-      const spreeVariantId = String(row.spree_variant_id ?? "");
-      const stockOnHand = physicalStockByVariant.get(spreeVariantId) ?? 0;
       // Stale supplier rows must not consume the bounded inspection pool or
       // external request budget before fresh offers can be reached. Actual
       // physical stock retains its existing independent clearance path.
@@ -8679,7 +8713,7 @@ async function rotateDailyOffersUnlocked(
       }
       return [
         {
-          row,
+          row: {...row, spree_product_id: row.spree_product_id ?? productRow.spree_product_id},
           key,
           category,
           profile,
@@ -8761,56 +8795,64 @@ async function rotateDailyOffersUnlocked(
       ) {
         continue;
       }
-      const currentPrice = variantPrice(spreeVariant);
+      const currentPrice = dailyOfferBasePrice(spreeVariant);
+      const liveStock = Number(spreeVariant.available_stock ?? spreeVariant.total_on_hand);
+      const stockOnHand = Number.isFinite(liveStock) ? Math.max(0, liveStock) : candidate.stockOnHand;
+      const physicalStock = stockOnHand > 0;
+      const supply = selectedSupply ?? row;
+      const ownerStock = spreeProduct.metadata?.owner_stock_20261030 as Record<string, unknown> | undefined;
+      const authorizedOwnedStock = physicalStock && Number.isFinite(liveStock) && row.fulfillment_mode === "physical_only" &&
+        ownerStock?.source === "owner_instruction" && currentPrice !== null &&
+        Math.abs(Number(ownerStock.manual_price_eur) - currentPrice) < 0.005 &&
+        rotatingOfferMinimumAmount(candidate.profile, currentPrice) > 0;
       if (
         currentPrice === null ||
         !Number.isFinite(currentPrice) ||
         currentPrice <= 0 ||
-        Math.abs(currentPrice - candidate.lastAutoPrice) >= 0.005 ||
-        !selectedSupply?.supplier_code ||
+        (!authorizedOwnedStock && (!(candidate.lastAutoPrice > 0) || Math.abs(currentPrice - candidate.lastAutoPrice) >= 0.005)) ||
+        (!physicalStock && !supply.supplier_code) ||
         spreeVariant.purchasable === false ||
-        selectedSupply.fulfillment_mode === "disabled"
+        spreeVariant.preorder || spreeVariant.preorderable ||
+        supply.fulfillment_mode === "disabled"
       ) {
         // A base price that differs from last_auto_price is an operator override.
         continue;
       }
 
-      const liveStock = Number(spreeVariant.total_on_hand);
-      const stockOnHand = Number.isFinite(liveStock) ? Math.max(0, liveStock) : candidate.stockOnHand;
-      const physicalStock = stockOnHand > 0;
       if (!physicalStock) {
-        if (selectedSupply.fulfillment_mode === "physical_only" || selectedSupply.availability !== "available" || selectedSupply.supplier_enabled === false) continue;
-        if (selectedSupply.last_seen_at && selectedSupply.supplier_stale_after_hours != null) {
-          const lastSeen = Date.parse(selectedSupply.last_seen_at);
-          const staleAfterMs = Number(selectedSupply.supplier_stale_after_hours) * 60 * 60 * 1000;
+        if (supply.fulfillment_mode === "physical_only" || supply.availability !== "available" || supply.supplier_enabled === false) continue;
+        if (supply.last_seen_at && supply.supplier_stale_after_hours != null) {
+          const lastSeen = Date.parse(String(supply.last_seen_at));
+          const staleAfterMs = Number(supply.supplier_stale_after_hours) * 60 * 60 * 1000;
           if (!Number.isFinite(lastSeen) || !Number.isFinite(staleAfterMs) || staleAfterMs <= 0 || Date.now() - lastSeen > staleAfterMs) continue;
         }
       }
 
-      const purchasePrice = Number(selectedSupply.normalized_cost);
-      if (!Number.isFinite(purchasePrice) || purchasePrice <= 0) continue;
-      const referencePriceNet = Number(selectedSupply.reference_price_net);
+      const nativeCost = (spreeVariant.cost_currency ?? "EUR") === "EUR" ? Number(spreeVariant.cost_price) : NaN;
+      const purchasePrice = physicalStock && nativeCost > 0 ? nativeCost : Number(supply.normalized_cost);
+      if ((!Number.isFinite(purchasePrice) || purchasePrice <= 0) && !authorizedOwnedStock) continue;
+      const referencePriceNet = Number(supply.reference_price_net);
       const product: DevirProduct = {
-        sku: selectedSupply.canonical_sku || String(row.canonical_sku ?? ""),
-        name: selectedSupply.product_name || String(row.product_name ?? ""),
-        url: selectedSupply.source_url ?? String(row.source_url ?? ""),
+        sku: String(supply.canonical_sku || row.canonical_sku || ""),
+        name: String(supply.product_name || row.product_name || spreeProduct.name),
+        url: String(supply.source_url ?? row.source_url ?? ""),
         purchasePrice,
         referencePriceNet:
           Number.isFinite(referencePriceNet) && referencePriceNet > 0
             ? referencePriceNet
             : null,
-        availability: selectedSupply.availability ?? "available",
+        availability: (supply.availability ?? "unavailable") as DevirProduct["availability"],
         availabilityLabel: null,
         releaseDate: null,
         imageUrls: [],
         categoryKeyOverride: candidate.key,
-        supplierMinimumQuantity: selectedSupply.minimum_order_quantity ?? null,
+        supplierMinimumQuantity: supply.minimum_order_quantity == null ? null : Number(supply.minimum_order_quantity),
       };
       if (isBookProduct(product, candidate.key)) continue;
 
-      const price = dailyOfferPrice({ product, currentPrice, supplierCode: selectedSupply.supplier_code,
-        supplierConfig: selectedSupply.supplier_config, profile: candidate.profile,
-        physicalStock, saturday: calendar.saturday });
+      const price = dailyOfferPrice({ product, currentPrice, supplierCode: String(supply.supplier_code ?? ""),
+        supplierConfig: supply.supplier_config as Record<string, unknown> | null, profile: candidate.profile,
+        physicalStock, saturday: calendar.saturday, authorizedOwnedStock });
       if (!price) continue;
       const { amount, discount: realisedDiscount } = price;
 

@@ -13,6 +13,8 @@ const source = ts.createSourceFile(
   true,
 );
 const functions = [
+  "loadDailyOfferSupplyRows",
+  "dailyOfferBasePrice",
   "dailyOfferPrice",
   "rotateDailyOffersUnlocked",
   "resumeDailyOfferRotation",
@@ -43,8 +45,14 @@ type ProductFixture = {
   name?: string;
   sku?: string;
   price?: number;
-  lastAutoPrice?: number;
-  cost?: number;
+  lastAutoPrice?: number | null;
+  cost?: number | null;
+  nativeCost?: number;
+  costCurrency?: string;
+  noSupplier?: boolean;
+  liveStock?: number;
+  ownerAuthorized?: boolean;
+  activeOfferPrice?: number;
   tags?: string[];
   availability?: string;
   purchasable?: boolean;
@@ -60,22 +68,24 @@ function fixture(products: ProductFixture[], saturday = false, latencyMs = 0) {
     path: string;
     body?: Record<string, unknown>;
   }> = [];
-  const supplies = products.map((product) => ({
-    variant_id: `catalog-${product.id}`,
-    spree_variant_id: `variant-${product.id}`,
-    spree_product_id: product.id,
-    product_id: `catalog-product-${product.id}`,
-    product_name: product.name ?? product.id,
-    canonical_sku: product.sku ?? product.id,
-    normalized_cost: product.cost ?? 10,
-    supplier_code: "fixture",
-    availability: product.availability ?? "available",
-    currency: "EUR",
-    supplier_enabled: product.supplierEnabled ?? true,
-    supplier_stale_after_hours: 24,
-    last_seen_at: product.lastSeenAt ?? new Date().toISOString(),
-    fulfillment_mode: product.fulfillmentMode ?? "supplier_or_physical",
-  }));
+  const supplies = products
+    .filter((product) => !product.noSupplier)
+    .map((product) => ({
+      variant_id: `catalog-${product.id}`,
+      spree_variant_id: `variant-${product.id}`,
+      spree_product_id: product.id,
+      product_id: `catalog-product-${product.id}`,
+      product_name: product.name ?? product.id,
+      canonical_sku: product.sku ?? product.id,
+      normalized_cost: product.cost === undefined ? 10 : product.cost,
+      supplier_code: "fixture",
+      availability: product.availability ?? "available",
+      currency: "EUR",
+      supplier_enabled: product.supplierEnabled ?? true,
+      supplier_stale_after_hours: 24,
+      last_seen_at: product.lastSeenAt ?? new Date().toISOString(),
+      fulfillment_mode: product.fulfillmentMode ?? "supplier_or_physical",
+    }));
   const api = runInNewContext(
     `${code}; ({ rotateDailyOffersUnlocked, category: typeof dailyOfferCategory === 'function' ? dailyOfferCategory : undefined, interleave: typeof interleaveDailyOfferCandidates === 'function' ? interleaveDailyOfferCandidates : undefined })`,
     {
@@ -88,7 +98,6 @@ function fixture(products: ProductFixture[], saturday = false, latencyMs = 0) {
       STANDARD_EEA_CARD_FIXED_EUR: 0.25,
       inferDevirCategoryKey: () => "",
       dailyOfferState: async () => state,
-      loadDailyOfferSupplyRows: async () => supplies,
       spreeListAll: async () =>
         products.map((product) => ({
           variant_id: `variant-${product.id}`,
@@ -120,20 +129,56 @@ function fixture(products: ProductFixture[], saturday = false, latencyMs = 0) {
         if (path.includes("/variants/"))
           return {
             id: `variant-${id}`,
-            price: product?.price ?? 30,
+            price:
+              product?.activeOfferPrice === undefined
+                ? (product?.price ?? 30)
+                : {
+                    amount: product.activeOfferPrice,
+                    currency: "EUR",
+                    price_list_id: "old-offer",
+                  },
+            original_price:
+              product?.activeOfferPrice === undefined
+                ? undefined
+                : {
+                    amount: product.price ?? 30,
+                    currency: "EUR",
+                    price_list_id: null,
+                  },
+            cost_price: product?.nativeCost ?? product?.cost,
+            cost_currency: product?.costCurrency ?? "EUR",
             purchasable: product?.purchasable ?? true,
-            total_on_hand: product?.stock ?? 0,
+            total_on_hand: product?.liveStock ?? product?.stock ?? 0,
           };
         if (path.startsWith("/products/"))
-          return { id, status: "active", tags: product?.tags ?? [] };
+          return {
+            id,
+            status: "active",
+            tags: product?.tags ?? [],
+            metadata: product?.ownerAuthorized
+              ? {
+                  owner_stock_20261030: {
+                    source: "owner_instruction",
+                    manual_price_eur: product.price,
+                  },
+                }
+              : {},
+          };
         return {};
       },
       supabase: {
         from: (table: string) => {
+          let wantedSpreeIds: string[] | undefined;
           const query = {
             select: () => query,
-            in: () => query,
+            in: (column: string, ids: string[]) => {
+              if (column === "spree_variant_id") wantedSpreeIds = ids;
+              return query;
+            },
             eq: () => query,
+            not: () => query,
+            order: () => query,
+            range: async () => ({ data: supplies, error: null }),
             upsert: (row: Record<string, unknown>) => {
               state = row;
               return query;
@@ -148,13 +193,28 @@ function fixture(products: ProductFixture[], saturday = false, latencyMs = 0) {
                 error: null,
                 data:
                   table === "catalog_variants"
-                    ? products.map((product) => ({
-                        id: `catalog-${product.id}`,
-                        last_auto_price: product.lastAutoPrice ?? 30,
-                      }))
+                    ? products
+                        .filter(
+                          (product) =>
+                            !wantedSpreeIds ||
+                            wantedSpreeIds.includes(`variant-${product.id}`),
+                        )
+                        .map((product) => ({
+                          id: `catalog-${product.id}`,
+                          product_id: `catalog-product-${product.id}`,
+                          canonical_sku: product.sku ?? product.id,
+                          spree_variant_id: `variant-${product.id}`,
+                          fulfillment_mode:
+                            product.fulfillmentMode ?? "supplier_or_physical",
+                          last_auto_price:
+                            product.lastAutoPrice === undefined
+                              ? 30
+                              : product.lastAutoPrice,
+                        }))
                     : table === "catalog_products"
                       ? products.map((product) => ({
                           id: `catalog-product-${product.id}`,
+                          spree_product_id: product.id,
                           name: product.name ?? product.id,
                           category_key: product.category,
                         }))
@@ -233,6 +293,188 @@ describe("Pure daily offer category selection", () => {
 });
 
 describe("Daily offer category rotation", () => {
+  it.each([
+    false,
+    true,
+  ])("never discounts a physical precon by more than three percent on saturday=%s", async (saturday) => {
+    const f = fixture(
+      [
+        {
+          id: "precon",
+          name: "Fallout Science! Commander Deck - Magic: The Gathering",
+          category: "tcg/mtg",
+          price: 59.99,
+          lastAutoPrice: 59.99,
+          cost: 20,
+          stock: 3,
+        },
+      ],
+      saturday,
+    );
+    const offer = (await f.api.rotateDailyOffersUnlocked({}, true)).selected[0];
+    expect(offer.amount).toBe(58.2);
+  });
+
+  it.each([
+    false,
+    true,
+  ])("never discounts a physical booster box by more than ten euros on saturday=%s", async (saturday) => {
+    const f = fixture(
+      [
+        {
+          id: "box",
+          name: "Lorwyn Eclipsed Play Booster Box (30 sobres) - Magic: The Gathering",
+          category: "tcg/mtg",
+          price: 139.99,
+          lastAutoPrice: 139.99,
+          cost: 70,
+          stock: 6,
+        },
+      ],
+      saturday,
+    );
+    const offer = (await f.api.rotateDailyOffersUnlocked({}, true)).selected[0];
+    expect(offer.amount).toBe(129.99);
+  });
+
+  it("prioritizes authorized physical-only manual stock without requiring a supplier or auto price", async () => {
+    const f = fixture([
+      ...productsFor("tcg/mtg", 4),
+      {
+        id: "owner",
+        name: "Fallout Science! Commander Deck - Magic: The Gathering",
+        category: "tcg/mtg",
+        price: 39.99,
+        lastAutoPrice: null,
+        cost: null,
+        stock: 3,
+        noSupplier: true,
+        fulfillmentMode: "physical_only",
+        ownerAuthorized: true,
+      },
+    ]);
+    const offers = (await f.api.rotateDailyOffersUnlocked({}, true)).selected;
+    expect(
+      offers.map((offer: { productId: string }) => offer.productId),
+    ).toEqual(["owner", "tcg-mtg-0", "tcg-mtg-1"]);
+    expect(offers[0].amount).toBe(38.8);
+    expect(offers[0].compareAtAmount).toBe(39.99);
+    expect(
+      f.requests.some(
+        (request) =>
+          request.method !== "GET" && request.path.includes("/variants/"),
+      ),
+    ).toBe(false);
+  });
+
+  it("rechecks live stock before discounting a manual owned product", async () => {
+    const f = fixture([
+      {
+        id: "sold",
+        name: "Fallout Commander Deck - Magic: The Gathering",
+        category: "tcg/mtg",
+        price: 39.99,
+        lastAutoPrice: null,
+        cost: null,
+        stock: 3,
+        liveStock: 0,
+        noSupplier: true,
+        fulfillmentMode: "physical_only",
+        ownerAuthorized: true,
+      },
+    ]);
+    expect((await f.api.rotateDailyOffersUnlocked({}, true)).selected).toEqual(
+      [],
+    );
+  });
+
+  it("does not authorize unknown-cost manual discounts from a stale stock snapshot", async () => {
+    const f = fixture([
+      {
+        id: "unknown-live-stock",
+        name: "Fallout Commander Deck - Magic: The Gathering",
+        category: "tcg/mtg",
+        price: 39.99,
+        lastAutoPrice: null,
+        cost: null,
+        stock: 3,
+        liveStock: NaN,
+        noSupplier: true,
+        fulfillmentMode: "physical_only",
+        ownerAuthorized: true,
+      },
+    ]);
+    expect((await f.api.rotateDailyOffersUnlocked({}, true)).selected).toEqual(
+      [],
+    );
+  });
+
+  it("retains review and uncapped manual-price guards for physical-only stock", async () => {
+    const f = fixture([
+      {
+        id: "review-owned",
+        name: "Fallout Commander Deck - Magic: The Gathering",
+        category: "tcg/mtg",
+        price: 39.99,
+        lastAutoPrice: null,
+        cost: null,
+        stock: 3,
+        noSupplier: true,
+        fulfillmentMode: "physical_only",
+        tags: ["catalog-review"],
+      },
+      {
+        id: "uncapped",
+        name: "Manual-priced figure",
+        category: "merchandising",
+        price: 39.99,
+        lastAutoPrice: null,
+        cost: null,
+        stock: 3,
+        noSupplier: true,
+        fulfillmentMode: "physical_only",
+      },
+    ]);
+    expect((await f.api.rotateDailyOffersUnlocked({}, true)).selected).toEqual(
+      [],
+    );
+  });
+
+  it("calculates the offer from the regular EUR price without compounding an active overlay", async () => {
+    const f = fixture([
+      {
+        id: "overlay",
+        name: "MTG Play Booster Box",
+        category: "tcg/mtg",
+        price: 139.99,
+        lastAutoPrice: 139.99,
+        activeOfferPrice: 129.99,
+        cost: 70,
+        stock: 6,
+      },
+    ]);
+    const offer = (await f.api.rotateDailyOffersUnlocked({}, true)).selected[0];
+    expect(offer.compareAtAmount).toBe(139.99);
+    expect(offer.amount).toBe(129.99);
+  });
+
+  it("uses the normalized EUR supply cost instead of interpreting a foreign native cost as euros", async () => {
+    const f = fixture([
+      {
+        id: "foreign-cost",
+        name: "MTG Play Booster Box",
+        category: "tcg/mtg",
+        price: 139.99,
+        lastAutoPrice: 139.99,
+        cost: 70,
+        nativeCost: 200,
+        costCurrency: "USD",
+        stock: 6,
+      },
+    ]);
+    const offer = (await f.api.rotateDailyOffersUnlocked({}, true)).selected[0];
+    expect(offer?.amount).toBe(129.99);
+  });
   it("reaches fresh offers without spending the request budget inspecting stale supplier candidates", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-10-26T10:00:00Z"));

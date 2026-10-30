@@ -375,7 +375,28 @@ export function rotatingOfferDiscount(
   const base = saturday
     ? profile.saturdayOfferDiscount
     : profile.dailyOfferDiscount;
-  return physicalStock ? Math.min(0.35, base * 2) : base;
+  const discount = physicalStock ? Math.min(0.35, base * 2) : base;
+  return profile.code === "mtg_commander_precon"
+    ? Math.min(0.03, discount)
+    : discount;
+}
+
+/** Owner limits apply to the regular gross retail price, including Saturdays. */
+export function rotatingOfferMinimumAmount(
+  profile: Pick<CommercialPricingProfile, "code">,
+  regularPrice: number,
+): number {
+  if (!Number.isFinite(regularPrice) || regularPrice <= 0) return Infinity;
+  if (profile.code === "mtg_commander_precon")
+    return Math.ceil(regularPrice * 97 - 1e-8) / 100;
+  if (
+    ["mtg_booster_box", "mtg_collector_box", "yugioh_box"].includes(
+      profile.code,
+    )
+  ) {
+    return Math.max(0, Math.ceil((regularPrice - 10) * 100 - 1e-8) / 100);
+  }
+  return 0;
 }
 
 export function rotatingOfferFloorMargin(
