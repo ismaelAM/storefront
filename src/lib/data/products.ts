@@ -1,8 +1,9 @@
 "use server";
 
-import type { ProductListParams } from "@spree/sdk";
+import { type ProductListParams, SpreeError } from "@spree/sdk";
 
 const CATALOG_CACHE_VERSION = "2026-09-23-customer-pricing-v6";
+
 import { cacheLife, cacheTag } from "next/cache";
 import {
   cacheTagSuffix,
@@ -84,14 +85,21 @@ export async function cachedGetProduct(
     `products${cacheTagSuffix(surface)}`,
     `product:${slugOrId}${cacheTagSuffix(surface)}`,
   );
-  return getClientForSurface(surface).products.get(
-    slugOrId,
-    { expand },
-    {
-      ...options,
-      ...(userToken ? { token: userToken } : undefined),
-    },
-  );
+  // Absence must cross the remote cache as data, not a thrown SDK error
+  // whose custom status is stripped by the server-component transport.
+  try {
+    return await getClientForSurface(surface).products.get(
+      slugOrId,
+      { expand },
+      {
+        ...options,
+        ...(userToken ? { token: userToken } : undefined),
+      },
+    );
+  } catch (error) {
+    if (error instanceof SpreeError && error.status === 404) return null;
+    throw error;
+  }
 }
 
 export async function getProduct(
@@ -101,7 +109,7 @@ export async function getProduct(
 ) {
   const options = await getLocaleOptions();
   const userToken = await getAccessToken();
-  return cachedGetProduct(
+  const product = await cachedGetProduct(
     slugOrId,
     params?.expand ?? [],
     options,
@@ -109,6 +117,12 @@ export async function getProduct(
     userToken,
     CATALOG_CACHE_VERSION,
   );
+  if (!product)
+    throw new SpreeError(
+      { error: { code: "record_not_found", message: "Product not found" } },
+      404,
+    );
+  return product;
 }
 
 async function cachedGetProductFilters(

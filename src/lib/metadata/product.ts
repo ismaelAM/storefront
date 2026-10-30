@@ -58,6 +58,7 @@ export async function generateProductMetadata({
             { country: target.country, locale: target.locale },
             DEFAULT_SURFACE,
           );
+          if (!localizedProduct) return null;
           return {
             path: `/products/${localizedProduct.slug}`,
             fingerprint: productTranslationFingerprint(localizedProduct),

@@ -14,7 +14,7 @@ Ventana inicial: 30/10/2026, 01:10–01:12 Madrid (00:10–00:12 UTC), consultas
 | --- | ---: |
 | Base nativa, total |286,51 MB |
 | Tablas e índices de Spree |237,13 MB |
-| Solid Queue e índices |181,58MB (63,4% del total) |
+| Solid Queue e índices |181,58 MB (63,4% del total) |
 | Trabajos totales / pendientes |143.579 /141.576 |
 | Trabajos creados en 24 h / última hora |7.179 /177 |
 | Workers registrados de Solid Queue |0, deliberado |
@@ -62,7 +62,7 @@ Es un extracto de categorías, no un desglose completo. La salida tenía 3600 re
 
 ## Validación y siguientes pasos
 
-- Suite frontend 1066 pruebas/108 archivos y TypeScript pasan. Contratos Ruby pasan tanto en disposición local como en la del contenedor; revisión independiente sin incidencias abiertas.
+- Suite frontend 1084 pruebas/109 archivos y TypeScript pasan. Contratos Ruby pasan tanto en disposición local como en la del contenedor; revisión independiente sin incidencias abiertas.
 - Tests Ruby usan métodos del gem oficial 5.6.1 y fixtures de persistencia/reloj; no sustituyen el boot Rails ni la concurrencia SQL real.
 - Desplegar una única versión agrupada del backend cuando sea accesible; verificar arranque y que una lectura autenticada actualice `last_used_at` sin crear `MarkAsUsed`. Comparar deltas de cola y recursos en intervalos equivalentes, sin pings de mantenimiento.
 - No borrar colas, reducir pools ni cancelar eventos de negocio sin evidencia de su impacto.

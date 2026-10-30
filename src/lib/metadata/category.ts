@@ -62,6 +62,7 @@ export async function generateCategoryMetadata({
             undefined,
             { country: target.country, locale: target.locale },
           );
+          if (!localizedCategory) return null;
           return {
             path: `/c/${localizedCategory.permalink}`,
             fingerprint: categoryTranslationFingerprint(localizedCategory),

@@ -1,10 +1,15 @@
 "use server";
 
-import type { CategoryListParams, ProductListParams } from "@spree/sdk";
+import {
+  type CategoryListParams,
+  type ProductListParams,
+  SpreeError,
+} from "@spree/sdk";
 import { cacheLife, cacheTag } from "next/cache";
 import { getAccessToken, getClient, getLocaleOptions } from "@/lib/spree";
 
-const CATEGORY_PRODUCTS_CACHE_VERSION = "2026-09-23-role-taxonomy-customer-pricing-v8";
+const CATEGORY_PRODUCTS_CACHE_VERSION =
+  "2026-09-23-role-taxonomy-customer-pricing-v8";
 
 async function cachedListCategories(
   params: CategoryListParams | undefined,
@@ -32,7 +37,14 @@ export async function cachedGetCategory(
   "use cache: remote";
   cacheLife("tenMinutes");
   cacheTag("category");
-  return getClient().categories.get(idOrPermalink, params, options);
+  // The remote cache serializes thrown errors without their custom status.
+  // Carry a confirmed absence as data and restore the SDK error outside it.
+  try {
+    return await getClient().categories.get(idOrPermalink, params, options);
+  } catch (error) {
+    if (error instanceof SpreeError && error.status === 404) return null;
+    throw error;
+  }
 }
 
 export async function getCategory(
@@ -40,7 +52,13 @@ export async function getCategory(
   params?: { expand?: string[] },
 ) {
   const options = await getLocaleOptions();
-  return cachedGetCategory(idOrPermalink, params, options);
+  const category = await cachedGetCategory(idOrPermalink, params, options);
+  if (!category)
+    throw new SpreeError(
+      { error: { code: "record_not_found", message: "Category not found" } },
+      404,
+    );
+  return category;
 }
 
 /**

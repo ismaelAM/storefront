@@ -2,7 +2,7 @@
 
 ## Revisión vigente — 30/10/2026
 
-- [x] Código preparado y revisión independiente sin incidencias abiertas: errores de catálogo, comprobación de cuenta Instagram y uso horario de claves API de Spree. Suite 1066 pruebas/108 archivos, TypeScript y contratos Ruby pasan. El estado de despliegue se documenta por separado.
+- [x] Código preparado y revisión independiente sin incidencias abiertas: errores de catálogo, comprobación de cuenta Instagram y uso horario de claves API de Spree. Suite 1084 pruebas/109 archivos, TypeScript y contratos Ruby pasan. El estado de despliegue se documenta por separado.
 - [x] Primera publicación automática de Instagram acreditada: 30/10, 05:01 Madrid, media 17980210826918766.
 - [x] Análisis de recursos en ops/spree-backend/cost-analysis-20261030.md. No activar worker ni limpiar trabajos para reducir el contador.
 - [ ] Aplicar/verificar el cambio de claves API en el backend: el conector actual no ofrece acceso al proyecto.
@@ -15,7 +15,7 @@
 - [x] Deshabilitado exclusivamente Devir como proveedor y crawler; infraestructura compartida con TCGFactory conservada.
 - [x] Archivados 899 productos exclusivos sin stock físico; preservadas 30 familias compartidas, las seis unidades físicas de Tarkir y una familia ambigua ya retenida.
 - [x] Readback final: cero selecciones/ofertas activas Devir, 899 archivados, stock físico conservado y tick compartido con TCGFactory activo; ver ops/spree-backend/devir-retirement-20261028.md.
-- [x] Revisado el manejo de fichas retiradas: la PDP pública ya distingue 404. Corregidos en esta revisión los catch-all de categoría y ficha mayorista para no ocultar 500/401/403/red como 404. Un log de 404 por sí solo no demuestra un error visible; ver pruebas de regresión.
+- [x] Revisado el manejo de fichas retiradas: la PDP pública ya tenía guardia de 404, pero la caché remota perdía el status del error. La ausencia confirmada ahora atraviesa la caché como null y recupera el 404 fuera. Corregidos también los catch-all de categoría y ficha mayorista para no ocultar 500/401/403/red como 404. Un log de 404 por sí solo no demuestra un error visible; ver pruebas de regresión.
 - Las cuentas antiguas quedan fuera de las prioridades por indicación del propietario.
 
 

@@ -49,7 +49,6 @@ export default async function CategoryPage({
       expand: ["ancestors", "children"],
     });
   } catch (error) {
-    // Match the HTTP status even when the remote cache normalizes SDK errors.
     if (
       typeof error !== "object" ||
       error === null ||

@@ -66,7 +66,17 @@ Files: proposed `ops/spree-backend/operations/api-key-usage.rb`, initializer and
 
 ## Final evidence and limits
 
-- Combined frontend suite 1066/108 passes; TypeScript exit0; Ruby contracts local and container layouts pass; independent review reports no open findings.
+- Combined frontend suite 1084/109 passes; TypeScript exit0; Ruby contracts local and container layouts pass; independent review reports no open findings.
 - First automatic Instagram post confirmed by private publication record at 2026-10-30 04:01UTC; no extra post.
 - Search Console already configured, sitemap Correcto, 325 indexed (report dated 23/10). Stale setup documentation corrected.
 - Vercel per-project metrics 403; current connector lists only frontend and returns 404 for known backend project/deployment. Backend release and real Rails verification remain blocked on access. Team billing is explicitly not attributed to Spree.
+
+## Post-deployment cache finding
+
+The first grouped frontend deployment `dpl_GeLiHb47HqZw7LZM931vgKQidsL9` (source9d55d86) is READY; homepage renders29 product links and private Instagram GET returns401 with private/no-store. A retired category check exposed thrown Spree404 losing status through remote RSC serialization (digest1590436008). Earlier mocked page tests did not model that boundary.
+
+- [x] Reproduce3 cache-boundary failures (category, DTC product, wholesale product).
+- [x] Return null only for native SDK404 inside cached detail fetchers; reconstruct404 in request wrappers and skip absent alternate translations.
+- [x] Preserve cache tags, market/surface/JWT/expand/version arguments and DTC legacy redirects; independent review no findings.
+- [x] Full suite1084/109, TypeScript and focused83 tests pass.
+- [ ] Verify real retired category and product responses after the corrective release. Backend access remains separately blocked.
