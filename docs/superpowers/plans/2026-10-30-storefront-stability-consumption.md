@@ -53,16 +53,16 @@ Files: proposed `ops/spree-backend/operations/api-key-usage.rb`, initializer and
 - [x] Confirm existing one-hour guard depends on a timestamp only updated by the intentionally stopped general worker.
 - [x] Review exact native hook and atomic timestamp-only update before implementation.
 - [x] Regress repeated authentication, hourly boundaries, missing/deleted keys, store isolation and non-regressing timestamps.
-- [ ] Preserve queued jobs and all business events; verify loaded initializer after a single grouped backend release if warranted.
+- [x] Preserve queued jobs and all business events; verify loaded initializer after the grouped backend release.
 
 ## Task 4: Readonly operational and consumption verification
 
 - [x] Establish clean baseline: 1,017 tests in104 files pass.
 - [x] Measure native database/queue/mail cron and origin supplier cadence without pings or activation.
-- [ ] Obtain supported Vercel per-project requests, CPU/memory and billing period; report unavailable precision explicitly.
+- [x] Obtain project-specific usage and billing period from the authenticated panel; distinguish partial periods and credits.
 - [x] Check current Google property/auth state and existing checkout/shipping evidence; do not repeat completed historic setup.
 - [x] Update stale pending documentation and preserve a concrete reviewable result for any user-dependent step.
-- [ ] Run combined tests, TypeScript, diff checks and independent review; persist changes in Git and verify only necessary deployments.
+- [x] Run combined tests, TypeScript, diff checks and independent review; persist changes in Git and verify necessary deployments.
 
 ## Final evidence and limits
 
@@ -89,3 +89,15 @@ The first grouped frontend deployment `dpl_GeLiHb47HqZw7LZM931vgKQidsL9` (source
 - Private publication readback for account17841436955437970 confirms four child images, published media17980210826918766,30/10 at05:01Madrid. No additional publication.
 - PR97 remains open, stacked on fix/daily-offers, without merge to main. Local and remote code trees match. Two frontend builds were necessary: the first exposed the real serialization defect; the second contains its reviewed/tested correction. No backend build or worker activation occurred.
 - Backend patch, boot verification and project-level billing remain pending access. Current connector lists only storefront, returns404 for known backend resources and403 for project Observability. Obtain explicit approval before browser fallback; no repeated denied requests or bypass attempted.
+
+## Authorized backend release — 30/10/2026
+
+- Owner explicitly authorized browser fallback. The current connector still cannot access the backend; the authenticated panel shows the intended bison-tcg / bisontcg-spree project.
+- Compared e3f5fc9 to38a6d29: only executable backend changes are the reviewed API-key usage files and Docker copy/test steps; daemon instance counts remain0.
+- Panel required a preview build (dpl_4mwZaL5n5sVEAYfTWzYNtQHapdTx) followed by promotion/rebuild with production variables. Production dpl_2m1k7j9fkyweXvgjS7tcizTzBzmU is READY, source38a6d29, normal domain assigned. No main merge or production-branch change.
+- The auth request returned declined, but the mandatory fresh target inspection showed the promotion had completed. The verified production state supersedes the interim blocked-status commentary.
+- A verification connector was rejected by automatic review because it creates/reuses a temporary authenticated share link. That operation was not retried; a materially safer ordinary public HTTPS GET with no share link completed the check.
+- Product404 and categories/markets/Admin-store 200 in native logs; frontend not-found/noindex and no generic digest. SQL readback at13:17:48Madrid: active keys' last_used_at now13:17:32/33, revoked key unchanged; MarkAsUsed remains86577, zero new since release. Worker/queues/history untouched.
+- Runtime logs include graceful exits and Application exited code 1 after completed responses; no claim of globally error-free runtime logs.
+- Project usage is now measured:6.02USD infrastructure subtotal in the partial25Oct–25Nov cycle;30Oct partial day0.21USD. CPU/memory dominate. See cost-analysis-20261030.md; no invoice or monthly savings claim.
+- Earlier access-blocked notes above are historical and superseded by this authorized release. Only documentation is updated after release, with automatic branch deployments disabled.

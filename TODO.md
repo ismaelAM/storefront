@@ -2,10 +2,10 @@
 
 ## Revisión vigente — 30/10/2026
 
-- [x] Código preparado y revisión independiente sin incidencias abiertas: errores de catálogo, comprobación de cuenta Instagram y uso horario de claves API de Spree. Suite 1084 pruebas/109 archivos, TypeScript y contratos Ruby pasan. Frontend desplegado y verificado en producción: `dpl_9LuC8pFkCudcZYyR5nHiwsmh6TLD`, fuente `274dada`. Home correcta; categoría y producto inexistentes muestran no encontrado/noindex, sin digest genérico. Backend pendiente según el punto siguiente.
+- [x] Código preparado y revisión independiente sin incidencias abiertas: errores de catálogo, comprobación de cuenta Instagram y uso horario de claves API de Spree. Suite 1084 pruebas/109 archivos, TypeScript y contratos Ruby pasan. Frontend desplegado y verificado en producción: `dpl_9LuC8pFkCudcZYyR5nHiwsmh6TLD`, fuente `274dada`. Home correcta; categoría y producto inexistentes muestran no encontrado/noindex, sin digest genérico. Backend publicado y comprobado también; ver punto siguiente.
 - [x] Primera publicación automática de Instagram acreditada: 30/10, 05:01 Madrid, media 17980210826918766.
 - [x] Análisis de recursos en ops/spree-backend/cost-analysis-20261030.md. No activar worker ni limpiar trabajos para reducir el contador.
-- [ ] Aplicar/verificar el cambio de claves API en el backend: el conector actual no ofrece acceso al proyecto.
+- [x] Backend publicado con navegador autorizado: `dpl_2m1k7j9fkyweXvgjS7tcizTzBzmU`, fuente 38a6d29. Fechas de uso actualizadas en Rails real y cero nuevos MarkAsUsed; histórico conservado, worker apagado. Desglose propio de Vercel: 6,02 USD en el ciclo parcial desde 25/10 y 0,21 USD el 30/10 parcial. Ver análisis de consumo.
 - [ ] Renovar el token de Instagram antes del 29/12/2026.
 - [ ] Correos: faltan credenciales operativas y prueba de etiqueta/recogida; una compra pagada de extremo a extremo sigue sin acreditarse.
 - Los pendientes históricos de Devir quedan fuera de prioridad tras su retirada, conservando infraestructura/productos compartidos.

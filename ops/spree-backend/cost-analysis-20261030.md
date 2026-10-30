@@ -4,7 +4,7 @@
 
 El crecimiento evitable más claro está en la contabilidad de uso de claves API, no en el número de productos. Spree 5.6.1 encola `ApiKeys::MarkAsUsed` cuando `last_used_at` supera una hora. Con el worker general apagado deliberadamente, ese timestamp no avanza y cada solicitud vuelve a crear trabajo. El parche conserva la precisión horaria mediante UPDATE atómico, limitado a ID/tienda/clave no revocada, sin callbacks ni modificación de otras columnas. Mantiene autenticación, scopes y fallback JWT nativos; no procesa ni borra trabajos históricos.
 
-Estado: código revisado y pruebas de contrato pasan; **pendiente desplegar/verificar en Rails real**. El conector disponible solo enumera `storefront` y devuelve 404 para el proyecto/deployment del backend. No se ha intentado sortear esta limitación mediante navegador.
+Estado: **desplegado y verificado en producción el 30/10/2026** con autorización del propietario para usar el navegador. Deployment `dpl_2m1k7j9fkyweXvgjS7tcizTzBzmU`, fuente `38a6d29133b8793faf3e24329e024b598a89fa43`, dominio `project-7ck7q.vercel.app`. El conector sigue sin acceso al backend; el panel autenticado permitió completar la operación.
 
 ## Mediciones de base de datos
 
@@ -43,7 +43,31 @@ Las muestras de conexiones mostraron 16→5 conexiones, principalmente servicios
 
 Cron de proveedores: 24/24 ticks horarios correctos, media SQL de encolado 116 ms; no mide el tiempo completo del crawler. TCGFactory seguía avanzando en merchandising (offset 27, 1942 procesados acumulados, sin error actual). Devir deshabilitado y mecanismos compartidos preservados. No se creó worker, keepalive, cron duplicado ni sondeo periódico nuevo.
 
-## Vercel: coste disponible y límite de atribución
+## Vercel: consumo exclusivo de Spree, comprobado en el panel
+
+Lectura del 30/10, aproximadamente 13:00–13:19 Madrid, en el proyecto **bisontcg-spree**. El panel advierte hasta una hora de retraso. Ciclo seleccionado: **25/10–25/11**, acumulado parcial hasta esta lectura; no es una previsión del ciclo completo.
+
+| Concepto | Uso acumulado mostrado | Valor USD |
+| --- | ---: | ---: |
+| CPU activa Fluid | 15 horas | 2,55 |
+| Memoria provisionada Fluid | 154,58 GB·h | 2,15 |
+| Memoria de daemons | 12,44 GB·h | 0,35 |
+| CPU de daemons | 20 minutos | 0,06 |
+| Invocaciones Functions | 90,81 mil | 0,05 |
+| Transferencia al origen | 342 MB | 0,02 |
+| Eventos de observabilidad | 183,4 mil | 0,11 |
+| CPU de compilación | 1 hora | 0,21 |
+| Almacenamiento Functions | 1 GB-mes | 0,12 |
+| Almacenamiento VCR | 4 GB | 0,40 |
+| **Subtotal de infraestructura** | | **6,02** |
+
+CDN: 92,74 mil solicitudes, 331 MB de transferencia y 14,3 s de CPU adicional, mostrados como incluidos. Suscripción atribuida al proyecto: 0,00 USD. En la lectura del equipo, el crédito incluido usado era 6,69/20 USD y los cargos adicionales eran 0 USD. Los 6,02 USD son consumo valorado, no una factura adicional de ese importe; no incluyen el precio del plan ni facturación externa de Supabase.
+
+CPU y memoria Fluid suman 4,70 USD (aproximadamente 78% del subtotal). La prioridad de ahorro es reducir trabajo y duración del backend; las invocaciones suponen solo 0,05 USD en este acumulado. No debe confundirse el número de tareas de Solid Queue con invocaciones facturadas.
+
+Al seleccionar el periodo relativo, el panel normalizó el intervalo al **día 30/10** (00:00–23:59 Madrid, todavía incompleto). Mostró **0,21 USD**: CPU 32 min/0,09 USD, memoria 5,18 GB·h/0,07 USD, compilación 12 min/0,04 USD; otras partidas aparecen redondeadas a 0,00. No se etiqueta como «últimas 12 horas» ni como un día completo. Tampoco se usa para atribuir ahorro al parche recién publicado o proyectar una mensualidad.
+
+## Consulta inicial del conector: solo costes del equipo
 
 Consulta solicitada 23–30/10 UTC. El resumen devuelto cubre realmente 25/10 07:00–29/10 07:00 UTC, con retraso del proveedor. `EffectiveCost` **8,209855 USD del equipo**, incluyendo suscripción y recursos de otros proyectos; `BilledCost` prácticamente 0 en ese resultado. No representa una factura final ni un coste exclusivo de Spree.
 
@@ -58,12 +82,16 @@ Consulta solicitada 23–30/10 UTC. El resumen devuelto cubre realmente 25/10 07
 | Almacenamiento VCR |0,401314 |
 | Invocaciones Functions |0,061518 |
 
-Es un extracto de categorías, no un desglose completo. La salida tenía 3600 registros y muestra parcial; no se extrapolan muestras ni se asignan cargos al backend. Observability respondió 403 para métricas por proyecto. Falta acceso autorizado al panel o al proyecto backend para obtener invocaciones, CPU, memoria y costes atribuibles; no hay cifra mensual fiable de Spree con la información actual.
+Es un extracto de categorías, no un desglose completo. La salida tenía 3600 registros y muestra parcial; no se extrapolan muestras ni se asignan cargos al backend. Observability respondió 403 para métricas por proyecto. Esta limitación del conector quedó resuelta para la atribución mediante el acceso al panel autorizado por el propietario: el desglose exclusivo está arriba. Sigue sin haber una proyección mensual fiable.
 
 ## Validación y siguientes pasos
 
 - Suite frontend 1084 pruebas/109 archivos y TypeScript pasan. Contratos Ruby pasan tanto en disposición local como en la del contenedor; revisión independiente sin incidencias abiertas.
 - Tests Ruby usan métodos del gem oficial 5.6.1 y fixtures de persistencia/reloj; no sustituyen el boot Rails ni la concurrencia SQL real.
-- Desplegar una única versión agrupada del backend cuando sea accesible; verificar arranque y que una lectura autenticada actualice `last_used_at` sin crear `MarkAsUsed`. Comparar deltas de cola y recursos en intervalos equivalentes, sin pings de mantenimiento.
+- Release completado mediante una preview de la rama y su reconstrucción con variables de producción, como exige el panel. No se cambió la rama de producción ni se hizo merge a main. Worker y recuperación permanecen configurados a cero.
+- Antes de la prueba, las fechas de uso eran null. Una petición pública normal a una ficha deliberadamente inexistente atravesó el cliente del storefront: producto 404, categorías 200, markets 200 y Admin store 200 en logs nativos. La página mostró no encontrado/noindex sin digest genérico.
+- Readback a las 13:17:48 Madrid: claves activa publishable y secret con last_used_at a las 13:17:32 y 13:17:33; la clave revocada permanece sin uso. Total MarkAsUsed **86.577**, último ID 145955, último creado 13:08:20; **cero creados desde el release**. Se verifican Rails real, autenticación y persistencia sin nuevo trabajo de cola; no una medición de ahorro monetario.
+- El extracto de logs también muestra cierres graciosos y mensajes «Application exited with code 1» después de respuestas correctas. No se afirma que el conjunto de logs esté libre de errores ni se atribuyen sin más al parche.
+- Comparar recursos en intervalos equivalentes posteriores al parche antes de cuantificar ahorro, sin pings de mantenimiento.
 - No borrar colas, reducir pools ni cancelar eventos de negocio sin evidencia de su impacto.
 - Correos sigue pendiente de credenciales y prueba operativa; no se hizo compra, etiqueta, recogida ni cargo.
