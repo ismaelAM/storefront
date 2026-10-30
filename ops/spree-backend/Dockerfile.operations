@@ -9,6 +9,8 @@ COPY --chown=1000:1000 operations/shipment-inventory-guard.rb operations/shipmen
 COPY --chown=1000:1000 operations/shipment-inventory-initializer.rb /rails/config/initializers/bison_shipment_inventory.rb
 COPY --chown=1000:1000 operations/madrid-delivery.rb operations/madrid-delivery.test.rb /rails/
 COPY --chown=1000:1000 operations/madrid-delivery-initializer.rb /rails/config/initializers/bison_madrid_delivery.rb
+COPY --chown=1000:1000 operations/api-key-usage.rb operations/api-key-usage.test.rb /rails/
+COPY --chown=1000:1000 operations/api-key-usage-initializer.rb /rails/config/initializers/bison_api_key_usage.rb
 COPY --chown=1000:1000 --chmod=644 operations/initialize.sh /rails/initialize.sh
 COPY --chown=1000:1000 --chmod=644 operations/configure-store.sh operations/configure-store.rb /rails/
 COPY --chown=1000:1000 --chmod=644 operations/catalog-plan.rb operations/catalog-plan.test.rb operations/import-catalog.rb operations/import-catalog.sh operations/worker.sh /rails/
@@ -29,4 +31,5 @@ RUN ruby /rails/catalog-recovery.test.rb && ruby -c /rails/catalog-recovery.rb &
 RUN ruby /rails/recovery-identity.test.rb
 RUN ruby -c /rails/shipment-inventory-guard.rb && ruby -c /rails/config/initializers/bison_shipment_inventory.rb && bundle exec ruby /rails/shipment-inventory-guard.test.rb
 RUN ruby -c /rails/madrid-delivery.rb && ruby -c /rails/config/initializers/bison_madrid_delivery.rb && bundle exec ruby /rails/madrid-delivery.test.rb
+RUN ruby -c /rails/api-key-usage.rb && ruby -c /rails/config/initializers/bison_api_key_usage.rb && bundle exec ruby /rails/api-key-usage.test.rb
 ENTRYPOINT ["/bin/sh", "/rails/initialize.sh"]

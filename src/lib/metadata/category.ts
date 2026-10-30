@@ -27,7 +27,15 @@ export async function generateCategoryMetadata({
       "ancestors",
       "children",
     ]);
-  } catch {
+  } catch (error) {
+    if (
+      typeof error !== "object" ||
+      error === null ||
+      !("status" in error) ||
+      error.status !== 404
+    ) {
+      throw error;
+    }
     return { title: "Category Not Found" };
   }
 
@@ -54,6 +62,7 @@ export async function generateCategoryMetadata({
             undefined,
             { country: target.country, locale: target.locale },
           );
+          if (!localizedCategory) return null;
           return {
             path: `/c/${localizedCategory.permalink}`,
             fingerprint: categoryTranslationFingerprint(localizedCategory),

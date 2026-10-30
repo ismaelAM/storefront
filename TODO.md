@@ -1,11 +1,21 @@
 # Pendientes del storefront
 
+## Revisión vigente — 30/10/2026
+
+- [x] Código preparado y revisión independiente sin incidencias abiertas: errores de catálogo, comprobación de cuenta Instagram y uso horario de claves API de Spree. Suite 1084 pruebas/109 archivos, TypeScript y contratos Ruby pasan. Frontend desplegado y verificado en producción: `dpl_9LuC8pFkCudcZYyR5nHiwsmh6TLD`, fuente `274dada`. Home correcta; categoría y producto inexistentes muestran no encontrado/noindex, sin digest genérico. Backend publicado y comprobado también; ver punto siguiente.
+- [x] Primera publicación automática de Instagram acreditada: 30/10, 05:01 Madrid, media 17980210826918766.
+- [x] Análisis de recursos en ops/spree-backend/cost-analysis-20261030.md. No activar worker ni limpiar trabajos para reducir el contador.
+- [x] Backend publicado con navegador autorizado: `dpl_2m1k7j9fkyweXvgjS7tcizTzBzmU`, fuente 38a6d29. Fechas de uso actualizadas en Rails real y cero nuevos MarkAsUsed; histórico conservado, worker apagado. Desglose propio de Vercel: 6,02 USD en el ciclo parcial desde 25/10 y 0,21 USD el 30/10 parcial. Ver análisis de consumo.
+- [ ] Renovar el token de Instagram antes del 29/12/2026.
+- [ ] Correos: faltan credenciales operativas y prueba de etiqueta/recogida; una compra pagada de extremo a extremo sigue sin acreditarse.
+- Los pendientes históricos de Devir quedan fuera de prioridad tras su retirada, conservando infraestructura/productos compartidos.
+
 ## Retirada de Devir — 28/10/2026
 
 - [x] Deshabilitado exclusivamente Devir como proveedor y crawler; infraestructura compartida con TCGFactory conservada.
 - [x] Archivados 899 productos exclusivos sin stock físico; preservadas 30 familias compartidas, las seis unidades físicas de Tarkir y una familia ambigua ya retenida.
 - [x] Readback final: cero selecciones/ofertas activas Devir, 899 archivados, stock físico conservado y tick compartido con TCGFactory activo; ver ops/spree-backend/devir-retirement-20261028.md.
-- [ ] Corregir el manejo público de fichas inexistentes: Spree devuelve404, pero el frontend actual muestra error genérico (digest2887412968).
+- [x] Revisado el manejo de fichas retiradas: la PDP pública ya tenía guardia de 404, pero la caché remota perdía el status del error. La ausencia confirmada ahora atraviesa la caché como null y recupera el 404 fuera. Corregidos también los catch-all de categoría y ficha mayorista para no ocultar 500/401/403/red como 404. Un log de 404 por sí solo no demuestra un error visible; ver pruebas de regresión.
 - Las cuentas antiguas quedan fuera de las prioridades por indicación del propietario.
 
 
@@ -19,8 +29,8 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 - [x] Configuración pública Vercel aplicada en producción a `https://www.bisontcg.com`, título/descripción BisonTCG, soporte `ayuda@bisontcg.com` y perfil Instagram indicado por el propietario. Conservados targets/tipos y secretos.
 - [x] PR86 integrada, CI verde y producción READY `dpl_FB5SLqTY6v6gtPxrvrpmMwquGbAX` sobre main `808d5254f6eab801dfd4b3cd487b2b397372ea2b`. 812 pruebas/80 archivos, TypeScript, lint, paridad y ambas pruebas de bots/PPR pasan. Muestras públicas Googlebot/InspectionTool 200, marca y canonical correctos; carrito noindex. Sitemap 200 con 2321 URLs, siete categorías principales, sin duplicados ni URLs privadas. Evidencia en https://github.com/ismaelAM/storefront/pull/86.
 - [ ] Optimizar la latencia del sitemap: primera lectura pública75s y segunda 53 s, ambas 200. Los índices de comparación ya se guardan por bloques de hasta 10.000 recursos con límite1,9MB; no atribuir un timeout a un fallo persistente sin comprobar la respuesta final.
-- [ ] **Alta Search Console pendiente:** el navegador remoto terminó en timeout sin devolver página; no hubo creación/verificación ni envío del sitemap. Obtener el token público de etiqueta HTML y completar los pasos documentados en GOOGLE_SEARCH.md.
-- [ ] Observar indexación real y errores de Google tras verificar la propiedad; no prometer aparición inmediata ni activar Instagram por dar el SEO por preparado.
+- [x] Search Console comprobado el 30/10: propiedad existente, sitemap enviado 13/10 y Correcto; 325 indexadas. Ver GOOGLE_SEARCH.md.
+- [ ] Revisar las cuatro muestras 4xx y la duplicada del informe de Google del 23/10; mantener canonical/noindex deliberados.
 
 ## Ofertas por correo — 12/10/2026
 
@@ -34,7 +44,7 @@ Este archivo es el registro vivo de pendientes, comprobaciones y tareas futuras.
 ### Madrid y logo — 10/10/2026
 
 - [x] Tarifa local `Entrega en Madrid` guardada y releída en Spree a **4,99 €**, manteniendo Zone Madrid y categorías físicas. Correos conservado.
-- [ ] BISON3: envío gratis **solo para entrega local Madrid**, ligado a aprobación/revocación de cuentas. La acción FreeShipping de esta instancia regala todos los métodos y no tiene regla de Zone/método. Promoción `promo_V0dXmZF31w` preparada pero inactiva (inicio2099, sin acciones/reglas); requiere backend con alcance limitado. Ver SHIPPING.md.
+- [x] BISON3 resuelto el 27/10 mediante backend con alcance exclusivo a entrega local Madrid; aprobación/revocación conservada. La limitación anterior de FreeShipping está superada. Ver SHIPPING.md y ops/spree-backend/activation-20261027.md.
 - [x] Eliminado logo `/spree.png` fijo de encabezado y checkout. Componente servidor compartido consulta logo nativo; respaldo `STORE_LOGO_URL` configurado con la imagen subida por el propietario. Cambiar el logo en Spree → Preferencias → Detalles de la tienda → Nombre & Logo.
 - [x] Cuatro regresiones de logo y suite completa **628 pruebas /64 archivos** pasan; TypeScript y paridad de idiomas pasan.
 - [ ] Confirmar CI, despliegue y logo en home/checkout; distinguir lectura automática Admin `/store` frente a respaldo configurado. Evidencia final se registra en la PR de esta rama.
@@ -270,7 +280,7 @@ Continuidad y evidencias: AUDIT_HANDOFF.md. Los pendientes históricos siguiente
 - [x] Añadido JSON-LD `CollectionPage` a páginas de categoría junto a BreadcrumbList.
 - [ ] Validar en Preview real que los `link rel="canonical"` y `link rel="alternate"` apuntan a URLs válidas.
 - [ ] Validar JSON-LD de Product y CollectionPage en páginas reales con datos de Spree.
-- [ ] Añadir/validar Google Search Console y envío del sitemap cuando el dominio definitivo esté activo.
+- [x] Propiedad Search Console y sitemap comprobados el 30/10; ver GOOGLE_SEARCH.md.
 
 ### Envíos
 - [x] Diseñada la arquitectura de envío local Madrid con Spree como fuente de verdad.
