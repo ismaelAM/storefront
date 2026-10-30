@@ -2,6 +2,7 @@
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
+import { isExcludedCatalogLanguage } from "../../supabase/functions/_shared/devir-catalog-policy";
 import { describe, expect, it, vi } from "vitest";
 import { catalogReviewFingerprint } from "../../supabase/functions/_shared/catalog-publish-policy";
 import { mapTcgFactoryAvailability } from "../../supabase/functions/_shared/tcgfactory-adapter";
@@ -41,6 +42,7 @@ describe("Native enforcement of canonical product rejection", () => {
     const code = ts.transpileModule(source.statements.filter(n => ts.isFunctionDeclaration(n) && ["reconcileCatalogVariantUnlocked", "enforceVariantFulfillmentFlags"].includes(n.name?.text ?? "")).map(n => n.getText(source)).join("\n"), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
     const requests: Array<{ path: string; body: Record<string, unknown> }> = [];
     const run = runInNewContext(`${code}; reconcileCatalogVariantUnlocked`, {
+      isExcludedCatalogLanguage,
       chooseCatalogOffer: async () => ({ selected: null, selectedSupplier: null, offers: [] }),
       catalogSpreeMapping: async () => ({ product: { id: "prod_op17", status: "active", tags: [] }, variant: { id: "variant_op17" } }),
       syncBackorderability: async () => 0, syncApprovedSupplierPackChildren: async () => 0,

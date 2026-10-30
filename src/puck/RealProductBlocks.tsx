@@ -73,7 +73,7 @@ export function RealProductShowcase({ productPosition, description, badge, butto
         <div className={imageFirst ? "" : "lg:order-2"}>
           <div className={`relative w-full overflow-hidden bg-muted ring-1 ring-black/5 ${getPuckRadiusClass("large")} ${aspectClass}`}>
             {product.thumbnail_url ? (
-              <Image src={product.thumbnail_url} alt={product.name} fill sizes="(max-width: 1023px) 100vw, 50vw" className="object-cover" unoptimized />
+              <Image src={product.thumbnail_url} alt={product.name} fill sizes="(max-width: 1023px) 100vw, 50vw" className="object-cover" />
             ) : (
               <div className="flex h-full w-full items-center justify-center bg-muted text-muted-foreground"><span className="px-6 text-center text-sm">Imagen no disponible</span></div>
             )}

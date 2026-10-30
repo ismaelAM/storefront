@@ -3,6 +3,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
+import { isExcludedCatalogLanguage } from "../../supabase/functions/_shared/devir-catalog-policy";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { dailyOfferSelectionComplete } from "../../supabase/functions/_shared/daily-offer-selection";
 
@@ -61,6 +62,7 @@ function fixture(overrides: Record<string, unknown> = {}, entry = false) {
   const api = runInNewContext(
     `${code}; Object.assign(globalThis, __overrides); ${entryCode}; ({ handler: globalThis.__handler, runtime: syncRuntime, syncDatabaseFetch: typeof syncDatabaseFetch === "function" ? syncDatabaseFetch : undefined, spreeRequest, processCategories, scheduledTcgFactoryTick, maintenance: typeof runtimeMaintenanceTick === 'function' ? runtimeMaintenanceTick : undefined, tcgFactoryTick, tcgFactoryTextFetch, tcgFactoryLogin, reconcileCatalogVariant, processProducts, retireMissingDevirOffers, validateSpreeAdminKey, completeCatalogSupplierRun, rotateDailyOffersUnlocked })`,
     {
+      isExcludedCatalogLanguage,
       normalizeSupplierCode: (value: string) => value,
       dailyOfferSelectionComplete,
       loadDailyOfferRefresh: async () => [],

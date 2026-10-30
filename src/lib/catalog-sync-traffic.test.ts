@@ -2,6 +2,7 @@
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
+import { isExcludedCatalogLanguage } from "../../supabase/functions/_shared/devir-catalog-policy";
 import { describe, expect, it, vi } from "vitest";
 import { canWriteManagedCatalogPrice } from "../../supabase/functions/_shared/catalog-publish-policy";
 
@@ -191,6 +192,7 @@ it.each([
   const run = runInNewContext(
     `${production("syncProductToSpree", "upsertProductFields", "upsertVariantProvenance", "catalogProvenanceSignature", "nativePatchMatches", "variantPrice", "checkpointCatalogSpreeMapping")}; syncProductToSpree`,
     {
+      isExcludedCatalogLanguage,
       productFields: read,
       spreeRequest: write,
       adoptPublishedCatalogReview: adopt,

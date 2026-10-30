@@ -2,6 +2,7 @@
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
+import { isExcludedCatalogLanguage } from "../../supabase/functions/_shared/devir-catalog-policy";
 import { describe, expect, it, vi } from "vitest";
 import { shouldAutoPublishCatalogProduct } from "../../supabase/functions/_shared/catalog-publish-policy";
 import { TCGFACTORY_CATALOG_SECTIONS } from "../../supabase/functions/_shared/tcgfactory-web";
@@ -146,6 +147,7 @@ function fixture(
     supabase,
     console,
     URL,
+    isExcludedCatalogLanguage,
     shouldAutoPublishCatalogProduct,
     Date: class extends Date {
       static now() {

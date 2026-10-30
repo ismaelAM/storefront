@@ -4,6 +4,7 @@ import { getCategory } from "./categories";
 import { getProduct } from "./products";
 
 export const PRODUCT_PAGE_EXPAND = [
+  "primary_media",
   "default_variant",
   "variants",
   "media",
@@ -13,11 +14,9 @@ export const PRODUCT_PAGE_EXPAND = [
   // catalog-managed products. Load breadcrumb categories separately instead.
 ];
 
-export const PRODUCT_METADATA_EXPAND = [
-  "primary_media",
-  "default_variant",
-  "variants",
-];
+// React cache keys compare array references. SEO and body must share the exact
+// expansion and reference so one product request serves both during rendering.
+export const PRODUCT_METADATA_EXPAND = PRODUCT_PAGE_EXPAND;
 
 /** Minimal fields used by cards, analytics and the Puck product filters. */
 export const PRODUCT_CARD_FIELDS = [

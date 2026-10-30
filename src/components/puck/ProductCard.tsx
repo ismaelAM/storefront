@@ -25,7 +25,7 @@ export function ProductCard({ name, description, image = "", price, comparePrice
       <article>
         <div className={`relative w-full overflow-hidden bg-muted ${aspectClass}`}>
           {image ? (
-            <Image src={image} alt={name} fill sizes="(max-width: 639px) 50vw, (max-width: 1023px) 33vw, 25vw" className="object-cover transition-transform duration-300 group-hover:scale-105" unoptimized />
+            <Image src={image} alt={name} fill sizes="(max-width: 639px) 50vw, (max-width: 1023px) 33vw, 25vw" className="object-cover transition-transform duration-300 group-hover:scale-105" />
           ) : (
             <div aria-hidden="true" className="flex h-full w-full items-center justify-center bg-muted text-muted-foreground">
               <span className="px-4 text-center text-xs font-medium sm:text-sm">Imagen no disponible</span>
