@@ -71,6 +71,7 @@ it("keeps a supplier pack requiring physical splitting out of the ready daily co
   query.range = async () => ({ data: rows, error: null });
   const load = runInNewContext(`${code}; loadDailyOfferRefresh`, {
     supabase: { from: () => query },
+    dailyOfferState: async () => null,
     dailyOfferCategory,
     planDailyOfferRefresh,
     isBookProduct: () => false,

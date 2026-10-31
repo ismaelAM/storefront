@@ -180,7 +180,7 @@ function fixture(products: ProductFixture[], saturday = false, latencyMs = 0) {
             order: () => query,
             range: async () => ({ data: supplies, error: null }),
             upsert: (row: Record<string, unknown>) => {
-              state = row;
+              state = { ...state, ...row };
               return query;
             },
             update: (row: Record<string, unknown>) => {
@@ -744,9 +744,27 @@ describe("complete automatic daily rotations", () => {
       p.category === "merchandising" ? { ...p, purchasable: false } : p,
     );
     const f = fixture(products);
+    f.setState({ day_key: "2026-10-10", spree_price_list_id: "previous", active_products: [{ productId: "old" }], last_rotated_at: "done" });
     const result = await f.api.rotateDailyOffersUnlocked({});
     expect(result.status).toBe("waiting_catalog");
     expect(f.requests.some((r) => r.method !== "GET")).toBe(false);
-    expect(f.state()).toBeNull();
+    expect(f.state()).toMatchObject({ day_key: "2026-10-10", spree_price_list_id: "previous", active_products: [{ productId: "old" }], pending_rotation: { dayKey: "2026-10-11", rejectedProductIds: expect.arrayContaining(["merchandising-0"]) } });
+  });
+  it("records an excluded manual price so the next refresh replaces it without editing it", async () => {
+    const products = selection.DAILY_OFFER_CATEGORIES.flatMap(category => productsFor(category, 3));
+    const manual = products.find(p => p.category === "juegos-de-mesa")!;
+    const f = fixture(products.map(p => p === manual ? { ...p, price: 35, lastAutoPrice: 30 } : p));
+    expect((await f.api.rotateDailyOffersUnlocked({})).status).toBe("waiting_catalog");
+    expect(f.state()).toMatchObject({ pending_rotation: { dayKey: "2026-10-11", rejectedProductIds: [manual.id] } });
+    expect(f.requests.every(r => r.method === "GET")).toBe(true);
+  });
+  it("retains a definitive rejection when a later native read exhausts the budget", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(0);
+    const products = balanced().map((p, i) => i === 0 ? { ...p, price: 35 } : p);
+    const f = fixture(products, false, 700);
+    const result = f.api.rotateDailyOffersUnlocked({ request_budget: { deadline_at: 1000 } }).catch((e: Error) => e.name);
+    await vi.runAllTimersAsync();
+    expect(await result).toBe("SyncDeferred");
+    expect(f.state()).toMatchObject({ pending_rotation: { dayKey: "2026-10-11", rejectedProductIds: [products[0].id] } });
   });
 });
