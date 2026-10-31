@@ -6,6 +6,7 @@ import { PRODUCT_CARD_FIELDS } from "@/lib/data/cached";
 import { cachedListProducts } from "@/lib/data/products";
 import { generateHomeMetadata } from "@/lib/metadata/home";
 import { getHomePageData } from "@/lib/puck/get-home-data";
+import { getHomeCatalogParams } from "@/lib/puck/home-catalog";
 import { buildHomeMerchandisingProducts } from "@/lib/puck/home-merchandising";
 import { buildCanonicalUrl, buildWebSiteJsonLd } from "@/lib/seo";
 import { getAccessToken } from "@/lib/spree";
@@ -30,20 +31,23 @@ export async function generateMetadata({
 export default async function HomePage({ params }: HomePageProps) {
   const { country, locale } = await params;
   const basePath = `/${country}/${locale}`;
+  const dataPromise = getHomePageData();
   const userToken = await getAccessToken();
   const now = new Date();
   const dayKey = madridCommercialDay(now).dayKey;
 
   let products: Product[] = [];
-  const catalogPromise = cachedListProducts(
-    { limit: 100, fields: [...PRODUCT_CARD_FIELDS, "variants"], expand: ["variants"] },
-    { locale, country },
-    "dtc",
-    userToken,
-  ).catch((error) => {
-    console.error("HomePuckRenderer: failed to load catalog", error);
-    return { data: [] as Product[] };
-  });
+  const catalogPromise = dataPromise
+    .then((data) => {
+      const params = getHomeCatalogParams(data);
+      return params.limit === 0
+        ? { data: [] as Product[] }
+        : cachedListProducts(params, { locale, country }, "dtc", userToken);
+    })
+    .catch((error) => {
+      console.error("HomePuckRenderer: failed to load catalog", error);
+      return { data: [] as Product[] };
+    });
 
   try {
     const [saleResponse, preorderResponse] = await Promise.all([
@@ -81,7 +85,7 @@ export default async function HomePage({ params }: HomePageProps) {
     );
   }
 
-  const data = await getHomePageData();
+  const data = await dataPromise;
   const catalogResponse = await catalogPromise;
   const storeUrl = getStoreUrl();
   const canonicalUrl = storeUrl
@@ -93,7 +97,12 @@ export default async function HomePage({ params }: HomePageProps) {
       {canonicalUrl && (
         <JsonLd data={buildWebSiteJsonLd(canonicalUrl, locale)} />
       )}
-      <HomePuckRenderer products={products} catalogProducts={catalogResponse.data ?? []} basePath={basePath} data={data} />
+      <HomePuckRenderer
+        products={products}
+        catalogProducts={catalogResponse.data ?? []}
+        basePath={basePath}
+        data={data}
+      />
     </>
   );
 }
