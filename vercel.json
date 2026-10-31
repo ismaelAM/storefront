@@ -10,8 +10,9 @@
       "fix/owned-stock-offer-limits": false,
       "fix/exclude-french-italian": false,
       "perf/storefront-loading": false,
+      "fix/ig-daily-quota-recovery": false,
       "migration/spree-owned-backend": false
     }
   },
-  "crons": [{ "path": "/api/cron/offers", "schedule": "0 4 * * *" }]
+  "crons": [{ "path": "/api/cron/offers", "schedule": "15 4,8,12,16,20 * * *" }]
 }

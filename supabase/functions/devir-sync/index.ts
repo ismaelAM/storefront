@@ -8400,13 +8400,14 @@ interface DailyOfferStateRow {
   }> | null;
   last_rotated_at: string | null;
   last_error: string | null;
+  pending_rotation?: { dayKey?: string; rejectedProductIds?: string[] } | null;
 }
 
 async function dailyOfferState(): Promise<DailyOfferStateRow | null> {
   const { data, error } = await supabase
     .from("catalog_daily_offer_state")
     .select(
-      "id,day_key,spree_price_list_id,special,active_products,last_rotated_at,last_error",
+      "id,day_key,spree_price_list_id,special,active_products,last_rotated_at,last_error,pending_rotation",
     )
     .eq("id", "primary")
     .maybeSingle();
@@ -8772,6 +8773,16 @@ async function rotateDailyOffersUnlocked(
   }> = [];
   const categoryCounts = new Map<DailyOfferCategory, number>();
   const seenProducts = new Set<string>();
+  const rejectedProductIds = new Set<string>();
+  const checkpointRejected = async () => {
+    for (const id of seenProducts) rejectedProductIds.delete(id);
+    const { error } = await supabase.from("catalog_daily_offer_state").upsert({
+      id: "primary",
+      pending_rotation: { dayKey: calendar.dayKey, rejectedProductIds: [...rejectedProductIds] },
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "id" });
+    if (error) throw error;
+  };
 
   for (const candidate of interleaveDailyOfferCandidates(ranked)) {
     if (selected.length >= DAILY_OFFER_TARGET_COUNT) break;
@@ -8782,6 +8793,7 @@ async function rotateDailyOffersUnlocked(
     const used = categoryCounts.get(candidate.category) ?? 0;
     if (used >= DAILY_OFFERS_PER_CATEGORY) continue;
 
+    let validatedNativeCandidate = false;
     try {
       const [spreeProduct, spreeVariant, selectedSupply] = await Promise.all([
         spreeRequest<SpreeProduct>(
@@ -8799,6 +8811,7 @@ async function rotateDailyOffersUnlocked(
         ),
         selectedSupplyForSpreeVariant(spreeVariantId),
       ]);
+      validatedNativeCandidate = true;
       if (
         spreeProduct.status !== "active" ||
         (spreeProduct.tags ?? []).some((tag) =>
@@ -8886,15 +8899,23 @@ async function rotateDailyOffersUnlocked(
       categoryCounts.set(candidate.category, used + 1);
       seenProducts.add(productId);
     } catch (error) {
-      if (isSyncDeferred(error)) throw error;
+      if (isSyncDeferred(error)) {
+        if (rejectedProductIds.size) await checkpointRejected();
+        throw error;
+      }
       console.error("Candidato de oferta descartado", {
         variantId: String(row.variant_id ?? ""),
         error: error instanceof Error ? error.message : String(error),
       });
+    } finally {
+      // A fresh supplier row can still fail native checks (for example an
+      // operator price). Do not let it fill the next refresh cohort.
+      if (validatedNativeCandidate && !seenProducts.has(productId)) rejectedProductIds.add(productId);
     }
   }
 
   if (!force && !dailyOfferSelectionComplete(selected)) {
+    await checkpointRejected();
     return { status: "waiting_catalog", dayKey: calendar.dayKey,
       counts: Object.fromEntries(DAILY_OFFER_CATEGORIES.map(category => [category, categoryCounts.get(category) ?? 0])),
     };
@@ -8953,7 +8974,7 @@ async function rotateDailyOffersUnlocked(
       productId: offer.productId, hadSale: offer.hadSale, hadFeatured: offer.hadFeatured,
       variantId: offer.spreeVariantId, amount: offer.amount, compareAtAmount: offer.compareAtAmount,
       category: offer.category, profile: offer.profile, tagged: false,
-    })), last_rotated_at: null, last_error: null,
+    })), last_rotated_at: null, last_error: null, pending_rotation: null,
   };
   const { error: stateError } = await supabase.from("catalog_daily_offer_state")
     .upsert({ ...pendingState, updated_at: new Date().toISOString() }, { onConflict: "id" });
@@ -10240,6 +10261,10 @@ async function finishTcgFactoryCrawl(
 }
 
 async function loadDailyOfferRefresh(supplier: CatalogSupplierRow): Promise<Array<{ id: string; source_url: string }>> {
+  const state = await dailyOfferState();
+  const pending = state?.pending_rotation;
+  const rejectedProductIds = new Set(pending && pending.dayKey === madridCommercialDay().dayKey && Array.isArray(pending.rejectedProductIds)
+    ? pending.rejectedProductIds : []);
   type Row = {
     id: string; source_url: string; last_seen_at: string; updated_at: string; normalized_cost: number | string;
     minimum_order_quantity: number | string | null;
@@ -10261,6 +10286,7 @@ async function loadDailyOfferRefresh(supplier: CatalogSupplierRow): Promise<Arra
       const product = variant.product;
       const category = dailyOfferCategory(product.category_key);
       if (!category || !variant.spree_variant_id || !product.spree_product_id ||
+        rejectedProductIds.has(product.spree_product_id) ||
         variant.fulfillment_mode !== "supplier_or_physical" || product.review_decision === "rejected" ||
         (product.requires_review && product.review_decision !== "approved") ||
         isBookProduct({ sku: variant.canonical_sku, name: product.name }, product.category_key ?? "")) continue;
