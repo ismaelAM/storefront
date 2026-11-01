@@ -10,6 +10,7 @@
       "fix/owned-stock-offer-limits": false,
       "fix/exclude-french-italian": false,
       "perf/storefront-loading": false,
+      "perf/catalog-translation-cost": false,
       "fix/ig-daily-quota-recovery": false,
       "migration/spree-owned-backend": false
     }
