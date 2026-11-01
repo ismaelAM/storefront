@@ -1,19 +1,34 @@
 import type { Product } from "@spree/sdk";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getCachedProduct } = vi.hoisted(() => ({ getCachedProduct: vi.fn() }));
+const { getCachedProduct, getProductTranslation } = vi.hoisted(() => ({
+  getCachedProduct: vi.fn(),
+  getProductTranslation: vi.fn(),
+}));
 vi.mock("@/lib/data/cached", () => ({
   getCachedProduct,
   PRODUCT_METADATA_EXPAND: [],
 }));
-vi.mock("@/lib/data/products", () => ({ cachedGetProduct: vi.fn() }));
+vi.mock("@/lib/data/product-translation", () => ({ getProductTranslation }));
 vi.mock("@/lib/spree", () => ({ DEFAULT_SURFACE: "dtc" }));
 vi.mock("@/lib/metadata/alternates", () => ({
   translationFingerprint: () => "fingerprint",
-  buildLocalizedAlternates: async () => ({
-    canonical: "https://bisontcg.example/es/es/products/fundas",
-    languages: {},
-  }),
+  buildLocalizedAlternates: async ({
+    resolvePath,
+  }: {
+    resolvePath: (target: {
+      country: string;
+      locale: string;
+    }) => Promise<{ path: string } | null>;
+  }) => {
+    const translated = await resolvePath({ country: "es", locale: "en" });
+    return {
+      canonical: "https://bisontcg.example/es/es/products/fundas",
+      languages: translated
+        ? { en: `https://bisontcg.example/es/en${translated.path}` }
+        : {},
+    };
+  },
 }));
 
 import { generateProductMetadata } from "./product";
@@ -39,6 +54,7 @@ const route = { country: "es", locale: "es", slug: "fundas" };
 beforeEach(() => {
   vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://bisontcg.example");
   getCachedProduct.mockResolvedValue(initialProduct);
+  getProductTranslation.mockResolvedValue(null);
 });
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -46,6 +62,29 @@ afterEach(() => {
 });
 
 describe("product social metadata", () => {
+  it("resolves translated URLs separately from the current product's commercial metadata", async () => {
+    getProductTranslation.mockResolvedValue({
+      ...initialProduct,
+      name: "Sleeves",
+      slug: "sleeves",
+    });
+    const metadata = await generateProductMetadata(route);
+    expect(metadata.alternates?.languages).toEqual({
+      en: "https://bisontcg.example/es/en/products/sleeves",
+    });
+    expect(metadata.other?.["product:price:amount"]).toBe("9.95");
+    expect(getProductTranslation).toHaveBeenCalledWith("product-1", {
+      country: "es",
+      locale: "en",
+    });
+  });
+
+  it("omits an absent alternate without losing the current product metadata", async () => {
+    const metadata = await generateProductMetadata(route);
+    expect(metadata.alternates?.languages).toEqual({});
+    expect(metadata.title).toBe("Fundas");
+  });
+
   it("uses the store share card when product imagery is missing", async () => {
     vi.stubEnv("NEXT_PUBLIC_STORE_NAME", "BisonTCG");
     const metadata = await generateProductMetadata(route);

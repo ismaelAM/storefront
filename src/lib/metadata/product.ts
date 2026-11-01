@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { getCachedProduct, PRODUCT_METADATA_EXPAND } from "@/lib/data/cached";
-import { cachedGetProduct } from "@/lib/data/products";
+import { getProductTranslation } from "@/lib/data/product-translation";
 import {
   buildLocalizedAlternates,
   translationFingerprint,
@@ -13,7 +13,6 @@ import {
   schemaAvailability,
   validOfferPrice,
 } from "@/lib/seo";
-import { DEFAULT_SURFACE } from "@/lib/spree";
 import { getStoreName, getStoreUrl } from "@/lib/store";
 
 interface ProductMetadataParams {
@@ -52,12 +51,10 @@ export async function generateProductMetadata({
         path: `/products/${product.slug}`,
         currentResourceFingerprint: productTranslationFingerprint(product),
         resolvePath: async (target) => {
-          const localizedProduct = await cachedGetProduct(
-            product.id,
-            [],
-            { country: target.country, locale: target.locale },
-            DEFAULT_SURFACE,
-          );
+          const localizedProduct = await getProductTranslation(product.id, {
+            country: target.country,
+            locale: target.locale,
+          });
           if (!localizedProduct) return null;
           return {
             path: `/products/${localizedProduct.slug}`,
