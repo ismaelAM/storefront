@@ -70,3 +70,5 @@ This is the implementer's choice under the owner's standing authority to decide.
 - A valid content-locale setting is an operational declaration, not automatic discovery; update/remove it in the same release as adding translations.
 - Physical stock/base prices read back unchanged: boxes 6 each at 139.99, precons 3 each at 39.99/109.99/59.99/59.99. Nov 2 daily offers: 12, error null.
 - Dollar savings and the $1/day target remain unmeasured pending production observation.
+
+- Release validation caught Next-generated cacheLife overloads rejecting a literal union (four TS2769 failures). Local tsc without generated Next types had missed it; next typegen cannot run in this executor because of its SWC/stacker assertion. Reproduced all four failures using Next's own writeCacheLifeTypes utility with the actual profile values, then used separate literal cacheLife calls per branch. Generated-type tsc passed before rerunning the full suite. This changes no runtime cache policy.

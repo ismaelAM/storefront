@@ -36,11 +36,9 @@ export async function cachedListProducts(
 ) {
   "use cache: remote";
   void cacheVersion;
-  cacheLife(
-    !userToken && surface === DEFAULT_SURFACE
-      ? "catalogGuestProducts"
-      : "catalogProducts",
-  );
+  if (!userToken && surface === DEFAULT_SURFACE)
+    cacheLife("catalogGuestProducts");
+  else cacheLife("catalogProducts");
   cacheTag(`products${cacheTagSuffix(surface)}`);
   return getClientForSurface(surface).products.list(params, {
     ...options,
@@ -84,11 +82,9 @@ export async function cachedGetProduct(
 ) {
   "use cache: remote";
   void cacheVersion;
-  cacheLife(
-    !userToken && surface === DEFAULT_SURFACE
-      ? "catalogGuestProducts"
-      : "catalogProducts",
-  );
+  if (!userToken && surface === DEFAULT_SURFACE)
+    cacheLife("catalogGuestProducts");
+  else cacheLife("catalogProducts");
   cacheTag(
     `products${cacheTagSuffix(surface)}`,
     `product:${slugOrId}${cacheTagSuffix(surface)}`,
@@ -142,11 +138,9 @@ async function cachedGetProductFilters(
 ) {
   "use cache: remote";
   void cacheVersion;
-  cacheLife(
-    !userToken && surface === DEFAULT_SURFACE
-      ? "catalogGuestProducts"
-      : "catalogProducts",
-  );
+  if (!userToken && surface === DEFAULT_SURFACE)
+    cacheLife("catalogGuestProducts");
+  else cacheLife("catalogProducts");
   cacheTag(`product-filters${cacheTagSuffix(surface)}`);
   return getClientForSurface(surface).products.filters(params, {
     ...options,
