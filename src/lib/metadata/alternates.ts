@@ -27,6 +27,8 @@ interface BuildHreflangLanguagesParams {
   path: string;
   currentResourceFingerprint?: string;
   resolvePath?: LocalizedPathResolver;
+  /** Verified content languages, including the Store default; UI locales stay intact. */
+  contentLocales?: readonly string[];
 }
 
 export interface LocalizedAlternates {
@@ -151,6 +153,7 @@ export async function buildLocalizedAlternates({
   path,
   currentResourceFingerprint,
   resolvePath,
+  contentLocales,
 }: BuildHreflangLanguagesParams): Promise<LocalizedAlternates> {
   const currentLocale = resolveSupportedLocale(locale);
   const currentUrl = buildCanonicalUrl(
@@ -214,13 +217,25 @@ export async function buildLocalizedAlternates({
       currentResourceFingerprint !== undefined &&
       cluster.contentDefaultLocale,
   );
+  const knownContentLocales =
+    verifyTranslations &&
+    cluster.contentDefaultLocale &&
+    contentLocales?.includes(cluster.contentDefaultLocale)
+      ? new Set(contentLocales)
+      : undefined;
   const resourcesPromise = Promise.all(
     cluster.targets.map(async (target) => {
       const fallbackTarget = cluster.contentDefaultLocale
         ? { ...target, locale: cluster.contentDefaultLocale }
         : undefined;
       const [resource, fallbackResource] = await Promise.all([
-        resolveLocalizedResource(target),
+        resolveLocalizedResource(
+          knownContentLocales &&
+            !knownContentLocales.has(target.locale) &&
+            fallbackTarget
+            ? fallbackTarget
+            : target,
+        ),
         verifyTranslations && fallbackTarget
           ? resolveLocalizedResource(fallbackTarget)
           : Promise.resolve(undefined),

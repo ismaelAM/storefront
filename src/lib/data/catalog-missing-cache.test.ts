@@ -1,4 +1,5 @@
 import { SpreeError } from "@spree/sdk";
+import { cacheLife } from "next/cache";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({ product: vi.fn(), category: vi.fn() }));
@@ -85,5 +86,65 @@ describe.each([
     fetch.mockResolvedValue(resource);
     await expect(cached()).resolves.toBe(resource);
     await expect(read()).resolves.toBe(resource);
+  });
+});
+
+describe("catalogue cache policy and customer pricing", () => {
+  it.each([
+    {
+      surface: "dtc" as const,
+      token: undefined,
+      profile: "catalogGuestProducts",
+      price: "139.99",
+    },
+    {
+      surface: "dtc" as const,
+      token: "customer-jwt",
+      profile: "catalogProducts",
+      price: "129.99",
+    },
+    {
+      surface: "wholesale" as const,
+      token: "wholesale-jwt",
+      profile: "catalogProducts",
+      price: "99.99",
+    },
+    {
+      surface: "wholesale" as const,
+      token: undefined,
+      profile: "catalogProducts",
+      price: "139.99",
+    },
+  ])("keeps $surface/$token pricing in its own freshness policy", async ({
+    surface,
+    token,
+    profile,
+    price,
+  }) => {
+    api.product.mockImplementation(async (_id, _params, options) => ({
+      price: {
+        amount:
+          options.token === "customer-jwt"
+            ? "129.99"
+            : options.token === "wholesale-jwt"
+              ? "99.99"
+              : "139.99",
+        currency: "EUR",
+      },
+    }));
+    const result = await cachedGetProduct(
+      "stock-box",
+      [],
+      { country: "es", locale: "es" },
+      surface,
+      token,
+    );
+    expect(result?.price.amount).toBe(price);
+    expect(cacheLife).toHaveBeenCalledWith(profile);
+    expect(api.product).toHaveBeenCalledWith(
+      "stock-box",
+      { expand: [] },
+      { country: "es", locale: "es", ...(token ? { token } : {}) },
+    );
   });
 });

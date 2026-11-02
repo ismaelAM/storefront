@@ -75,7 +75,7 @@ async function cachedListCategoryProducts(
 ) {
   "use cache: remote";
   void cacheVersion;
-  cacheLife("catalogProducts");
+  cacheLife(userToken ? "catalogProducts" : "catalogGuestProducts");
   cacheTag("products", `category-products:${categoryId}`);
   return getClient().products.list(
     { ...params, in_category: categoryId },

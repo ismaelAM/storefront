@@ -13,7 +13,11 @@ import {
   schemaAvailability,
   validOfferPrice,
 } from "@/lib/seo";
-import { getStoreName, getStoreUrl } from "@/lib/store";
+import {
+  getCatalogContentLocales,
+  getStoreName,
+  getStoreUrl,
+} from "@/lib/store";
 
 interface ProductMetadataParams {
   country: string;
@@ -50,6 +54,7 @@ export async function generateProductMetadata({
         locale,
         path: `/products/${product.slug}`,
         currentResourceFingerprint: productTranslationFingerprint(product),
+        contentLocales: getCatalogContentLocales(),
         resolvePath: async (target) => {
           const localizedProduct = await getProductTranslation(product.id, {
             country: target.country,
