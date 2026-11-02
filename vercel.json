@@ -11,6 +11,7 @@
       "fix/exclude-french-italian": false,
       "perf/storefront-loading": false,
       "perf/catalog-translation-cost": false,
+      "perf/one-dollar-daily": false,
       "fix/ig-daily-quota-recovery": false,
       "migration/spree-owned-backend": false
     }

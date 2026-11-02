@@ -6,7 +6,11 @@ import {
   translationFingerprint,
 } from "@/lib/metadata/alternates";
 import { normalizeOpenGraphLocale, SOCIAL_IMAGE_PATH } from "@/lib/seo";
-import { getStoreName, getStoreUrl } from "@/lib/store";
+import {
+  getCatalogContentLocales,
+  getStoreName,
+  getStoreUrl,
+} from "@/lib/store";
 
 export interface CategoryMetadataParams {
   country: string;
@@ -56,6 +60,7 @@ export async function generateCategoryMetadata({
         locale,
         path: `/c/${category.permalink}`,
         currentResourceFingerprint: categoryTranslationFingerprint(category),
+        contentLocales: getCatalogContentLocales(),
         resolvePath: async (target) => {
           const localizedCategory = await cachedGetCategory(
             category.id,

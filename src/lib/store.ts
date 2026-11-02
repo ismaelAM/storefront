@@ -1,3 +1,5 @@
+import { resolveSupportedLocale } from "@/i18n/locales";
+
 /**
  * Centralized store configuration.
  *
@@ -62,6 +64,17 @@ export function getDefaultCountry(): string {
  */
 export function getDefaultLocale(): string {
   return process.env.NEXT_PUBLIC_DEFAULT_LOCALE || "en";
+}
+
+/** Unset/invalid config preserves API translation discovery. Update when adding content translations. */
+export function getCatalogContentLocales(): string[] | undefined {
+  const raw = process.env.SPREE_CATALOG_CONTENT_LOCALES?.trim();
+  if (!raw) return undefined;
+  const locales = raw
+    .split(",")
+    .map((locale) => resolveSupportedLocale(locale.trim()));
+  if (locales.some((locale) => !locale)) return undefined;
+  return [...new Set(locales)] as string[];
 }
 
 /**

@@ -156,6 +156,113 @@ describe("buildHreflangLanguages", () => {
     });
   });
 
+  it("avoids other language reads for a verified single-language catalogue", async () => {
+    vi.mocked(getMarkets).mockResolvedValue({
+      data: [market({ supported_locales: ["en", "de", "fr"] })],
+    });
+    const resolvePath = vi.fn(async (_target: MarketLocaleTarget) => ({
+      path: "/products/mug",
+      fingerprint: "base",
+    }));
+    const result = await buildLocalizedAlternates({
+      storeUrl: "https://store.example",
+      country: "us",
+      locale: "en",
+      path: "/products/mug",
+      currentResourceFingerprint: "base",
+      resolvePath,
+      contentLocales: ["en"],
+    });
+    expect(result.languages).toEqual({
+      en: "https://store.example/us/en/products/mug",
+      "x-default": "https://store.example/us/en/products/mug",
+    });
+    expect(resolvePath).not.toHaveBeenCalled();
+  });
+
+  it("resolves only the base content when viewing an untranslated UI locale", async () => {
+    vi.mocked(getMarkets).mockResolvedValue({
+      data: [market({ supported_locales: ["en", "de", "fr"] })],
+    });
+    const resolvePath = vi.fn(async (_target: MarketLocaleTarget) => ({
+      path: "/products/mug",
+      fingerprint: "base",
+    }));
+    const result = await buildLocalizedAlternates({
+      storeUrl: "https://store.example",
+      country: "us",
+      locale: "fr",
+      path: "/products/mug",
+      currentResourceFingerprint: "base",
+      resolvePath,
+      contentLocales: ["en"],
+    });
+    expect(result.canonical).toBe("https://store.example/us/en/products/mug");
+    expect(resolvePath.mock.calls.map(([target]) => target.locale)).toEqual([
+      "en",
+    ]);
+  });
+
+  it("still resolves real configured translations and isolates other Markets", async () => {
+    vi.mocked(getMarkets).mockResolvedValue({
+      data: [
+        market({ supported_locales: ["en", "de", "fr"] }),
+        market({
+          id: "market-2",
+          default: false,
+          countries: [country("CA")],
+          supported_locales: ["en", "de", "fr"],
+        }),
+      ],
+    });
+    const resolvePath = vi.fn(async (target: MarketLocaleTarget) =>
+      target.marketId === "market-2"
+        ? null
+        : { path: "/products/tasse", fingerprint: "german" },
+    );
+    const result = await buildLocalizedAlternates({
+      storeUrl: "https://store.example",
+      country: "us",
+      locale: "en",
+      path: "/products/mug",
+      currentResourceFingerprint: "base",
+      resolvePath,
+      contentLocales: ["en", "de"],
+    });
+    expect(result.languages).toEqual({
+      "en-US": "https://store.example/us/en/products/mug",
+      "de-US": "https://store.example/us/de/products/tasse",
+      "x-default": "https://store.example/us/en/products/mug",
+    });
+    expect(
+      resolvePath.mock.calls
+        .map(([target]) => `${target.marketId}:${target.locale}`)
+        .sort(),
+    ).toEqual(["market-1:de", "market-2:de", "market-2:en"]);
+  });
+
+  it("ignores a content-locale list that omits the Store default", async () => {
+    vi.mocked(getMarkets).mockResolvedValue({
+      data: [market({ supported_locales: ["en", "de", "fr"] })],
+    });
+    const resolvePath = vi.fn(async (_target: MarketLocaleTarget) => ({
+      path: "/products/mug",
+      fingerprint: "base",
+    }));
+    await buildLocalizedAlternates({
+      storeUrl: "https://store.example",
+      country: "us",
+      locale: "en",
+      path: "/products/mug",
+      currentResourceFingerprint: "base",
+      resolvePath,
+      contentLocales: ["de"],
+    });
+    expect(
+      resolvePath.mock.calls.map(([target]) => target.locale).sort(),
+    ).toEqual(["de", "fr"]);
+  });
+
   it("does not advertise a current resource page when it is fallback content", async () => {
     vi.mocked(getMarkets).mockResolvedValue({ data: [market()] });
     const fallback = translationFingerprint("Coffee mug", "coffee-mug");

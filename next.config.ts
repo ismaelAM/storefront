@@ -83,6 +83,12 @@ const nextConfig: NextConfig = {
       revalidate: 30,
       expire: 120,
     },
+    // Anonymous browsing tolerates a short snapshot; carts still validate live.
+    catalogGuestProducts: {
+      stale: 30,
+      revalidate: 120,
+      expire: 300,
+    },
   },
   images: {
     qualities: [25, 50, 75, 85, 100],
