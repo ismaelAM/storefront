@@ -18,7 +18,12 @@ import {
   type SitemapProduct,
 } from "@/lib/data/sitemap";
 import { hashSitemapResource } from "@/lib/data/sitemap-fingerprint";
-import { getDefaultCountry, getDefaultLocale, getStoreUrl } from "@/lib/store";
+import {
+  getCatalogContentLocales,
+  getDefaultCountry,
+  getDefaultLocale,
+  getStoreUrl,
+} from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
@@ -68,7 +73,14 @@ function getDefaultLocaleOptions(): LocaleOptions {
 
 async function resolveLocaleCatalogs(
   countryLocales: CountryLocale[],
+  contentDefaultLocale: SupportedLocale | undefined,
 ): Promise<Map<string, LocaleCatalog>> {
+  const contentLocales = getCatalogContentLocales();
+  // Match metadata: a declaration without the real Store default is unsafe.
+  const knownContentLocales =
+    contentDefaultLocale && contentLocales?.includes(contentDefaultLocale)
+      ? new Set(contentLocales)
+      : undefined;
   const uniqueTargets = new Map<string, CountryLocale>();
 
   for (const target of countryLocales) {
@@ -91,7 +103,12 @@ async function resolveLocaleCatalogs(
       ...(await Promise.all(
         batch.map(
           async ([key, target]) =>
-            [key, await buildLocaleCatalog(target)] as const,
+            [
+              key,
+              knownContentLocales && !knownContentLocales.has(target.locale)
+                ? { ...target, productCount: 0, categoryCount: 0 }
+                : await buildLocaleCatalog(target),
+            ] as const,
         ),
       )),
     );
@@ -110,8 +127,12 @@ function catalogKey(target: { marketId: string; locale: string }): string {
  */
 export async function generateSitemaps(): Promise<Array<{ id: number }>> {
   try {
-    const { countryLocales } = await resolveCountryLocales();
-    const catalogs = await resolveLocaleCatalogs(countryLocales);
+    const { countryLocales, contentDefaultLocale } =
+      await resolveCountryLocales();
+    const catalogs = await resolveLocaleCatalogs(
+      countryLocales,
+      contentDefaultLocale,
+    );
     const totalUrls = countryLocales.reduce((total, target) => {
       const catalog = catalogs.get(catalogKey(target));
       return total + (catalog ? catalogSize(catalog) : 0);
@@ -141,7 +162,10 @@ export default async function sitemap(props: {
 
   try {
     ({ countryLocales, contentDefaultLocale } = await resolveCountryLocales());
-    catalogs = await resolveLocaleCatalogs(countryLocales);
+    catalogs = await resolveLocaleCatalogs(
+      countryLocales,
+      contentDefaultLocale,
+    );
   } catch (error) {
     console.error("Sitemap generation failed: API unavailable.", error);
     return [];

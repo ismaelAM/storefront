@@ -6,6 +6,7 @@ const api = vi.hoisted(() => ({
   productsList: vi.fn(),
   categoriesList: vi.fn(),
   fallbackIndex: vi.fn(),
+  contentLocales: vi.fn(),
 }));
 
 vi.mock("@/lib/data/sitemap", () => ({
@@ -41,6 +42,7 @@ vi.mock("@/lib/store", () => ({
   getDefaultCountry: () => "us",
   getDefaultLocale: () => "en",
   getStoreUrl: () => "https://store.example",
+  getCatalogContentLocales: api.contentLocales,
 }));
 
 function marketCountries(...isos: string[]) {
@@ -93,6 +95,7 @@ describe("localized sitemap generation", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
+    api.contentLocales.mockReturnValue(undefined);
     api.fallbackIndex.mockImplementation(
       async (resource, _marketId, options) => {
         const response = await (resource === "products"
@@ -108,6 +111,62 @@ describe("localized sitemap generation", () => {
         );
       },
     );
+  });
+
+  it("skips known untranslated catalogue reads while keeping every locale home", async () => {
+    api.contentLocales.mockReturnValue(["en"]);
+    api.marketsList.mockResolvedValue({
+      data: [
+        {
+          ...marketCountries("US")[0],
+          supported_locales: ["en", "es", "fr", "de", "pl", "pt"],
+        },
+      ],
+    });
+    mockCatalog(2414, 30);
+    const { default: sitemap, generateSitemaps } = await import(
+      "@/app/sitemap"
+    );
+    await expect(generateSitemaps()).resolves.toEqual([{ id: 0 }]);
+    const urls = (await sitemap({ id: Promise.resolve("0") })).map(
+      ({ url }) => url,
+    );
+    expect(urls).toHaveLength(2450);
+    expect(urls).toContain("https://store.example/us/en/products/p-0");
+    for (const locale of ["es", "fr", "de", "pl", "pt"]) {
+      expect(urls).toContain(`https://store.example/us/${locale}`);
+      expect(
+        api.productsList.mock.calls.some(
+          ([, options]) => options.locale === locale,
+        ),
+      ).toBe(false);
+      expect(
+        api.categoriesList.mock.calls.some(
+          ([, options]) => options.locale === locale,
+        ),
+      ).toBe(false);
+    }
+    expect(api.fallbackIndex).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    undefined,
+    ["es"],
+    ["en", "es"],
+  ])("retains translation reads for absent, unsafe or translated declarations %s", async (locales) => {
+    api.contentLocales.mockReturnValue(locales);
+    api.marketsList.mockResolvedValue({
+      data: [{ ...marketCountries("US")[0], supported_locales: ["en", "es"] }],
+    });
+    mockCatalog(1, 0);
+    const { default: sitemap } = await import("@/app/sitemap");
+    await sitemap({ id: Promise.resolve("0") });
+    expect(
+      api.productsList.mock.calls.some(
+        ([, options]) => options.locale === "es",
+      ),
+    ).toBe(true);
+    expect(api.fallbackIndex).toHaveBeenCalled();
   });
 
   it("reuses translated catalog pages across countries with the same locale", async () => {

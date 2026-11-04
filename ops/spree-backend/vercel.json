@@ -6,6 +6,7 @@
       "chore/retire-devir": false,
       "fix/daily-offers": false,
       "fix/storefront-stability-consumption": false,
+      "perf/half-dollar-daily": false,
       "migration/spree-owned-backend": false
     }
   },
