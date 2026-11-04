@@ -3,30 +3,43 @@
 import type { Category, Media, Product } from "@spree/sdk";
 import { cacheLife, cacheTag } from "next/cache";
 import { getClient } from "@/lib/spree";
-import { hashSitemapResource } from "./sitemap-fingerprint";
+import {
+  hashSitemapResource,
+  type SitemapFingerprint,
+} from "./sitemap-fingerprint";
 
 interface LocaleOptions {
   locale: string;
   country: string;
 }
 
-export type SitemapProduct = Product & {
-  media?: Media[];
-  updated_at?: string;
-};
+export type SitemapProduct = Pick<Product, "id" | "slug"> &
+  SitemapFingerprint & {
+    media?: Pick<Media, "original_url" | "large_url">[];
+    updated_at?: string;
+  };
 
-export type SitemapCategory = Category & {
-  updated_at?: string;
-};
+export type SitemapCategory = Pick<Category, "id" | "permalink"> &
+  SitemapFingerprint & {
+    updated_at?: string;
+  };
 
 export type SitemapResource = "products" | "categories";
 
 const INDEX_PAGE_SIZE = 100;
 const MAX_INDEX_PAGES = 1000;
-const MAX_CONCURRENT_INDEX_PAGES = 8;
+const MAX_CONCURRENT_INDEX_PAGES = 1;
 const INDEX_CHUNK_SIZE = 10_000;
 // Leave room for the cache envelope below Vercel's 2 MB per-item limit.
 const MAX_INDEX_CHUNK_BYTES = 1_900_000;
+const TRANSLATED_FIELDS = [
+  "name",
+  "description",
+  "description_html",
+  "meta_title",
+  "meta_description",
+  "meta_keywords",
+];
 
 export async function getSitemapMarkets(options: LocaleOptions) {
   "use cache: remote";
@@ -41,13 +54,19 @@ export async function getSitemapResourceCount(
   options: LocaleOptions,
 ): Promise<number> {
   "use cache: remote";
-  cacheLife("tenMinutes");
+  cacheLife("hours");
   cacheTag("sitemap", resource, `sitemap-market:${marketId}`);
 
   const response =
     resource === "products"
-      ? await getClient().products.list({ page: 1, limit: 1 }, options)
-      : await getClient().categories.list({ page: 1, limit: 1 }, options);
+      ? await getClient().products.list(
+          { page: 1, limit: 1, fields: ["id"] },
+          options,
+        )
+      : await getClient().categories.list(
+          { page: 1, limit: 1, fields: ["id"] },
+          options,
+        );
   return Math.max(0, response.meta.count);
 }
 
@@ -58,13 +77,30 @@ export async function getSitemapProductPage(
   options: LocaleOptions,
 ): Promise<SitemapProduct[]> {
   "use cache: remote";
-  cacheLife("tenMinutes");
+  cacheLife("hours");
   cacheTag("sitemap", "products", `sitemap-market:${marketId}`);
   const response = await getClient().products.list(
-    { page, limit, expand: ["media"] },
+    {
+      page,
+      limit,
+      expand: ["media"],
+      fields: ["id", "slug", "updated_at", "media", ...TRANSLATED_FIELDS],
+    },
     options,
   );
-  return response.data as SitemapProduct[];
+  const products = response.data as Array<
+    Product & { media?: Media[]; updated_at?: string }
+  >;
+  return products.map((product) => ({
+    id: product.id,
+    slug: product.slug,
+    updated_at: product.updated_at,
+    media: product.media?.map(({ original_url, large_url }) => ({
+      original_url,
+      large_url,
+    })),
+    fingerprint: hashSitemapResource(product),
+  }));
 }
 
 export async function getSitemapCategoryPage(
@@ -74,16 +110,30 @@ export async function getSitemapCategoryPage(
   options: LocaleOptions,
 ): Promise<SitemapCategory[]> {
   "use cache: remote";
-  cacheLife("tenMinutes");
+  cacheLife("hours");
   cacheTag("sitemap", "categories", `sitemap-market:${marketId}`);
-  const response = await getClient().categories.list({ page, limit }, options);
-  return response.data;
+  const response = await getClient().categories.list(
+    {
+      page,
+      limit,
+      fields: ["id", "permalink", "updated_at", ...TRANSLATED_FIELDS],
+    },
+    options,
+  );
+  return (response.data as Array<Category & { updated_at?: string }>).map(
+    (category) => ({
+      id: category.id,
+      permalink: category.permalink,
+      updated_at: category.updated_at,
+      fingerprint: hashSitemapResource(category),
+    }),
+  );
 }
 
 /**
  * Assemble remote-cached hash chunks locally; never cache the entire index.
  * Cold generation is capped at 1,000 catalogue pages (100,000 items). Chunks
- * run sequentially so eight concurrent page requests remain the upper bound.
+ * run sequentially, with one page request per resource comparison at a time.
  */
 export async function getSitemapFallbackFingerprints(
   resource: SitemapResource,
@@ -124,7 +174,7 @@ export async function getSitemapFallbackFingerprintChunk(
   chunkId: number,
 ): Promise<Record<string, string>> {
   "use cache: remote";
-  cacheLife("tenMinutes");
+  cacheLife("hours");
   cacheTag("sitemap", resource, `sitemap-market:${marketId}`);
 
   const pagesPerChunk = INDEX_CHUNK_SIZE / INDEX_PAGE_SIZE;

@@ -29,8 +29,10 @@ import {
   getSitemapFallbackFingerprints as fallbackIndex,
   getSitemapCategoryPage,
   getSitemapFallbackFingerprintChunk,
+  getSitemapProductPage,
   getSitemapResourceCount,
 } from "@/lib/data/sitemap";
+import { hashSitemapResource } from "@/lib/data/sitemap-fingerprint";
 
 async function fingerprintChunk(
   chunkId: number,
@@ -76,6 +78,85 @@ describe("sitemap data cache", () => {
     vi.clearAllMocks();
   });
 
+  it("caches compact product URL data without commercial fields or long descriptions", async () => {
+    const source = Array.from({ length: 100 }, (_, id) => ({
+      ...product,
+      id: `product-${id}`,
+      description_html: `<p>${"🦬".repeat(2000)}</p>`,
+      updated_at: "2026-11-04T08:00:00Z",
+      variants: [{ price: "139.99", sku: "private-test-sku" }],
+      media: [
+        {
+          original_url: "https://images.example/box.jpg",
+          large_url: null,
+          alt: "Box",
+          metadata: "unused",
+        },
+      ],
+    }));
+    api.productsList.mockResolvedValue({ data: source, meta: { count: 100 } });
+    const result = await getSitemapProductPage("market-1", 1, 100, {
+      country: "us",
+      locale: "en",
+    });
+    expect(result[0]).toEqual({
+      id: "product-0",
+      slug: "coffee",
+      updated_at: "2026-11-04T08:00:00Z",
+      media: [
+        { original_url: "https://images.example/box.jpg", large_url: null },
+      ],
+      fingerprint: expectedFingerprint(source[0]),
+    });
+    expect(hashSitemapResource(result[0])).toBe(expectedFingerprint(source[0]));
+    expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThan(
+      Buffer.byteLength(JSON.stringify(source)) / 20,
+    );
+    expect(cache.life).toHaveBeenCalledWith("hours");
+  });
+
+  it("caches only category URLs, dates and translation fingerprints", async () => {
+    const { slug: _slug, ...fields } = product;
+    const source = {
+      ...fields,
+      permalink: "games",
+      description_html: "long".repeat(10000),
+      updated_at: "2026-11-04T08:00:00Z",
+      children: [{ id: "unused" }],
+    };
+    api.categoriesList.mockResolvedValue({
+      data: [source],
+      meta: { count: 1 },
+    });
+    const result = await getSitemapCategoryPage("market-1", 1, 100, {
+      country: "us",
+      locale: "en",
+    });
+    const expectedHash = createHash("sha256")
+      .update(
+        JSON.stringify([
+          source.name,
+          source.permalink,
+          source.description,
+          source.description_html,
+          source.meta_title,
+          source.meta_description,
+          source.meta_keywords,
+        ]),
+      )
+      .digest("hex");
+    expect(result).toEqual([
+      {
+        id: source.id,
+        permalink: "games",
+        updated_at: "2026-11-04T08:00:00Z",
+        fingerprint: expectedHash,
+      },
+    ]);
+    expect(hashSitemapResource(result[0])).toBe(expectedHash);
+    expect(cache.life).toHaveBeenCalledWith("hours");
+  });
+
   it("counts public categories including top-level landing pages", async () => {
     api.categoriesList.mockResolvedValue({
       data: [],
@@ -90,10 +171,10 @@ describe("sitemap data cache", () => {
     ).resolves.toBe(19);
 
     expect(api.categoriesList).toHaveBeenCalledWith(
-      { page: 1, limit: 1 },
+      { page: 1, limit: 1, fields: ["id"] },
       { country: "us", locale: "en" },
     );
-    expect(cache.life).toHaveBeenCalledWith("tenMinutes");
+    expect(cache.life).toHaveBeenCalledWith("hours");
     expect(cache.tag).toHaveBeenCalledWith(
       "sitemap",
       "categories",
@@ -110,7 +191,21 @@ describe("sitemap data cache", () => {
     });
 
     expect(api.categoriesList).toHaveBeenCalledWith(
-      { page: 2, limit: 100 },
+      {
+        page: 2,
+        limit: 100,
+        fields: [
+          "id",
+          "permalink",
+          "updated_at",
+          "name",
+          "description",
+          "description_html",
+          "meta_title",
+          "meta_description",
+          "meta_keywords",
+        ],
+      },
       { country: "us", locale: "de" },
     );
   });
@@ -123,7 +218,7 @@ describe("sitemap data cache", () => {
     });
     expect(result).toEqual({ "product-1": expectedFingerprint(product) });
     expect(JSON.stringify(result)).not.toContain(product.description_html);
-    expect(cache.life).toHaveBeenCalledWith("tenMinutes");
+    expect(cache.life).toHaveBeenCalledWith("hours");
     expect(cache.tag).toHaveBeenCalledWith(
       "sitemap",
       "products",
@@ -210,6 +305,27 @@ describe("sitemap data cache", () => {
     await expect(
       fallbackIndex("products", "market-1", { country: "us", locale: "en" }),
     ).rejects.toThrow("catalogue unavailable");
+  });
+
+  it("does not fan out comparison pages across the backend connection pool", async () => {
+    let active = 0;
+    let peak = 0;
+    api.productsList.mockImplementation(async ({ page, limit }) => {
+      active++;
+      peak = Math.max(peak, active);
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      active--;
+      return {
+        data: limit === 1 ? [] : [{ ...product, id: `product-${page}` }],
+        meta: { count: 800 },
+      };
+    });
+    const result = await fallbackIndex("products", "market-1", {
+      country: "us",
+      locale: "en",
+    });
+    expect(Object.keys(result)).toHaveLength(8);
+    expect(peak).toBe(1);
   });
 
   it("rejects catalogues beyond the comparison pagination cap", async () => {

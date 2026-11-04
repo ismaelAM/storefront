@@ -18,7 +18,12 @@ import {
   type SitemapProduct,
 } from "@/lib/data/sitemap";
 import { hashSitemapResource } from "@/lib/data/sitemap-fingerprint";
-import { getDefaultCountry, getDefaultLocale, getStoreUrl } from "@/lib/store";
+import {
+  getCatalogContentLocales,
+  getDefaultCountry,
+  getDefaultLocale,
+  getStoreUrl,
+} from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
@@ -50,8 +55,10 @@ const URLS_PER_SITEMAP = 10_000;
 const STATIC_PAGES_PER_LOCALE = 1;
 const ITEMS_PER_PAGE = 100;
 const MAX_PAGES = 1000;
-const MAX_CONCURRENT_PAGE_REQUESTS = 8;
-const MAX_CONCURRENT_CATALOG_REQUESTS = 4;
+// Product/category lanes run together: one request per lane caps a sitemap at
+// two Store API reads, avoiding cold-container bursts against the session pool.
+const MAX_CONCURRENT_PAGE_REQUESTS = 1;
+const MAX_CONCURRENT_CATALOG_REQUESTS = 1;
 /** Maximum items we can actually fetch, given pagination limits. */
 const MAX_FETCHABLE_ITEMS = ITEMS_PER_PAGE * MAX_PAGES;
 
@@ -68,7 +75,14 @@ function getDefaultLocaleOptions(): LocaleOptions {
 
 async function resolveLocaleCatalogs(
   countryLocales: CountryLocale[],
+  contentDefaultLocale: SupportedLocale | undefined,
 ): Promise<Map<string, LocaleCatalog>> {
+  const contentLocales = getCatalogContentLocales();
+  // Match metadata: a declaration without the real Store default is unsafe.
+  const knownContentLocales =
+    contentDefaultLocale && contentLocales?.includes(contentDefaultLocale)
+      ? new Set(contentLocales)
+      : undefined;
   const uniqueTargets = new Map<string, CountryLocale>();
 
   for (const target of countryLocales) {
@@ -91,7 +105,12 @@ async function resolveLocaleCatalogs(
       ...(await Promise.all(
         batch.map(
           async ([key, target]) =>
-            [key, await buildLocaleCatalog(target)] as const,
+            [
+              key,
+              knownContentLocales && !knownContentLocales.has(target.locale)
+                ? { ...target, productCount: 0, categoryCount: 0 }
+                : await buildLocaleCatalog(target),
+            ] as const,
         ),
       )),
     );
@@ -110,8 +129,12 @@ function catalogKey(target: { marketId: string; locale: string }): string {
  */
 export async function generateSitemaps(): Promise<Array<{ id: number }>> {
   try {
-    const { countryLocales } = await resolveCountryLocales();
-    const catalogs = await resolveLocaleCatalogs(countryLocales);
+    const { countryLocales, contentDefaultLocale } =
+      await resolveCountryLocales();
+    const catalogs = await resolveLocaleCatalogs(
+      countryLocales,
+      contentDefaultLocale,
+    );
     const totalUrls = countryLocales.reduce((total, target) => {
       const catalog = catalogs.get(catalogKey(target));
       return total + (catalog ? catalogSize(catalog) : 0);
@@ -141,7 +164,10 @@ export default async function sitemap(props: {
 
   try {
     ({ countryLocales, contentDefaultLocale } = await resolveCountryLocales());
-    catalogs = await resolveLocaleCatalogs(countryLocales);
+    catalogs = await resolveLocaleCatalogs(
+      countryLocales,
+      contentDefaultLocale,
+    );
   } catch (error) {
     console.error("Sitemap generation failed: API unavailable.", error);
     return [];
