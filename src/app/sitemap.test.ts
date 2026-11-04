@@ -199,6 +199,35 @@ describe("localized sitemap generation", () => {
     ).toHaveLength(1);
   });
 
+  it("keeps sitemap catalogue bursts below the session pool connection limit", async () => {
+    api.marketsList.mockResolvedValue({ data: marketCountries("US") });
+    let active = 0;
+    let peak = 0;
+    const list = async ({ page, limit }: { page: number; limit: number }) => {
+      active++;
+      peak = Math.max(peak, active);
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      active--;
+      return {
+        data:
+          limit === 1
+            ? []
+            : Array.from({ length: 100 }, (_, i) => ({
+                id: `${page}-${i}`,
+                slug: `p-${page}-${i}`,
+                permalink: `c-${page}-${i}`,
+              })),
+        meta: { count: 400 },
+      };
+    };
+    api.productsList.mockImplementation(list);
+    api.categoriesList.mockImplementation(list);
+    const { default: sitemap } = await import("@/app/sitemap");
+    const entries = await sitemap({ id: Promise.resolve("0") });
+    expect(entries).toHaveLength(801);
+    expect(peak).toBeLessThanOrEqual(2);
+  });
+
   it("calculates sitemap files from locale counts without loading catalog pages", async () => {
     api.marketsList.mockResolvedValue({ data: marketCountries("US", "CA") });
     mockCatalog(30_000, 0);

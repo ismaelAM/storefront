@@ -307,6 +307,27 @@ describe("sitemap data cache", () => {
     ).rejects.toThrow("catalogue unavailable");
   });
 
+  it("does not fan out comparison pages across the backend connection pool", async () => {
+    let active = 0;
+    let peak = 0;
+    api.productsList.mockImplementation(async ({ page, limit }) => {
+      active++;
+      peak = Math.max(peak, active);
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      active--;
+      return {
+        data: limit === 1 ? [] : [{ ...product, id: `product-${page}` }],
+        meta: { count: 800 },
+      };
+    });
+    const result = await fallbackIndex("products", "market-1", {
+      country: "us",
+      locale: "en",
+    });
+    expect(Object.keys(result)).toHaveLength(8);
+    expect(peak).toBe(1);
+  });
+
   it("rejects catalogues beyond the comparison pagination cap", async () => {
     api.productsList.mockResolvedValue({ data: [], meta: { count: 100_001 } });
     await expect(

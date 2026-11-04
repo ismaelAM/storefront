@@ -18,6 +18,13 @@ Use it only if the actual Store default is present; otherwise retain discovery.
 Compute translation hashes before caching compact URL/image/date projections.
 Refresh these SEO-only data at most hourly under the `hours` cache profile.
 
+The first preview confirmed a pre-existing Rails error: EMAXCONNSESSION,
+max session clients reached (pool_size15). Sitemap reads used eight concurrent
+API calls. Cap count batches at one Market/locale and pagination at one page per
+resource lane, hence at most two concurrent reads within one sitemap. This is
+load reduction, not a global connection guarantee across unrelated traffic.
+Preview must use the same non-secret `es` content declaration as Production.
+
 Alternatives considered: increasing commercial catalogue TTL would compromise
 freshness without addressing oversized sitemap payloads; changing hosting or
 adding another cache would introduce infrastructure before fixing known waste.

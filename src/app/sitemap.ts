@@ -55,8 +55,10 @@ const URLS_PER_SITEMAP = 10_000;
 const STATIC_PAGES_PER_LOCALE = 1;
 const ITEMS_PER_PAGE = 100;
 const MAX_PAGES = 1000;
-const MAX_CONCURRENT_PAGE_REQUESTS = 8;
-const MAX_CONCURRENT_CATALOG_REQUESTS = 4;
+// Product/category lanes run together: one request per lane caps a sitemap at
+// two Store API reads, avoiding cold-container bursts against the session pool.
+const MAX_CONCURRENT_PAGE_REQUESTS = 1;
+const MAX_CONCURRENT_CATALOG_REQUESTS = 1;
 /** Maximum items we can actually fetch, given pagination limits. */
 const MAX_FETCHABLE_ITEMS = ITEMS_PER_PAGE * MAX_PAGES;
 

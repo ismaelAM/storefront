@@ -28,7 +28,7 @@ export type SitemapResource = "products" | "categories";
 
 const INDEX_PAGE_SIZE = 100;
 const MAX_INDEX_PAGES = 1000;
-const MAX_CONCURRENT_INDEX_PAGES = 8;
+const MAX_CONCURRENT_INDEX_PAGES = 1;
 const INDEX_CHUNK_SIZE = 10_000;
 // Leave room for the cache envelope below Vercel's 2 MB per-item limit.
 const MAX_INDEX_CHUNK_BYTES = 1_900_000;
@@ -133,7 +133,7 @@ export async function getSitemapCategoryPage(
 /**
  * Assemble remote-cached hash chunks locally; never cache the entire index.
  * Cold generation is capped at 1,000 catalogue pages (100,000 items). Chunks
- * run sequentially so eight concurrent page requests remain the upper bound.
+ * run sequentially, with one page request per resource comparison at a time.
  */
 export async function getSitemapFallbackFingerprints(
   resource: SitemapResource,
