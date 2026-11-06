@@ -73,8 +73,8 @@ describe("Home merchandising pools consumed by Puck", () => {
       today.map((item) => item.name).sort(),
     );
   });
-  it("uses the Madrid commercial day and supports Saturday's special offers", () => {
-    const nextDay = new Date("2026-10-16T22:15:00Z");
+  it("keeps Friday's offers after midnight and switches to Saturday at 05:00 Madrid", () => {
+    const nextDay = new Date("2026-10-17T03:00:00Z");
     const saturday = {
       ...product("saturday"),
       tags: ["saturday-special", "offer-date:2026-10-17"],
@@ -83,6 +83,13 @@ describe("Home merchandising pools consumed by Puck", () => {
       ...product("friday"),
       tags: ["daily-offer", "offer-date:2026-10-16"],
     };
+    expect(
+      buildHomeMerchandisingProducts(
+        [expired, saturday],
+        [],
+        new Date("2026-10-16T22:15:00Z"),
+      ).map((item) => item.id),
+    ).toEqual(["friday"]);
     expect(
       buildHomeMerchandisingProducts([expired, saturday], [], nextDay).map(
         (item) => item.id,

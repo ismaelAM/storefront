@@ -78,7 +78,7 @@ it("keeps a supplier pack requiring physical splitting out of the ready daily co
     requiresManualPackSplitReview,
     commercialPricingProfile: () => ({ offerEligible: true }),
     dailyOfferPrice: () => ({ amount: 18, discount: 0.1 }),
-    madridCommercialDay: () => ({ saturday: false }),
+    madridDailyOfferDay: () => ({ saturday: false }),
   });
   expect(
     await load({

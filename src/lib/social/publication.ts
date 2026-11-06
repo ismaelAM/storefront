@@ -1,7 +1,7 @@
 import "server-only";
 import { createHash, randomUUID } from "node:crypto";
 import { getStoreUrl } from "@/lib/store";
-import { madridCommercialDay } from "../../../supabase/functions/_shared/commercial-pricing-policy";
+import { madridDailyOfferDay } from "../../../supabase/functions/_shared/daily-offer-scheduling";
 import { verifyInstagramAccount } from "./connection";
 import { getDailySocialOffers } from "./data";
 import {
@@ -75,23 +75,8 @@ function snapshotHash(snapshot: SocialOfferSnapshot) {
 }
 
 export async function executeDailyPublication(deps: PublicationDependencies) {
-  const snapshot = await deps.getSnapshot();
-  if (snapshot.dayKey !== madridCommercialDay(deps.now()).dayKey)
-    throw new Error("Las ofertas han caducado.");
-  if (
-    Object.keys(OFFER_CATEGORIES).some(
-      (category) =>
-        snapshot.offers.filter((o) => o.category === category).length !== 3,
-    )
-  ) {
-    return {
-      status: "incomplete",
-      message:
-        "La selección de hoy no completa tres ofertas válidas por categoría. Puedes descargar las disponibles.",
-    };
-  }
   const key = {
-    dayKey: snapshot.dayKey,
+    dayKey: madridDailyOfferDay(deps.now()).dayKey,
     accountId: deps.config.configured ? deps.config.accountId : "download",
     token: randomUUID(),
   };
@@ -109,6 +94,22 @@ export async function executeDailyPublication(deps: PublicationDependencies) {
     };
   let attempted = Boolean(claim.checkpoint?.publishAttempted);
   try {
+    const snapshot = await deps.getSnapshot();
+    if (snapshot.dayKey !== key.dayKey)
+      throw new Error("Las ofertas han caducado.");
+    if (
+      Object.keys(OFFER_CATEGORIES).some(
+        (category) =>
+          snapshot.offers.filter((o) => o.category === category).length !== 3,
+      )
+    ) {
+      await deps.repo.finish(key, "failed", null);
+      return {
+        status: "incomplete",
+        message:
+          "La selección de hoy no completa tres ofertas válidas por categoría. Puedes descargar las disponibles.",
+      };
+    }
     if (deps.config.configured) await deps.verifyAccount();
     const hash = snapshotHash(snapshot);
     const imageUrls = await deps.prepareImages(snapshot, hash);
@@ -133,7 +134,7 @@ export async function executeDailyPublication(deps: PublicationDependencies) {
         beforePublish: async (checkpoint) => {
           const fresh = await deps.getSnapshot();
           if (
-            fresh.dayKey !== madridCommercialDay(deps.now()).dayKey ||
+            fresh.dayKey !== madridDailyOfferDay(deps.now()).dayKey ||
             snapshotHash(fresh) !== hash
           ) {
             throw new Error(

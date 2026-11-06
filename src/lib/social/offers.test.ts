@@ -47,6 +47,29 @@ const product = {
 };
 
 describe("public daily offer snapshot", () => {
+  it("keeps the previous offer date until 05:00 Madrid, then requires today's rotation", () => {
+    const previous = { ...state, day_key: "2026-10-10" };
+    const yesterday = {
+      ...product,
+      tags: ["daily-offer", "offer-date:2026-10-10"],
+    };
+    expect(
+      buildSocialOffers(
+        previous,
+        [yesterday],
+        {},
+        new Date("2026-10-11T02:59:59Z"),
+      ).offers,
+    ).toHaveLength(1);
+    expect(() =>
+      buildSocialOffers(
+        previous,
+        [yesterday],
+        {},
+        new Date("2026-10-11T03:00:00Z"),
+      ),
+    ).toThrow();
+  });
   it("uses the selected variant public price rather than another variant or account price", () => {
     const result = buildSocialOffers(state, [product], {}, now);
     expect(result.offers).toMatchObject([

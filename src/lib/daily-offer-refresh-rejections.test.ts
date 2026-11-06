@@ -60,7 +60,7 @@ async function refresh(pending: unknown) {
       day_key: "2026-10-30",
       pending_rotation: pending,
     }),
-    madridCommercialDay: () => ({ dayKey: "2026-10-31", saturday: true }),
+    madridDailyOfferDay: () => ({ dayKey: "2026-10-31", saturday: true }),
     isBookProduct: () => false,
     isPack: () => false,
     commercialPricingProfile: () => ({ offerEligible: true }),

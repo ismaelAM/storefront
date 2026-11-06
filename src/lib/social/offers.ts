@@ -1,4 +1,4 @@
-import { madridCommercialDay } from "../../../supabase/functions/_shared/commercial-pricing-policy";
+import { madridDailyOfferDay } from "../../../supabase/functions/_shared/daily-offer-scheduling";
 import {
   type DailyOfferCategory,
   dailyOfferCategory,
@@ -78,7 +78,7 @@ export function buildSocialOffers(
   categoryKeys: Record<string, string | null>,
   now = new Date(),
 ): SocialOfferSnapshot {
-  const dayKey = madridCommercialDay(now).dayKey;
+  const dayKey = madridDailyOfferDay(now).dayKey;
   if (
     !state ||
     state.day_key !== dayKey ||

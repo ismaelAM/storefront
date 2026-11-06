@@ -92,6 +92,7 @@ describe("daily social publication orchestration", () => {
     });
     expect(deps.prepareImages).not.toHaveBeenCalled();
     expect(deps.publish).not.toHaveBeenCalled();
+    expect(deps.getSnapshot).not.toHaveBeenCalled();
   });
   it("does not run while another worker owns the day or an attempt is uncertain", async () => {
     const { deps, repo } = setup();

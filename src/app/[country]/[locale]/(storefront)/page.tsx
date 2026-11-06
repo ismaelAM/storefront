@@ -11,7 +11,7 @@ import { buildHomeMerchandisingProducts } from "@/lib/puck/home-merchandising";
 import { buildCanonicalUrl, buildWebSiteJsonLd } from "@/lib/seo";
 import { getAccessToken } from "@/lib/spree";
 import { getStoreUrl } from "@/lib/store";
-import { madridCommercialDay } from "../../../../../supabase/functions/_shared/commercial-pricing-policy";
+import { madridDailyOfferDay } from "../../../../../supabase/functions/_shared/daily-offer-scheduling";
 
 interface HomePageProps {
   params: Promise<{
@@ -34,7 +34,7 @@ export default async function HomePage({ params }: HomePageProps) {
   const dataPromise = getHomePageData();
   const userToken = await getAccessToken();
   const now = new Date();
-  const dayKey = madridCommercialDay(now).dayKey;
+  const dayKey = madridDailyOfferDay(now).dayKey;
 
   let products: Product[] = [];
   const catalogPromise = dataPromise
