@@ -21,13 +21,22 @@ const code = ts.transpileModule(
     .join("\n"),
   { compilerOptions: { target: ts.ScriptTarget.ES2022 } },
 ).outputText;
-function fixture(deferFirst = false, failClaim = false, visibleFirst = false) {
+function fixture(
+  deferFirst = false,
+  failClaim = false,
+  visibleFirst = false,
+  skippedCleanup = false,
+) {
   let clock = 0,
     active = 0,
     maximum = 0;
   const completed: number[] = [];
   const pending: number[] = [];
-  const jobs = Array.from({ length: 9 }, (_, i) => ({
+  const legacy = {
+    spree_product_id: "deleted-product",
+    spree_variant_id: "deleted-variant",
+  };
+  const jobs = Array.from({ length: skippedCleanup ? 1 : 9 }, (_, i) => ({
     id: i + 1,
     attempts: 0,
     url: `url-${i + 1}`,
@@ -67,7 +76,10 @@ function fixture(deferFirst = false, failClaim = false, visibleFirst = false) {
           write = value;
           return q;
         },
-        upsert: async () => ({ error: null }),
+        upsert: async (value: object) => {
+          Object.assign(legacy, value);
+          return { error: null };
+        },
       };
       function asyncOrQuery(key: string, id: number) {
         if (!write) return q;
@@ -114,11 +126,11 @@ function fixture(deferFirst = false, failClaim = false, visibleFirst = false) {
       if (deferFirst && p.sku === "url-1") throw Error("deferred");
       return {
         synced: {
-          productId: p.sku,
-          variantId: p.sku,
-          lastAutoPrice: 20,
+          productId: skippedCleanup ? null : p.sku,
+          variantId: skippedCleanup ? null : p.sku,
+          lastAutoPrice: skippedCleanup ? null : 20,
           images: 0,
-          review: false,
+          review: skippedCleanup,
           backorderItems: 1,
         },
       };
@@ -135,10 +147,20 @@ function fixture(deferFirst = false, failClaim = false, visibleFirst = false) {
       ),
     completed,
     pending,
+    legacy,
     maximum: () => maximum,
   };
 }
 describe("Devir inventory progress under a fixed external-work budget", () => {
+  it("keeps legacy native mappings when owner cleanup skips native synchronization", async () => {
+    const f = fixture(false, false, false, true);
+    expect(await f.run()).toMatchObject({ processed: 1, reviews: 1 });
+    expect(f.completed).toEqual([1]);
+    expect(f.legacy).toMatchObject({
+      spree_product_id: "deleted-product",
+      spree_variant_id: "deleted-variant",
+    });
+  });
   it("refreshes explicitly prioritized visible fiches before the older backlog within the same batch cap", async () => {
     const f = fixture(false, false, true);
     await f.run();

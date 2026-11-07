@@ -3209,6 +3209,14 @@ async function reconcileCatalogVariantUnlocked(
   lastAutoPrice: number | null;
   selectedSupplierCode: string | null;
 }> {
+  if (resolution.product.review_decision === "rejected" &&
+      resolution.product.review_note?.startsWith("owner-unpublished-cleanup:")) {
+    // The owner removed this unpublished native product. Do not fetch its
+    // deleted mapping or return an ID that would queue publication work.
+    return { productId: null, variantId: null, images: 0, review: true,
+      reviewReasons: ["owner_unpublished_cleanup"], backorderItems: 0,
+      lastAutoPrice: null, selectedSupplierCode: null };
+  }
   if (isExcludedCatalogLanguage({ name: resolution.product.name,
       variantName: resolution.variant.name, options: resolution.variant.option_values,
       categoryKey: resolution.product.category_key })) {
@@ -4282,6 +4290,16 @@ async function repointCanonicalCatalogSku(
   return targetProductId;
 }
 
+async function catalogGroupOwnerCleanupBlocked(rows: CatalogGroupRow[]): Promise<boolean> {
+  const productIds = Array.from(new Set(rows.map(row => row.spree_product_id).filter(Boolean)));
+  if (!productIds.length) return false;
+  const { data, error } = await supabase.from("catalog_products")
+    .select("review_decision,review_note").in("spree_product_id", productIds);
+  if (error) throw error;
+  return (data ?? []).some(row => row.review_decision === "rejected" &&
+    row.review_note?.startsWith("owner-unpublished-cleanup:"));
+}
+
 async function rebuildMangaGroup(
   config: ConfigRow,
   groupKey: string,
@@ -4309,6 +4327,9 @@ async function rebuildMangaGroup(
       group_key: groupKey,
       skipped: "needs_at_least_two_variants",
     };
+  }
+  if (await catalogGroupOwnerCleanupBlocked(rows)) {
+    return { ok: true, group_key: groupKey, skipped: "owner_unpublished_cleanup" };
   }
   if (
     rows.some((row) => categoryKey(catalogRowProduct(row)) !== "manga-comic")
@@ -4526,6 +4547,9 @@ async function repairExistingMangaGroup(
       group_key: groupKey,
       skipped: "needs_at_least_two_variants",
     };
+  }
+  if (await catalogGroupOwnerCleanupBlocked(rows)) {
+    return { ok: true, group_key: groupKey, skipped: "owner_unpublished_cleanup" };
   }
 
   const groupName = rows.find((row) => row.group_name)?.group_name ?? groupKey;
@@ -7711,9 +7735,27 @@ async function refreshHumanReviewMarkersBatch(
 
   if (productIds.length === 0) return { processed: 0, remaining: 0 };
 
-  const defs = await definitions(config);
+  const { data: policies, error: policyError } = await supabase.from("catalog_products")
+    .select("spree_product_id,review_decision,review_note").in("spree_product_id", productIds);
+  if (policyError) throw policyError;
+  const cleanupIds = new Set((policies ?? [])
+    .filter(row => row.review_decision === "rejected" && row.review_note?.startsWith("owner-unpublished-cleanup:"))
+    .map(row => String(row.spree_product_id)));
   let processed = 0;
-  for (const productId of productIds) {
+  if (cleanupIds.size) {
+    // These native products were removed by the owner. Finish their legacy
+    // marker work without fetching Spree or blocking later review batches.
+    const { error: markerError } = await supabase.from("devir_sync_catalog")
+      .update({ review_marker_version: HUMAN_REVIEW_MARKER_VERSION, updated_at: new Date().toISOString() })
+      .in("spree_product_id", [...cleanupIds]).eq("catalog_state", "review");
+    if (markerError) throw markerError;
+    processed = cleanupIds.size;
+  }
+  const reviewProductIds = productIds.filter(id => !cleanupIds.has(id));
+  if (!reviewProductIds.length) return { processed, remaining: Math.max(0, (count ?? 0) - processed) };
+
+  const defs = await definitions(config);
+  for (const productId of reviewProductIds) {
     const reasons = await currentCatalogReviewReasonsForSpreeProduct(productId);
     if (reasons.size === 0) {
       await markCatalogProductDirty(productId);
@@ -12135,8 +12177,8 @@ async function processProducts(
             snapshot: product,
             image_urls: product.imageUrls,
             image_signature: signature,
-            spree_product_id: synced.productId,
-            spree_variant_id: synced.variantId,
+            ...(synced.productId !== null ? { spree_product_id: synced.productId } : {}),
+            ...(synced.variantId !== null ? { spree_variant_id: synced.variantId } : {}),
             ...(synced.lastAutoPrice !== null
               ? { last_auto_price: synced.lastAutoPrice }
               : {}),

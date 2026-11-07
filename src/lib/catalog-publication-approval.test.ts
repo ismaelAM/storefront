@@ -32,7 +32,7 @@ describe("publishing in Spree approves the recorded review", () => {
     const compiled = ts.transpileModule(body.getText(source), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
     const update = vi.fn(() => query);
     const query = {
-      select: () => query, eq: () => query, not: () => query, or: () => query, order: () => query, update,
+      select: () => query, eq: () => query, not: () => query, or: () => query, order: () => query, in: () => query, update,
       limit: async () => ({ data: [{ spree_product_id: "prod_1", last_error: "REVIEW: product_image_missing" }], count: 1, error: null }),
       // biome-ignore lint/suspicious/noThenProperty: Models the marker update acknowledgement.
       then: (resolve: (value: unknown) => void) => resolve({ error: null }),
