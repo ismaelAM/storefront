@@ -1,5 +1,5 @@
 import type { Product } from "@spree/sdk";
-import { madridCommercialDay } from "../../../supabase/functions/_shared/commercial-pricing-policy";
+import { madridDailyOfferDay } from "../../../supabase/functions/_shared/daily-offer-scheduling";
 
 type HomeProduct = Product & {
   preorder_ships_at?: string | null;
@@ -119,7 +119,7 @@ export function buildHomeMerchandisingProducts(
   now = new Date(),
 ): Product[] {
   const seed = Math.floor(now.getTime() / ROTATION_WINDOW_MS);
-  const dayKey = madridCommercialDay(now).dayKey;
+  const dayKey = madridDailyOfferDay(now).dayKey;
 
   const sales = dedupe(
     (saleProducts as HomeProduct[]).filter(

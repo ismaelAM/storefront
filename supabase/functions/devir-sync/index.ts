@@ -37,12 +37,14 @@ import {
 import {
   commercialPricingProfile,
   deterministicOfferScore,
-  madridCommercialDay,
-  madridCommercialDayEndsAt,
   rotatingOfferDiscount,
   rotatingOfferFloorMargin,
   rotatingOfferMinimumAmount,
 } from "../_shared/commercial-pricing-policy.ts";
+import {
+  madridDailyOfferDay,
+  madridDailyOfferEndsAt,
+} from "../_shared/daily-offer-scheduling.ts";
 import {
   dailyOfferCategory,
   dailyOfferSelectionComplete,
@@ -8499,24 +8501,9 @@ async function loadDailyOfferSupplyRows(physicalVariantIds: string[] = []): Prom
 
 async function acquireDailyOfferRotationLock(): Promise<string | null> {
   const token = crypto.randomUUID();
-  const now = new Date();
-  const lockUntil = new Date(now.getTime() + 120_000).toISOString();
-  const { data, error } = await supabase
-    .from("catalog_daily_offer_state")
-    .update({
-      rotation_lock_until: lockUntil,
-      rotation_token: token,
-      updated_at: now.toISOString(),
-    })
-    .eq("id", "primary")
-    .or(
-      "rotation_lock_until.is.null,rotation_lock_until.lt." +
-        now.toISOString(),
-    )
-    .select("rotation_token")
-    .maybeSingle();
+  const { data, error } = await supabase.rpc("acquire_daily_offer_rotation", { p_token: token });
   if (error) throw error;
-  return data?.rotation_token === token ? token : null;
+  return data === token ? token : null;
 }
 
 async function releaseDailyOfferRotationLock(token: string): Promise<void> {
@@ -8627,8 +8614,14 @@ async function rotateDailyOffersUnlocked(
   config: ConfigRow,
   force = false,
 ): Promise<Record<string, unknown>> {
-  const calendar = madridCommercialDay();
+  const calendar = madridDailyOfferDay();
   const currentState = await dailyOfferState();
+  // A list created by the old midnight schedule can already carry today's
+  // date before 05:00. Never rotate backwards or activate a future offer date.
+  if (!force && currentState?.day_key && currentState.day_key > calendar.dayKey) {
+    return { status: "scheduled", dayKey: currentState.day_key,
+      priceListId: currentState.spree_price_list_id };
+  }
   if (currentState?.day_key && currentState.spree_price_list_id && !currentState.last_rotated_at) {
     return await resumeDailyOfferRotation(config, currentState);
   }
@@ -8934,7 +8927,7 @@ async function rotateDailyOffersUnlocked(
         : "Selección automática diaria de hasta 3 productos por categoría. Respeta precios manuales y suelos de contribución.",
       match_policy: "all",
       starts_at: new Date().toISOString(),
-      ends_at: madridCommercialDayEndsAt(),
+      ends_at: madridDailyOfferEndsAt(),
     },
   );
 
@@ -10263,7 +10256,7 @@ async function finishTcgFactoryCrawl(
 async function loadDailyOfferRefresh(supplier: CatalogSupplierRow): Promise<Array<{ id: string; source_url: string }>> {
   const state = await dailyOfferState();
   const pending = state?.pending_rotation;
-  const rejectedProductIds = new Set(pending && pending.dayKey === madridCommercialDay().dayKey && Array.isArray(pending.rejectedProductIds)
+  const rejectedProductIds = new Set(pending && pending.dayKey === madridDailyOfferDay().dayKey && Array.isArray(pending.rejectedProductIds)
     ? pending.rejectedProductIds : []);
   type Row = {
     id: string; source_url: string; last_seen_at: string; updated_at: string; normalized_cost: number | string;
@@ -10307,7 +10300,7 @@ async function loadDailyOfferRefresh(supplier: CatalogSupplierRow): Promise<Arra
       if (isPack(item)) continue;
       const priceReady = Number.isFinite(currentPrice) && currentPrice > 0 &&
         dailyOfferPrice({ product: item, currentPrice, supplierCode: supplier.code, supplierConfig: supplier.config,
-          profile, physicalStock: false, saturday: madridCommercialDay().saturday }) !== null;
+          profile, physicalStock: false, saturday: madridDailyOfferDay().saturday }) !== null;
       candidates.push({ id: row.id, source_url: row.source_url, productId: product.id,
         category, lastSeenAt: row.last_seen_at, lastAttemptedAt: row.updated_at, priceReady, cost });
     }
@@ -12513,7 +12506,8 @@ async function runtimeMaintenanceTick(config: ConfigRow): Promise<Record<string,
 async function dueDailyOfferMaintenanceTick(config: ConfigRow): Promise<Record<string, unknown> | null> {
   try {
     const state = await dailyOfferState();
-    const calendar = madridCommercialDay();
+    const calendar = madridDailyOfferDay();
+    if (state?.day_key && state.day_key > calendar.dayKey) return null;
     const pending = Boolean(state?.day_key && state.spree_price_list_id && !state.last_rotated_at);
     if (!pending && state?.day_key === calendar.dayKey && dailyOfferSelectionComplete(state.active_products)) return null;
     // Daily publication must not wait for a multi-day supplier crawl. Keep a

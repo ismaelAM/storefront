@@ -99,7 +99,7 @@ function fixture(
       day_key: "2026-10-09",
       last_rotated_at: "2026-10-09T00:00:00Z",
     }),
-    madridCommercialDay: () => ({ dayKey: "2026-10-09", saturday: false }),
+    madridDailyOfferDay: () => ({ dayKey: "2026-10-09", saturday: false }),
     tcgFactoryTick: tcg,
     processDevirCycleTick: devir,
     runtimeMaintenanceTick: async () => {

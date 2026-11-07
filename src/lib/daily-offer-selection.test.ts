@@ -4,6 +4,7 @@ import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as pricing from "../../supabase/functions/_shared/commercial-pricing-policy";
+import * as scheduling from "../../supabase/functions/_shared/daily-offer-scheduling";
 import * as selection from "../../supabase/functions/_shared/daily-offer-selection";
 
 const source = ts.createSourceFile(
@@ -90,8 +91,9 @@ function fixture(products: ProductFixture[], saturday = false, latencyMs = 0) {
     `${code}; ({ rotateDailyOffersUnlocked, category: typeof dailyOfferCategory === 'function' ? dailyOfferCategory : undefined, interleave: typeof interleaveDailyOfferCandidates === 'function' ? interleaveDailyOfferCandidates : undefined })`,
     {
       ...pricing,
+      ...scheduling,
       ...selection,
-      madridCommercialDay: () => ({ dayKey: "2026-10-11", saturday }),
+      madridDailyOfferDay: () => ({ dayKey: "2026-10-11", saturday }),
       deterministicOfferScore: (_day: string, id: string) =>
         products.findIndex((product) => id === `catalog-${product.id}`),
       STANDARD_EEA_CARD_RATE: 0.015,
@@ -719,6 +721,25 @@ describe("Daily offer category rotation", () => {
 });
 
 describe("complete automatic daily rotations", () => {
+  it.each(["done", null])("does not replace or resume a future-dated native list (completed=%s)", async (completedAt) => {
+    const f = fixture(balanced());
+    f.setState({ day_key: "2026-10-12", spree_price_list_id: "future-list", last_rotated_at: completedAt, active_products: [] });
+    expect(await f.api.rotateDailyOffersUnlocked({})).toMatchObject({ status: "scheduled", dayKey: "2026-10-12", priceListId: "future-list" });
+    expect(f.requests).toEqual([]);
+    expect(f.state()).toMatchObject({ day_key: "2026-10-12", last_rotated_at: completedAt });
+  });
+  it("expires the native price list at the next 05:00 Madrid even when publication runs late", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-11T17:00:00Z"));
+    const f = fixture(balanced());
+    expect((await f.api.rotateDailyOffersUnlocked({})).selected).toHaveLength(12);
+    expect(f.requests.find(request => request.path === "/price_lists")?.body).toMatchObject({
+      starts_at: "2026-10-11T17:00:00.000Z",
+      ends_at: "2026-10-12T03:00:00.000Z",
+    });
+    expect((await f.api.rotateDailyOffersUnlocked({})).status).toBe("current");
+    expect(f.requests.filter(request => request.path === "/price_lists")).toHaveLength(1);
+  });
   it("does not spend native product requests or replace the list while a category lacks candidates", async () => {
     const f = fixture(productsFor("tcg/mtg", 3));
     const result = await f.api.rotateDailyOffersUnlocked({});
