@@ -2,6 +2,7 @@ import "server-only";
 import { getClient } from "@/lib/spree/config";
 import { createSupabaseClient } from "@/lib/supabase/server";
 import {
+  assertCurrentOfferRotation,
   buildSocialOffers,
   type DailyOfferState,
   type PublicOfferProduct,
@@ -18,6 +19,9 @@ export async function getDailySocialOffers() {
     .maybeSingle();
   if (error) throw new Error("No se pudieron consultar las ofertas de hoy.");
   const state = data as DailyOfferState | null;
+  // A paused or unfinished rotation cannot publish. Reject it before any Spree
+  // reads; retrying yesterday's twelve products only spends compute.
+  assertCurrentOfferRotation(state);
   const ids = [
     ...new Set(state?.active_products.map((p) => p.productId) ?? []),
   ];

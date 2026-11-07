@@ -72,12 +72,10 @@ export interface SocialOfferSnapshot {
   offers: SocialOffer[];
 }
 
-export function buildSocialOffers(
+export function assertCurrentOfferRotation(
   state: DailyOfferState | null,
-  products: PublicOfferProduct[],
-  categoryKeys: Record<string, string | null>,
   now = new Date(),
-): SocialOfferSnapshot {
+): asserts state is DailyOfferState & { spree_price_list_id: string } {
   const dayKey = madridDailyOfferDay(now).dayKey;
   if (
     !state ||
@@ -90,6 +88,16 @@ export function buildSocialOffers(
       "La rotación de hoy aún no está lista. Vuelve a intentarlo cuando termine.",
     );
   }
+}
+
+export function buildSocialOffers(
+  state: DailyOfferState | null,
+  products: PublicOfferProduct[],
+  categoryKeys: Record<string, string | null>,
+  now = new Date(),
+): SocialOfferSnapshot {
+  assertCurrentOfferRotation(state, now);
+  const dayKey = madridDailyOfferDay(now).dayKey;
   const offers: SocialOffer[] = [];
   const seen = new Set<string>();
   for (const selected of state.active_products) {

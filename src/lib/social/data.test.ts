@@ -1,10 +1,13 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
   build: vi.fn(),
   state: {
     day_key: "2026-11-07",
+    spree_price_list_id: "pl_today",
+    last_rotated_at: "2026-11-07T04:00:40Z" as string | null,
+    last_error: null as string | null,
     active_products: Array.from({ length: 12 }, (_, i) => ({
       productId: `p${i}`,
     })),
@@ -13,7 +16,10 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/spree/config", () => ({
   getClient: () => ({ products: { get: mocks.get } }),
 }));
-vi.mock("./offers", () => ({ buildSocialOffers: mocks.build }));
+vi.mock("./offers", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./offers")>()),
+  buildSocialOffers: mocks.build,
+}));
 vi.mock("@/lib/supabase/server", () => ({
   createSupabaseClient: () => ({
     from: () => ({
@@ -27,11 +33,30 @@ vi.mock("@/lib/supabase/server", () => ({
 
 import { getDailySocialOffers } from "./data";
 
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-11-07T12:00:00Z"));
+  mocks.state.day_key = "2026-11-07";
+  mocks.state.last_rotated_at = "2026-11-07T04:00:40Z";
+  mocks.state.last_error = null;
+});
 afterEach(() => {
   vi.useRealTimers();
   vi.clearAllMocks();
 });
 describe("fresh publication catalogue reads", () => {
+  it.each([
+    "stale",
+    "pending",
+    "failed",
+  ])("avoids backend reads when the daily rotation is %s", async (status) => {
+    if (status === "stale") mocks.state.day_key = "2026-11-06";
+    if (status === "pending") mocks.state.last_rotated_at = null;
+    if (status === "failed") mocks.state.last_error = "rotation unavailable";
+    await expect(getDailySocialOffers()).rejects.toThrow("rotación");
+    expect(mocks.get).not.toHaveBeenCalled();
+    expect(mocks.build).not.toHaveBeenCalled();
+  });
   it("bounds simultaneous Spree reads to two while retaining all twelve offers", async () => {
     vi.useFakeTimers();
     let active = 0;
