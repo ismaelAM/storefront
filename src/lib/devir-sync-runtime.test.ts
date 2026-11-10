@@ -94,7 +94,7 @@ function fixture(overrides: Record<string, unknown> = {}, entry = false) {
           })),
         ),
       }),
-      madridCommercialDay: () => ({ dayKey: "fixture-day", saturday: false }),
+      madridDailyOfferDay: () => ({ dayKey: "fixture-day", saturday: false }),
       ...overrides,
       __overrides: overrides,
       syncRuntime,
@@ -410,7 +410,7 @@ function activeWorkerFixture(
 describe("Due daily offers during an active supplier crawl", () => {
   it.each([
     {
-      day_key: "yesterday",
+      day_key: "2026-10-08",
       last_rotated_at: "done",
       spree_price_list_id: "old-list",
     },
@@ -990,7 +990,7 @@ describe("Pending daily offer rotation", () => {
     };
     const api = fixture({
       dailyOfferState: async () => state,
-      madridCommercialDay: () => ({ dayKey: "2026-10-10", saturday: true }),
+      madridDailyOfferDay: () => ({ dayKey: "2026-10-10", saturday: true }),
       supabase: { from: () => query },
       spreeRequest: async (_config: object, method: string, path: string) => {
         commands.push(method + " " + path);

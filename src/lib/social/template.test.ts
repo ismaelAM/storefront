@@ -62,7 +62,7 @@ vi.mock("node:https", () => ({
   },
 }));
 
-import { renderOfferSlide } from "./template";
+import { createOfferSlideRenderer, renderOfferSlide } from "./template";
 
 const offer = {
   name: "Producto de prueba — jamás publicar",
@@ -98,6 +98,29 @@ afterEach(() => {
 });
 
 describe("branded daily offer JPEG", () => {
+  it("downloads a repeated photo and logo once across one carousel preparation", async () => {
+    network.responses = [{ bytes: fixture }];
+    const render = createOfferSlideRenderer();
+    const slide = { ...input, offers: Array(3).fill(offer), logoUrl: offer.imageUrl };
+    const first = await render(slide);
+    const second = await render({ ...slide, categoryLabel: "TCG" });
+    expect(network.calls).toEqual([offer.imageUrl]);
+    expect(await sharp(first).metadata()).toMatchObject({ width: 1080, height: 1350 });
+    expect(first.equals(second)).toBe(false);
+  });
+  it("does not reuse remote photos between separate preparations", async () => {
+    network.responses = [{ bytes: fixture }, { bytes: fixture }];
+    await createOfferSlideRenderer()(input);
+    await createOfferSlideRenderer()(input);
+    expect(network.calls).toEqual([offer.imageUrl, offer.imageUrl]);
+  });
+  it("does not retain a failed photo read for a later attempt", async () => {
+    network.responses = [{ status: 503 }, { bytes: fixture }];
+    const render = createOfferSlideRenderer();
+    await expect(render(input)).rejects.toThrow();
+    expect(await sharp(await render(input)).metadata()).toMatchObject({ format: "jpeg" });
+    expect(network.calls).toHaveLength(2);
+  });
   it("pins connections to one validated address without Node's second family lookup", async () => {
     network.responses = [{ bytes: fixture }];
     await renderOfferSlide(input);

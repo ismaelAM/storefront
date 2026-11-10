@@ -213,8 +213,9 @@ async function image(
   width: number,
   height: number,
   background = "#ffffff",
+  readImage = imageBytes,
 ): Promise<Buffer> {
-  const bytes = await imageBytes(raw);
+  const bytes = await readImage(raw);
   const bitmapSignature =
     bytes
       .subarray(0, 8)
@@ -294,9 +295,32 @@ async function textOverlay(
   return { input: bytes, left, top };
 }
 
+/** One preparation only: never retain photos across requests or offer dates. */
+export function createOfferSlideRenderer() {
+  // At most 12 product photos plus branding per carousel. Each validated source
+  // is already bounded to 8 MiB; cap retained entries even for other callers.
+  const photos = new Map<string, Promise<Buffer>>();
+  const readImage = (raw: string): Promise<Buffer> => {
+    const cached = photos.get(raw);
+    if (cached) return cached;
+    const pending = imageBytes(raw).catch((error) => {
+      photos.delete(raw);
+      throw error;
+    });
+    if (photos.size < 16) photos.set(raw, pending);
+    return pending;
+  };
+  return (input: OfferSlideInput) => renderOfferSlideWithReader(input, readImage);
+}
+
 /** Static branded template; every photo and price must come from the real offer. */
-export async function renderOfferSlide(
+export async function renderOfferSlide(input: OfferSlideInput): Promise<Buffer> {
+  return createOfferSlideRenderer()(input);
+}
+
+async function renderOfferSlideWithReader(
   input: OfferSlideInput,
+  readImage: (raw: string) => Promise<Buffer>,
 ): Promise<Buffer> {
   if (
     !/^\d{4}-\d{2}-\d{2}$/.test(input.dayKey) ||
@@ -344,13 +368,15 @@ export async function renderOfferSlide(
         offer.imageUrl,
         count === 1 ? 580 : 292,
         count === 1 ? 460 : cardHeight - 48,
+        "#ffffff",
+        readImage,
       ),
     ),
   );
   let logo: Buffer | undefined;
   if (input.logoUrl) {
     try {
-      logo = await image(input.logoUrl, 220, 84, CREAM);
+      logo = await image(input.logoUrl, 220, 84, CREAM, readImage);
     } catch {
       /* The name is authoritative fallback branding. */
     }
@@ -460,6 +486,6 @@ export async function renderOfferSlide(
   );
   return sharp(background)
     .composite(overlays)
-    .jpeg({ quality: 90, chromaSubsampling: "4:4:4", mozjpeg: true })
+    .jpeg({ quality: 82, chromaSubsampling: "4:4:4", mozjpeg: true })
     .toBuffer();
 }

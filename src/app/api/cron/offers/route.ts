@@ -13,6 +13,21 @@ export async function GET(request: Request) {
       { status: 401, headers: { "Cache-Control": "no-store" } },
     );
   }
+  // Vercel cron is UTC. Two UTC slots cover DST; only Madrid's 05h runs.
+  const now = new Date();
+  const hour = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Madrid",
+    hour: "2-digit",
+    hourCycle: "h23",
+  }).format(now);
+  // Keep recovery later in the day if a supplier or Meta is unavailable at 05h.
+  const recovery =
+    [8, 12, 16, 20].includes(now.getUTCHours()) && now.getUTCMinutes() === 15;
+  if (hour !== "05" && !recovery)
+    return Response.json(
+      { status: "outside_window" },
+      { headers: { "Cache-Control": "no-store" } },
+    );
   try {
     return Response.json(await runDailySocialPublication(), {
       headers: { "Cache-Control": "no-store" },

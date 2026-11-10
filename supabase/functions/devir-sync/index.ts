@@ -37,12 +37,14 @@ import {
 import {
   commercialPricingProfile,
   deterministicOfferScore,
-  madridCommercialDay,
-  madridCommercialDayEndsAt,
   rotatingOfferDiscount,
   rotatingOfferFloorMargin,
   rotatingOfferMinimumAmount,
 } from "../_shared/commercial-pricing-policy.ts";
+import {
+  madridDailyOfferDay,
+  madridDailyOfferEndsAt,
+} from "../_shared/daily-offer-scheduling.ts";
 import {
   dailyOfferCategory,
   dailyOfferSelectionComplete,
@@ -3207,6 +3209,14 @@ async function reconcileCatalogVariantUnlocked(
   lastAutoPrice: number | null;
   selectedSupplierCode: string | null;
 }> {
+  if (resolution.product.review_decision === "rejected" &&
+      resolution.product.review_note?.startsWith("owner-unpublished-cleanup:")) {
+    // The owner removed this unpublished native product. Do not fetch its
+    // deleted mapping or return an ID that would queue publication work.
+    return { productId: null, variantId: null, images: 0, review: true,
+      reviewReasons: ["owner_unpublished_cleanup"], backorderItems: 0,
+      lastAutoPrice: null, selectedSupplierCode: null };
+  }
   if (isExcludedCatalogLanguage({ name: resolution.product.name,
       variantName: resolution.variant.name, options: resolution.variant.option_values,
       categoryKey: resolution.product.category_key })) {
@@ -3585,6 +3595,7 @@ async function syncProductToSpree(
   }
 
   let productId: string;
+  let currentProduct: SpreeProduct;
   let variantId: string | null = null;
   let manualPrice = false;
   const sourceCode = catalogContext?.supplier.code ?? "devir";
@@ -3627,6 +3638,7 @@ async function syncProductToSpree(
       },
     );
     productId = created.id;
+    currentProduct = created;
     const variants = await spreeList<SpreeVariant>(
       config,
       "/products/" + productId + "/variants",
@@ -3712,6 +3724,7 @@ async function syncProductToSpree(
     if (review && markedProduct.status !== "draft") {
       throw new Error("Spree no confirmó el borrador; no registrar nuevos motivos de revisión");
     }
+    currentProduct = markedProduct;
     const variantPatch = {
         sku: spreeSku,
         cost_price: product.purchasePrice,
@@ -3874,24 +3887,22 @@ async function syncProductToSpree(
       ? shouldListCatalogProduct({ review, fulfillmentMode })
       : autoPublish;
   if (shouldList) {
+    // Fulfillment writes can change native aggregate preorder/purchasable flags.
+    // Refresh them even when activation itself is already a verified no-op.
     const published = await spreeRequest<SpreeProduct>(
       config,
-      "PATCH",
+      currentProduct.status === "active" ? "GET" : "PATCH",
       "/products/" + encodeURIComponent(productId),
-      {
-        status: "active",
-      },
+      currentProduct.status === "active" ? undefined : { status: "active" },
     );
     await syncHomePreorderMembership(config, published);
     await ensureProductsInDefaultChannel(config, [productId]);
   } else if (review || fulfillmentMode === "disabled") {
     const drafted = await spreeRequest<SpreeProduct>(
       config,
-      "PATCH",
+      currentProduct.status === "draft" ? "GET" : "PATCH",
       "/products/" + encodeURIComponent(productId),
-      {
-        status: "draft",
-      },
+      currentProduct.status === "draft" ? undefined : { status: "draft" },
     );
     await syncHomePreorderMembership(config, drafted);
   }
@@ -4280,6 +4291,16 @@ async function repointCanonicalCatalogSku(
   return targetProductId;
 }
 
+async function catalogGroupOwnerCleanupBlocked(rows: CatalogGroupRow[]): Promise<boolean> {
+  const productIds = Array.from(new Set(rows.map(row => row.spree_product_id).filter(Boolean)));
+  if (!productIds.length) return false;
+  const { data, error } = await supabase.from("catalog_products")
+    .select("review_decision,review_note").in("spree_product_id", productIds);
+  if (error) throw error;
+  return (data ?? []).some(row => row.review_decision === "rejected" &&
+    row.review_note?.startsWith("owner-unpublished-cleanup:"));
+}
+
 async function rebuildMangaGroup(
   config: ConfigRow,
   groupKey: string,
@@ -4307,6 +4328,9 @@ async function rebuildMangaGroup(
       group_key: groupKey,
       skipped: "needs_at_least_two_variants",
     };
+  }
+  if (await catalogGroupOwnerCleanupBlocked(rows)) {
+    return { ok: true, group_key: groupKey, skipped: "owner_unpublished_cleanup" };
   }
   if (
     rows.some((row) => categoryKey(catalogRowProduct(row)) !== "manga-comic")
@@ -4524,6 +4548,9 @@ async function repairExistingMangaGroup(
       group_key: groupKey,
       skipped: "needs_at_least_two_variants",
     };
+  }
+  if (await catalogGroupOwnerCleanupBlocked(rows)) {
+    return { ok: true, group_key: groupKey, skipped: "owner_unpublished_cleanup" };
   }
 
   const groupName = rows.find((row) => row.group_name)?.group_name ?? groupKey;
@@ -7709,9 +7736,27 @@ async function refreshHumanReviewMarkersBatch(
 
   if (productIds.length === 0) return { processed: 0, remaining: 0 };
 
-  const defs = await definitions(config);
+  const { data: policies, error: policyError } = await supabase.from("catalog_products")
+    .select("spree_product_id,review_decision,review_note").in("spree_product_id", productIds);
+  if (policyError) throw policyError;
+  const cleanupIds = new Set((policies ?? [])
+    .filter(row => row.review_decision === "rejected" && row.review_note?.startsWith("owner-unpublished-cleanup:"))
+    .map(row => String(row.spree_product_id)));
   let processed = 0;
-  for (const productId of productIds) {
+  if (cleanupIds.size) {
+    // These native products were removed by the owner. Finish their legacy
+    // marker work without fetching Spree or blocking later review batches.
+    const { error: markerError } = await supabase.from("devir_sync_catalog")
+      .update({ review_marker_version: HUMAN_REVIEW_MARKER_VERSION, updated_at: new Date().toISOString() })
+      .in("spree_product_id", [...cleanupIds]).eq("catalog_state", "review");
+    if (markerError) throw markerError;
+    processed = cleanupIds.size;
+  }
+  const reviewProductIds = productIds.filter(id => !cleanupIds.has(id));
+  if (!reviewProductIds.length) return { processed, remaining: Math.max(0, (count ?? 0) - processed) };
+
+  const defs = await definitions(config);
+  for (const productId of reviewProductIds) {
     const reasons = await currentCatalogReviewReasonsForSpreeProduct(productId);
     if (reasons.size === 0) {
       await markCatalogProductDirty(productId);
@@ -8499,24 +8544,9 @@ async function loadDailyOfferSupplyRows(physicalVariantIds: string[] = []): Prom
 
 async function acquireDailyOfferRotationLock(): Promise<string | null> {
   const token = crypto.randomUUID();
-  const now = new Date();
-  const lockUntil = new Date(now.getTime() + 120_000).toISOString();
-  const { data, error } = await supabase
-    .from("catalog_daily_offer_state")
-    .update({
-      rotation_lock_until: lockUntil,
-      rotation_token: token,
-      updated_at: now.toISOString(),
-    })
-    .eq("id", "primary")
-    .or(
-      "rotation_lock_until.is.null,rotation_lock_until.lt." +
-        now.toISOString(),
-    )
-    .select("rotation_token")
-    .maybeSingle();
+  const { data, error } = await supabase.rpc("acquire_daily_offer_rotation", { p_token: token });
   if (error) throw error;
-  return data?.rotation_token === token ? token : null;
+  return data === token ? token : null;
 }
 
 async function releaseDailyOfferRotationLock(token: string): Promise<void> {
@@ -8627,8 +8657,14 @@ async function rotateDailyOffersUnlocked(
   config: ConfigRow,
   force = false,
 ): Promise<Record<string, unknown>> {
-  const calendar = madridCommercialDay();
+  const calendar = madridDailyOfferDay();
   const currentState = await dailyOfferState();
+  // A list created by the old midnight schedule can already carry today's
+  // date before 05:00. Never rotate backwards or activate a future offer date.
+  if (!force && currentState?.day_key && currentState.day_key > calendar.dayKey) {
+    return { status: "scheduled", dayKey: currentState.day_key,
+      priceListId: currentState.spree_price_list_id };
+  }
   if (currentState?.day_key && currentState.spree_price_list_id && !currentState.last_rotated_at) {
     return await resumeDailyOfferRotation(config, currentState);
   }
@@ -8934,7 +8970,7 @@ async function rotateDailyOffersUnlocked(
         : "Selección automática diaria de hasta 3 productos por categoría. Respeta precios manuales y suelos de contribución.",
       match_policy: "all",
       starts_at: new Date().toISOString(),
-      ends_at: madridCommercialDayEndsAt(),
+      ends_at: madridDailyOfferEndsAt(),
     },
   );
 
@@ -10263,7 +10299,7 @@ async function finishTcgFactoryCrawl(
 async function loadDailyOfferRefresh(supplier: CatalogSupplierRow): Promise<Array<{ id: string; source_url: string }>> {
   const state = await dailyOfferState();
   const pending = state?.pending_rotation;
-  const rejectedProductIds = new Set(pending && pending.dayKey === madridCommercialDay().dayKey && Array.isArray(pending.rejectedProductIds)
+  const rejectedProductIds = new Set(pending && pending.dayKey === madridDailyOfferDay().dayKey && Array.isArray(pending.rejectedProductIds)
     ? pending.rejectedProductIds : []);
   type Row = {
     id: string; source_url: string; last_seen_at: string; updated_at: string; normalized_cost: number | string;
@@ -10278,6 +10314,7 @@ async function loadDailyOfferRefresh(supplier: CatalogSupplierRow): Promise<Arra
     const { data, error } = await supabase.from("catalog_supplier_offers")
       .select("id,source_url,last_seen_at,updated_at,normalized_cost,minimum_order_quantity:raw_payload->metadata->minimumOrderQuantity,variant:catalog_variants!catalog_supplier_offers_variant_id_fkey!inner(canonical_sku,last_auto_price,fulfillment_mode,spree_variant_id,product:catalog_products!catalog_variants_product_id_fkey!inner(id,name,category_key,spree_product_id,requires_review,review_decision))")
       .eq("supplier_id", supplier.id).eq("active", true).eq("availability", "available")
+      .eq("variant.fulfillment_mode", "supplier_or_physical").neq("variant.product.review_decision", "rejected")
       .gt("normalized_cost", 0).not("source_url", "is", null).order("id").range(offset, offset + 499);
     if (error) throw error;
     const rows = (data ?? []) as unknown as Row[];
@@ -10307,7 +10344,7 @@ async function loadDailyOfferRefresh(supplier: CatalogSupplierRow): Promise<Arra
       if (isPack(item)) continue;
       const priceReady = Number.isFinite(currentPrice) && currentPrice > 0 &&
         dailyOfferPrice({ product: item, currentPrice, supplierCode: supplier.code, supplierConfig: supplier.config,
-          profile, physicalStock: false, saturday: madridCommercialDay().saturday }) !== null;
+          profile, physicalStock: false, saturday: madridDailyOfferDay().saturday }) !== null;
       candidates.push({ id: row.id, source_url: row.source_url, productId: product.id,
         category, lastSeenAt: row.last_seen_at, lastAttemptedAt: row.updated_at, priceReady, cost });
     }
@@ -12142,8 +12179,8 @@ async function processProducts(
             snapshot: product,
             image_urls: product.imageUrls,
             image_signature: signature,
-            spree_product_id: synced.productId,
-            spree_variant_id: synced.variantId,
+            ...(synced.productId !== null ? { spree_product_id: synced.productId } : {}),
+            ...(synced.variantId !== null ? { spree_variant_id: synced.variantId } : {}),
             ...(synced.lastAutoPrice !== null
               ? { last_auto_price: synced.lastAutoPrice }
               : {}),
@@ -12513,7 +12550,8 @@ async function runtimeMaintenanceTick(config: ConfigRow): Promise<Record<string,
 async function dueDailyOfferMaintenanceTick(config: ConfigRow): Promise<Record<string, unknown> | null> {
   try {
     const state = await dailyOfferState();
-    const calendar = madridCommercialDay();
+    const calendar = madridDailyOfferDay();
+    if (state?.day_key && state.day_key > calendar.dayKey) return null;
     const pending = Boolean(state?.day_key && state.spree_price_list_id && !state.last_rotated_at);
     if (!pending && state?.day_key === calendar.dayKey && dailyOfferSelectionComplete(state.active_products)) return null;
     // Daily publication must not wait for a multi-day supplier crawl. Keep a

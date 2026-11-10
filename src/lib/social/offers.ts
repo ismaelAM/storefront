@@ -1,4 +1,4 @@
-import { madridCommercialDay } from "../../../supabase/functions/_shared/commercial-pricing-policy";
+import { madridDailyOfferDay } from "../../../supabase/functions/_shared/daily-offer-scheduling";
 import {
   type DailyOfferCategory,
   dailyOfferCategory,
@@ -72,13 +72,11 @@ export interface SocialOfferSnapshot {
   offers: SocialOffer[];
 }
 
-export function buildSocialOffers(
+export function assertCurrentOfferRotation(
   state: DailyOfferState | null,
-  products: PublicOfferProduct[],
-  categoryKeys: Record<string, string | null>,
   now = new Date(),
-): SocialOfferSnapshot {
-  const dayKey = madridCommercialDay(now).dayKey;
+): asserts state is DailyOfferState & { spree_price_list_id: string } {
+  const dayKey = madridDailyOfferDay(now).dayKey;
   if (
     !state ||
     state.day_key !== dayKey ||
@@ -90,6 +88,16 @@ export function buildSocialOffers(
       "La rotación de hoy aún no está lista. Vuelve a intentarlo cuando termine.",
     );
   }
+}
+
+export function buildSocialOffers(
+  state: DailyOfferState | null,
+  products: PublicOfferProduct[],
+  categoryKeys: Record<string, string | null>,
+  now = new Date(),
+): SocialOfferSnapshot {
+  assertCurrentOfferRotation(state, now);
+  const dayKey = madridDailyOfferDay(now).dayKey;
   const offers: SocialOffer[] = [];
   const seen = new Set<string>();
   for (const selected of state.active_products) {

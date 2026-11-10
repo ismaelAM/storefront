@@ -79,18 +79,27 @@ const nextConfig: NextConfig = {
       expire: 3600, // 1 hour max before recompute on idle entries
     },
     catalogProducts: {
-      stale: 15,
-      revalidate: 30,
-      expire: 120,
-    },
-    // Anonymous browsing tolerates a short snapshot; carts still validate live.
-    catalogGuestProducts: {
       stale: 30,
-      revalidate: 120,
+      revalidate: 60,
       expire: 300,
+    },
+    // Anonymous browsing tolerates a longer snapshot; carts still validate live.
+    catalogGuestProducts: {
+      stale: 120,
+      revalidate: 600,
+      expire: 1800,
+    },
+    // A date-tagged selection may be briefly empty while the 05:00 rotation runs.
+    catalogDailyOffers: {
+      stale: 15,
+      revalidate: 60,
+      expire: 120,
     },
   },
   images: {
+    // Active Storage replacements get a new blob URL. Reuse each optimized
+    // image for a week instead of downloading it again every four hours.
+    minimumCacheTTL: 604800,
     qualities: [25, 50, 75, 85, 100],
     dangerouslyAllowLocalIP: true, // Allow localhost images in development
     deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],

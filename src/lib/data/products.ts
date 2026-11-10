@@ -36,7 +36,15 @@ export async function cachedListProducts(
 ) {
   "use cache: remote";
   void cacheVersion;
-  if (!userToken && surface === DEFAULT_SURFACE)
+  const tags = params?.tags_name_in;
+  const selectionTags = Array.isArray(tags) ? tags : [tags];
+  if (
+    selectionTags.some(
+      (tag) => typeof tag === "string" && /^offer-date:\d{4}-\d{2}-\d{2}$/.test(tag),
+    )
+  )
+    cacheLife("catalogDailyOffers");
+  else if (!userToken && surface === DEFAULT_SURFACE)
     cacheLife("catalogGuestProducts");
   else cacheLife("catalogProducts");
   cacheTag(`products${cacheTagSuffix(surface)}`);

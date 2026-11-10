@@ -7,6 +7,7 @@ import { ProductListing } from "@/components/products/ProductListing";
 import { getCategory, getCategoryProducts } from "@/lib/data/categories";
 import { resolveCurrency } from "@/lib/data/markets";
 import { getCategoryPageData } from "@/lib/puck/get-category-data";
+import { getCategoryCatalogParams } from "@/lib/puck/category-catalog";
 import { getProductFilters } from "@/lib/data/products";
 import { generateCategoryMetadata } from "@/lib/metadata/category";
 import {
@@ -74,7 +75,6 @@ export default async function CategoryPage({
   const currency = await resolveCurrency(country);
   const listingState = parseListingSearchParams(rawSearchParams);
   const fetchCategoryProducts = getCategoryProducts.bind(null, category.id);
-  const categoryProducts = await getCategoryProducts(category.id, { limit: 8 });
   const fallbackData = {
     content: [
       {
@@ -94,6 +94,11 @@ export default async function CategoryPage({
     root: {},
   };
   const data = await getCategoryPageData(fullPermalink, fallbackData);
+  const categoryCatalogParams = getCategoryCatalogParams(data);
+  const categoryProducts =
+    categoryCatalogParams.limit === 0
+      ? { data: [] }
+      : await getCategoryProducts(category.id, categoryCatalogParams);
 
   return (
     <div>
