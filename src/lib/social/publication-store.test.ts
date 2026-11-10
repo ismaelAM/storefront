@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/supabase/server", () => ({
   createSupabaseClient: () => ({ storage: { from: () => mocks } }),
 }));
-vi.mock("./template", () => ({ renderOfferSlide: mocks.render }));
+vi.mock("./template", () => ({ createOfferSlideRenderer: () => mocks.render }));
 
 import type { SocialOfferSnapshot } from "./offers";
 import { preparePublicationImages } from "./publication-store";

@@ -61,7 +61,7 @@ it("keeps a supplier pack requiring physical splitting out of the ready daily co
     },
   }));
   const query = Object.fromEntries(
-    ["select", "eq", "gt", "not", "order"].map((name) => [
+    ["select", "eq", "neq", "gt", "not", "order"].map((name) => [
       name,
       function () {
         return query;

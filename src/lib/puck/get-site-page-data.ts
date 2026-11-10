@@ -1,23 +1,30 @@
 import type { Data } from "@puckeditor/core";
 import { cacheLife, cacheTag } from "next/cache";
 import { createSupabaseClient } from "@/lib/supabase/server";
+import recovery from "./published-fallback.json";
 
 async function getPublishedPageData(pageId: string): Promise<Data | null> {
   "use cache: remote";
-  cacheLife("tenMinutes");
+  // Publishing invalidates this page's tag immediately; background checks can
+  // be hourly without delaying successful editor publications.
+  cacheLife({ stale: 300, revalidate: 3600, expire: 86400 });
   cacheTag(`puck-page:${pageId}`);
 
   const supabase = createSupabaseClient();
-  const { data, error } = await supabase
+  const { data, error, status } = await supabase
     .from("pages")
     .select("published_data")
     .eq("page_id", pageId)
     .maybeSingle();
 
-  // Reject inside the cache boundary: a transient outage must not persist a
-  // default page in place of the editor's published content for ten minutes.
-  if (error) throw new Error("Unable to load published Puck page");
-  const published = data?.published_data;
+  // A quota block lasts until the billing reset. Cache a copy of actual
+  // published content instead of retrying a known 402 on every render/build.
+  // Other failures still reject: never cache a transient error as an empty page.
+  if (error && status !== 402) throw new Error("Unable to load published Puck page");
+  const saved = recovery.pages as Record<string, unknown>;
+  const published = error
+    ? Object.hasOwn(saved, pageId) ? saved[pageId] : null
+    : data?.published_data;
   return published &&
     typeof published === "object" &&
     Array.isArray(published.content)

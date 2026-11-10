@@ -15,6 +15,8 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 import { getProductPageData } from "./get-product-data";
 import { getCategoryPageData } from "./get-category-data";
+import { getSitePageData } from "./get-site-page-data";
+import recovery from "./published-fallback.json";
 const fallback: Data = { root: {}, content: [] };
 beforeEach(() => vi.resetAllMocks());
 it.each([
@@ -31,7 +33,26 @@ it.each([
   });
   expect(await read()).toEqual(published);
   expect(mocks.tag).toHaveBeenCalledWith(`puck-page:${key}`);
-  expect(mocks.life).toHaveBeenCalledWith("tenMinutes");
+  expect(mocks.life).toHaveBeenCalledWith({ stale: 300, revalidate: 3600, expire: 86400 });
+});
+it("serves the last published content inside the cache boundary during a quota block", async () => {
+  const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+  mocks.query.mockResolvedValue({ data: null, error: { message: "Quota exceeded" }, status: 402 });
+  expect(await getSitePageData("home", fallback)).toEqual(recovery.pages.home);
+  expect(errors).not.toHaveBeenCalled();
+  errors.mockRestore();
+});
+it.each(["product:unknown", "constructor", "__proto__"])("uses the caller's fallback for a page absent from the published backup: %s", async (key) => {
+  const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+  mocks.query.mockResolvedValue({ data: null, error: { message: "Quota exceeded" }, status: 402 });
+  expect(await getSitePageData(key, fallback)).toEqual(fallback);
+  expect(errors).not.toHaveBeenCalled();
+  errors.mockRestore();
+});
+it("prefers current published content over the recovery copy", async () => {
+  const fresh = { root: {}, content: [{ type: "Text", props: { id: "new", text: "New publication" } }] };
+  mocks.query.mockResolvedValue({ data: { published_data: fresh }, error: null, status: 200 });
+  expect(await getSitePageData("home", fallback)).toEqual(fresh);
 });
 it("retries a transient template error instead of persisting fallback content", async () => {
   vi.spyOn(console, "error").mockImplementation(() => {});

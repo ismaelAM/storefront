@@ -48,6 +48,7 @@ async function refresh(pending: unknown) {
   const query = {
     select: () => query,
     eq: () => query,
+    neq: () => query,
     gt: () => query,
     not: () => query,
     order: () => query,

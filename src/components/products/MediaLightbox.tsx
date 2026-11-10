@@ -175,7 +175,7 @@ export function MediaLightbox({
           alt={current?.alt || productName}
           fill
           className="object-contain pointer-events-none"
-          sizes="100vw"
+          sizes="(max-width: 896px) 100vw, 896px"
         />
       </div>
 

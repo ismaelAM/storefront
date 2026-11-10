@@ -1,0 +1,262 @@
+{
+  "capturedAt": "2026-11-10",
+  "pages": {
+    "appearance": {
+      "root": {},
+      "content": [
+        {
+          "type": "Appearance",
+          "props": {
+            "id": "appearance",
+            "textColor": "#3b2a1e",
+            "accentText": "#fff8ea",
+            "footerText": "#eadfcb",
+            "headerText": "#4a3422",
+            "accentColor": "#6b4423",
+            "borderColor": "#d8c8ae",
+            "headerBorder": "#d8c8ae",
+            "surfaceColor": "#fffdf8",
+            "footerHeading": "#fff8ea",
+            "highlightText": "#fffdf8",
+            "secondaryText": "#4a3422",
+            "highlightColor": "#6f8c95",
+            "mutedTextColor": "#6f6258",
+            "pageBackground": "#f6f0e3",
+            "secondaryColor": "#eadfc9",
+            "surfaceAltColor": "#efe2cb",
+            "footerBackground": "#5a3822",
+            "headerBackground": "#f6f0e3"
+          }
+        }
+      ]
+    },
+    "category:tcg": {
+      "root": {
+        "props": {}
+      },
+      "zones": {},
+      "content": [
+        {
+          "type": "CategoryHero",
+          "props": {
+            "id": "category-hero",
+            "title": "TCG",
+            "minHeight": "small",
+            "textColor": "var(--text-muted)",
+            "titleColor": "var(--text)",
+            "description": "",
+            "backgroundColor": "var(--surface-alt)",
+            "backgroundImage": ""
+          }
+        },
+        {
+          "type": "RealProductShowcase",
+          "props": {
+            "id": "RealProductShowcase-acccee83-2533-4c18-b899-75605f31b338",
+            "badge": "",
+            "padding": "small",
+            "alignment": "left",
+            "textColor": "var(--text-muted)",
+            "buttonText": "Ver producto",
+            "priceColor": "var(--text)",
+            "titleColor": "var(--text)",
+            "buttonColor": "var(--primary)",
+            "description": "",
+            "imageAspect": "square",
+            "imagePosition": "left",
+            "backgroundColor": "var(--surface)",
+            "buttonTextColor": "var(--primary-foreground)",
+            "productPosition": 2
+          }
+        },
+        {
+          "type": "ProductGrid",
+          "props": {
+            "id": "category-products",
+            "title": "Productos",
+            "columns": "4",
+            "spacing": "compact",
+            "subtitle": "",
+            "textColor": "var(--text-muted)",
+            "cardRadius": "medium",
+            "priceColor": "var(--text)",
+            "titleColor": "var(--text)",
+            "imageAspect": "square",
+            "productSort": "default",
+            "productCount": "8",
+            "productFilter": "all",
+            "backgroundColor": "var(--background)",
+            "cardBackgroundColor": "var(--surface)"
+          }
+        }
+      ]
+    },
+    "home": {
+      "root": {
+        "props": {}
+      },
+      "zones": {},
+      "content": [
+        {
+          "type": "HeroHome",
+          "props": {
+            "id": "hero-home",
+            "text": "Explora, descubre y encuentra tu próximo juego favorito.\n\nYa sea para una partida rápida, una noche entre amigos o una batalla épica de varias horas… aquí siempre hay sitio para una más.\n\n¿Qué vamos a jugar?",
+            "title": "BisonTCG",
+            "density": "compact",
+            "textColor": "var(--text-muted)",
+            "titleColor": "var(--text)",
+            "backgroundColor": "var(--background)",
+            "primaryButtonUrl": "/products",
+            "primaryButtonText": "Ver catálogo",
+            "tertiaryButtonUrl": "",
+            "secondaryButtonUrl": "",
+            "tertiaryButtonText": "",
+            "secondaryButtonText": ""
+          }
+        },
+        {
+          "type": "ProductGrid",
+          "props": {
+            "id": "home-general-catalog",
+            "title": "Catálogo",
+            "columns": "4",
+            "spacing": "compact",
+            "subtitle": "Descubre nuestra selección.",
+            "textColor": "var(--text-muted)",
+            "cardRadius": "medium",
+            "priceColor": "var(--text)",
+            "titleColor": "var(--text)",
+            "imageAspect": "square",
+            "productCount": "12",
+            "productFilter": "all",
+            "variantFilter": "",
+            "backgroundColor": "var(--background)",
+            "selectedProductIds": [],
+            "selectedVariantIds": [],
+            "cardBackgroundColor": "var(--surface)",
+            "selectedCategoryIds": []
+          }
+        },
+        {
+          "type": "Banner",
+          "props": {
+            "id": "Banner-a219f64e-4ff6-4f09-b60c-b1d20632692d",
+            "text": "Ofertas activas y próximos lanzamientos, cada uno en su sitio.",
+            "title": "Destacados de BisonTCG",
+            "spacing": "compact",
+            "alignment": "center",
+            "buttonUrl": "",
+            "textColor": "var(--primary-foreground)",
+            "buttonText": "",
+            "buttonColor": "var(--surface)",
+            "backgroundColor": "var(--primary)",
+            "buttonTextColor": "var(--text)"
+          }
+        },
+        {
+          "type": "RealProductShowcase",
+          "props": {
+            "id": "RealProductShowcase-af171e9a-bc4e-4a89-902a-4b46511b3bc3",
+            "badge": "",
+            "padding": "small",
+            "alignment": "right",
+            "textColor": "var(--text-muted)",
+            "buttonText": "Ver producto",
+            "priceColor": "var(--text)",
+            "titleColor": "var(--text)",
+            "buttonColor": "var(--primary)",
+            "description": "Una oferta destacada seleccionada entre los productos disponibles.",
+            "imageAspect": "square",
+            "imagePosition": "right",
+            "backgroundColor": "var(--surface-alt)",
+            "buttonTextColor": "var(--primary-foreground)",
+            "productPosition": 1
+          }
+        },
+        {
+          "type": "ProductGrid",
+          "props": {
+            "id": "ProductGrid-0d4a833f-5499-4546-a47d-53b3830b5d27",
+            "title": "Ofertas destacadas",
+            "columns": "4",
+            "spacing": "compact",
+            "subtitle": "Productos con precio rebajado real. La selección cambia periódicamente.",
+            "textColor": "var(--text-muted)",
+            "cardRadius": "medium",
+            "priceColor": "var(--text)",
+            "titleColor": "var(--text)",
+            "imageAspect": "square",
+            "productCount": "12",
+            "productFilter": "sale",
+            "variantFilter": "",
+            "backgroundColor": "var(--background)",
+            "selectedProductIds": [],
+            "selectedVariantIds": [],
+            "cardBackgroundColor": "var(--surface)",
+            "selectedCategoryIds": []
+          }
+        },
+        {
+          "type": "ProductGrid",
+          "props": {
+            "id": "home-preorders",
+            "title": "Próximos lanzamientos",
+            "columns": "4",
+            "spacing": "compact",
+            "subtitle": "Prerreservas activas con lanzamiento pendiente.",
+            "textColor": "var(--text-muted)",
+            "cardRadius": "medium",
+            "priceColor": "var(--text)",
+            "titleColor": "var(--text)",
+            "imageAspect": "square",
+            "productCount": "4",
+            "productFilter": "preorder",
+            "variantFilter": "",
+            "backgroundColor": "var(--surface-alt)",
+            "selectedProductIds": [],
+            "selectedVariantIds": [],
+            "cardBackgroundColor": "var(--surface)",
+            "selectedCategoryIds": []
+          }
+        }
+      ]
+    },
+    "navigation": {
+      "root": {
+        "props": {}
+      },
+      "zones": {},
+      "content": [
+        {
+          "type": "Navigation",
+          "props": {
+            "id": "navigation",
+            "items": [
+              {
+                "visible": true,
+                "labelOverride": "",
+                "categoryPermalink": ""
+              },
+              {
+                "visible": true,
+                "labelOverride": "",
+                "categoryPermalink": ""
+              },
+              {
+                "visible": true,
+                "labelOverride": "",
+                "categoryPermalink": ""
+              },
+              {
+                "visible": true,
+                "labelOverride": "",
+                "categoryPermalink": ""
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

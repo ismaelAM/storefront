@@ -67,7 +67,7 @@ export interface PublicationDependencies {
   now(): Date;
 }
 // Keep changed artwork immutable too; bump when the render template changes.
-const TEMPLATE_VERSION = "2026-10-11-logo-contrast";
+const TEMPLATE_VERSION = "2026-11-10-transfer-budget";
 function snapshotHash(snapshot: SocialOfferSnapshot) {
   return createHash("sha256")
     .update(JSON.stringify({ templateVersion: TEMPLATE_VERSION, snapshot }))

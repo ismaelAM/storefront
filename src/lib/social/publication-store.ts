@@ -2,7 +2,7 @@ import "server-only";
 import { createSupabaseClient } from "@/lib/supabase/server";
 import { OFFER_CATEGORIES, type SocialOfferSnapshot } from "./offers";
 import type { PublicationRepository } from "./publication";
-import { renderOfferSlide } from "./template";
+import { createOfferSlideRenderer } from "./template";
 
 const TABLE = "social_offer_publications";
 export function createPublicationRepository(): PublicationRepository {
@@ -83,6 +83,7 @@ export async function preparePublicationImages(
 ): Promise<string[]> {
   const db = createSupabaseClient();
   const urls: string[] = [];
+  const renderOfferSlide = createOfferSlideRenderer();
   // Immutable paths: a changed price can never overwrite media already sent to Meta.
   for (const [category, categoryLabel] of Object.entries(OFFER_CATEGORIES)) {
     const path = `${snapshot.dayKey}/${hash}/${category}.jpg`;
@@ -102,7 +103,7 @@ export async function preparePublicationImages(
       });
       const { error } = await bucket.upload(path, bytes, {
         contentType: "image/jpeg",
-        cacheControl: "86400",
+        cacheControl: "31536000",
         upsert: false,
       });
       // Concurrent account preparations may safely find the same immutable asset.

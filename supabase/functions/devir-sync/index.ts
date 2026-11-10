@@ -3595,6 +3595,7 @@ async function syncProductToSpree(
   }
 
   let productId: string;
+  let currentProduct: SpreeProduct;
   let variantId: string | null = null;
   let manualPrice = false;
   const sourceCode = catalogContext?.supplier.code ?? "devir";
@@ -3637,6 +3638,7 @@ async function syncProductToSpree(
       },
     );
     productId = created.id;
+    currentProduct = created;
     const variants = await spreeList<SpreeVariant>(
       config,
       "/products/" + productId + "/variants",
@@ -3722,6 +3724,7 @@ async function syncProductToSpree(
     if (review && markedProduct.status !== "draft") {
       throw new Error("Spree no confirmó el borrador; no registrar nuevos motivos de revisión");
     }
+    currentProduct = markedProduct;
     const variantPatch = {
         sku: spreeSku,
         cost_price: product.purchasePrice,
@@ -3884,24 +3887,22 @@ async function syncProductToSpree(
       ? shouldListCatalogProduct({ review, fulfillmentMode })
       : autoPublish;
   if (shouldList) {
+    // Fulfillment writes can change native aggregate preorder/purchasable flags.
+    // Refresh them even when activation itself is already a verified no-op.
     const published = await spreeRequest<SpreeProduct>(
       config,
-      "PATCH",
+      currentProduct.status === "active" ? "GET" : "PATCH",
       "/products/" + encodeURIComponent(productId),
-      {
-        status: "active",
-      },
+      currentProduct.status === "active" ? undefined : { status: "active" },
     );
     await syncHomePreorderMembership(config, published);
     await ensureProductsInDefaultChannel(config, [productId]);
   } else if (review || fulfillmentMode === "disabled") {
     const drafted = await spreeRequest<SpreeProduct>(
       config,
-      "PATCH",
+      currentProduct.status === "draft" ? "GET" : "PATCH",
       "/products/" + encodeURIComponent(productId),
-      {
-        status: "draft",
-      },
+      currentProduct.status === "draft" ? undefined : { status: "draft" },
     );
     await syncHomePreorderMembership(config, drafted);
   }
@@ -10313,6 +10314,7 @@ async function loadDailyOfferRefresh(supplier: CatalogSupplierRow): Promise<Arra
     const { data, error } = await supabase.from("catalog_supplier_offers")
       .select("id,source_url,last_seen_at,updated_at,normalized_cost,minimum_order_quantity:raw_payload->metadata->minimumOrderQuantity,variant:catalog_variants!catalog_supplier_offers_variant_id_fkey!inner(canonical_sku,last_auto_price,fulfillment_mode,spree_variant_id,product:catalog_products!catalog_variants_product_id_fkey!inner(id,name,category_key,spree_product_id,requires_review,review_decision))")
       .eq("supplier_id", supplier.id).eq("active", true).eq("availability", "available")
+      .eq("variant.fulfillment_mode", "supplier_or_physical").neq("variant.product.review_decision", "rejected")
       .gt("normalized_cost", 0).not("source_url", "is", null).order("id").range(offset, offset + 499);
     if (error) throw error;
     const rows = (data ?? []) as unknown as Row[];
