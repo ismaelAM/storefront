@@ -4,7 +4,7 @@ import type { Product } from "@spree/sdk";
 import { Search } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import {
   InputGroup,
   InputGroupAddon,
@@ -13,7 +13,8 @@ import {
 import { ProductImage } from "@/components/ui/product-image";
 import { useStore } from "@/contexts/StoreContext";
 import { trackQuickSearch, trackSelectItem } from "@/lib/analytics/gtm";
-import { getProducts } from "@/lib/data/products";
+import { getProductSearchSuggestions } from "@/lib/data/products";
+import { normalizeProductSearch } from "@/lib/utils/product-search";
 
 interface SearchBarProps {
   basePath: string;
@@ -35,80 +36,77 @@ export function SearchBar({ basePath, autoFocus, onNavigate }: SearchBarProps) {
   const blurTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const requestIdRef = useRef(0);
 
-  // Fetch suggestions
-  const fetchSuggestions = useCallback(
-    async (searchQuery: string) => {
-      if (searchQuery.length < 2) {
-        setSuggestions([]);
-        return;
-      }
+  const listId = useId();
+  const searchRef = useRef("");
+  const normalizedQuery = normalizeProductSearch(query);
 
-      const currentRequestId = requestIdRef.current;
-      setLoading(true);
-      try {
-        const response = await getProducts({
-          search: searchQuery,
-          fields: ["name", "slug", "price", "thumbnail_url"],
-          limit: 6,
-        });
-        // Discard stale responses if a newer query has been issued
-        if (requestIdRef.current !== currentRequestId) return;
-        setSuggestions(response.data);
-        if (response.data.length > 0) {
-          trackQuickSearch(response.data, searchQuery, currency);
-        }
-      } catch (error) {
-        if (requestIdRef.current !== currentRequestId) return;
-        console.error("Search failed:", error);
-        setSuggestions([]);
-      } finally {
-        if (requestIdRef.current === currentRequestId) {
-          setLoading(false);
-        }
-      }
-    },
-    [currency],
-  );
+  const cancelSearch = useCallback(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    requestIdRef.current += 1;
+    searchRef.current = "";
+  }, []);
 
-  // Debounced search — called from onChange handler, no useEffect needed
+  useEffect(() => () => {
+    cancelSearch();
+    if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current);
+  }, [cancelSearch]);
+
+  const fetchSuggestions = useCallback(async (searchQuery: string) => {
+    const currentRequestId = requestIdRef.current;
+    try {
+      const results = await getProductSearchSuggestions(searchQuery);
+      if (requestIdRef.current !== currentRequestId) return;
+      setSuggestions(results);
+      if (results.length > 0) trackQuickSearch(results, searchQuery, currency);
+    } catch (error) {
+      if (requestIdRef.current !== currentRequestId) return;
+      console.error("Search failed:", error);
+    } finally {
+      if (requestIdRef.current === currentRequestId) setLoading(false);
+    }
+  }, [currency]);
+
   const handleQueryChange = (value: string) => {
     setQuery(value);
     setIsOpen(true);
+    const search = normalizeProductSearch(value);
+    if (search === searchRef.current) return;
+    cancelSearch();
+    searchRef.current = search;
     setSelectedIndex(-1);
-    requestIdRef.current += 1;
-
-    if (debounceRef.current) {
-      clearTimeout(debounceRef.current);
-    }
-
-    if (value.length >= 2) {
-      debounceRef.current = setTimeout(() => {
-        fetchSuggestions(value);
-      }, 300);
-    } else {
-      setSuggestions([]);
-      setLoading(false);
+    setSuggestions([]);
+    setLoading(search.length >= 2);
+    if (search.length >= 2) {
+      debounceRef.current = setTimeout(() => fetchSuggestions(search), 300);
     }
   };
 
-  // Handle form submit
+  const closeAfterNavigation = () => {
+    cancelSearch();
+    setSuggestions([]);
+    setSelectedIndex(-1);
+    setLoading(false);
+    setIsOpen(false);
+    inputRef.current?.blur();
+    onNavigate?.();
+  };
+
+  const navigateToResults = () => {
+    router.push(`${basePath}/products?q=${encodeURIComponent(normalizedQuery)}`);
+    closeAfterNavigation();
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (query.trim()) {
-      router.push(`${basePath}/products?q=${encodeURIComponent(query.trim())}`);
-      setIsOpen(false);
-      inputRef.current?.blur();
-      onNavigate?.();
-    }
+    if (normalizedQuery) navigateToResults();
   };
 
   // Handle suggestion click
   const handleSuggestionClick = (product: Product, index: number) => {
     trackSelectItem(product, "quick-search", "Quick Search", index, currency);
     router.push(`${basePath}/products/${product.slug}`);
-    setIsOpen(false);
     setQuery("");
-    onNavigate?.();
+    closeAfterNavigation();
   };
 
   // Close suggestions on blur — delayed to allow click on suggestions
@@ -153,7 +151,7 @@ export function SearchBar({ basePath, autoFocus, onNavigate }: SearchBarProps) {
   };
 
   const showSuggestions =
-    isOpen && (suggestions.length > 0 || loading || query.length >= 2);
+    isOpen && (suggestions.length > 0 || loading || normalizedQuery.length >= 2);
 
   return (
     <div className="relative">
@@ -164,16 +162,19 @@ export function SearchBar({ basePath, autoFocus, onNavigate }: SearchBarProps) {
             type="search"
             value={query}
             onChange={(e) => handleQueryChange(e.target.value)}
-            onFocus={() => setIsOpen(true)}
+            onFocus={() => {
+              if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current);
+              setIsOpen(true);
+            }}
             onBlur={handleBlur}
             onKeyDown={handleKeyDown}
             placeholder={t("search")}
             autoFocus={autoFocus}
             role="combobox"
             aria-expanded={showSuggestions}
-            aria-controls="search-suggestions"
+            aria-controls={suggestions.length ? listId : undefined}
             aria-activedescendant={
-              selectedIndex >= 0 ? `search-option-${selectedIndex}` : undefined
+              selectedIndex >= 0 ? `${listId}-${selectedIndex}` : undefined
             }
             aria-autocomplete="list"
             aria-label={t("search")}
@@ -196,11 +197,11 @@ export function SearchBar({ basePath, autoFocus, onNavigate }: SearchBarProps) {
                 {t("searching")}
               </div>
             ) : suggestions.length > 0 ? (
-              <ul id="search-suggestions" role="listbox">
+              <ul id={listId} role="listbox">
                 {suggestions.map((product, index) => (
                   <li
                     key={product.id}
-                    id={`search-option-${index}`}
+                    id={`${listId}-${index}`}
                     role="option"
                     aria-selected={index === selectedIndex}
                     tabIndex={-1}
@@ -219,6 +220,7 @@ export function SearchBar({ basePath, autoFocus, onNavigate }: SearchBarProps) {
                           src={product.thumbnail_url}
                           alt={product.name}
                           fill
+                          sizes="40px"
                           className="object-cover"
                           iconClassName="w-5 h-5"
                         />
@@ -238,25 +240,19 @@ export function SearchBar({ basePath, autoFocus, onNavigate }: SearchBarProps) {
                   </li>
                 ))}
                 {/* View all results link */}
-                {query.trim() && (
+                {normalizedQuery && (
                   <li className="border-t border-gray-100">
                     <button
                       type="button"
-                      onClick={() => {
-                        router.push(
-                          `${basePath}/products?q=${encodeURIComponent(query.trim())}`,
-                        );
-                        setIsOpen(false);
-                        onNavigate?.();
-                      }}
+                      onClick={navigateToResults}
                       className="w-full p-3 text-sm text-primary hover:bg-gray-50 text-center font-medium"
                     >
-                      {t("viewAllResultsFor", { query: query.trim() })}
+                      {t("viewAllResultsFor", { query: normalizedQuery })}
                     </button>
                   </li>
                 )}
               </ul>
-            ) : query.length >= 2 ? (
+            ) : normalizedQuery.length >= 2 ? (
               <div className="p-4 text-center text-gray-500 text-sm">
                 {t("noProductsFound")}
               </div>

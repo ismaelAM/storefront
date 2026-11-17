@@ -86,6 +86,7 @@ interface ConfigRow {
   // Transient, owned by this invocation. Never persisted with configuration.
   request_budget?: { deadline_at: number };
   maintenance_turn?: number;
+  spree_pause_until?: string | null;
   last_supplier_tick?: string | null;
   id: string;
   enabled: boolean;
@@ -329,7 +330,10 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 // Async context is local to one HTTP invocation, including concurrent groups.
 // Database checkpoints/releases have a separate reserve after external work.
-const syncRuntime = new AsyncLocalStorage<{ database_budget: { deadline_at: number } }>();
+const syncRuntime = new AsyncLocalStorage<{
+  database_budget: { deadline_at: number };
+  spreePaused?: boolean;
+}>();
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE, {
   auth: { persistSession: false, autoRefreshToken: false },
   global: { fetch: syncDatabaseFetch },
@@ -1155,6 +1159,8 @@ async function spreeRequest<T>(
     throw new Error(
       "Falta la Secret API Key de Spree en la configuración cloud.",
     );
+  const runtime = syncRuntime.getStore();
+  if (runtime?.spreePaused) throw syncDeferred();
   const { response, text } = await fetchSyncText(
     config.spree_api_url.replace(/\/$/, "") + "/api/v3/admin" + path,
     {
@@ -1167,6 +1173,17 @@ async function spreeRequest<T>(
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     }, config.request_budget,
   );
+
+  if (
+    response.status === 503 &&
+    (response.headers.get("x-vercel-error") === "DEPLOYMENT_PAUSED" ||
+      /\bDEPLOYMENT_PAUSED\b/.test(text))
+  ) {
+    if (runtime) runtime.spreePaused = true;
+    // Treat this as deferred work so a paused deployment cannot consume the
+    // retry budget, fail a catalog item or advance a supplier checkpoint.
+    throw syncDeferred();
+  }
 
   if (
     (response.status === 429 ||
@@ -12529,19 +12546,18 @@ async function scheduledTcgFactoryTick(config: ConfigRow): Promise<Record<string
 }
 
 async function runtimeMaintenanceTick(config: ConfigRow): Promise<Record<string, unknown>> {
-  const turn = Number(config.maintenance_turn ?? 0) % 4;
+  const turn = Number(config.maintenance_turn ?? 0) % 3;
   const { error } = await supabase.from("devir_sync_config")
-    .update({ maintenance_turn: (turn + 1) % 4 }).eq("id", "primary");
+    .update({ maintenance_turn: (turn + 1) % 3 }).eq("id", "primary");
   if (error) throw error;
   const maintenanceConfig = { ...config, request_budget: {
-    deadline_at: Math.min(config.request_budget?.deadline_at ?? Infinity, Date.now() + (turn === 3 ? 70_000 : 25_000)),
+    deadline_at: Math.min(config.request_budget?.deadline_at ?? Infinity, Date.now() + 25_000),
   } };
-  const lane = ["stale", "physical", "review", "daily"][turn];
+  const lane = ["stale", "physical", "review"][turn];
   try {
     const result = turn === 0 ? await reconcileStaleCatalogBatch(maintenanceConfig, 10)
       : turn === 1 ? await reconcilePhysicalOnlyCatalogBatch(maintenanceConfig, 10)
-      : turn === 2 ? await refreshHumanReviewMarkersBatch(maintenanceConfig, 3)
-      : await rotateDailyOffers(maintenanceConfig);
+      : await refreshHumanReviewMarkersBatch(maintenanceConfig, 3);
     return { lane, result };
   } catch (error) {
     if (isSyncDeferred(error)) return { lane, status: "deferred", reason: "request_budget" };
@@ -12621,6 +12637,11 @@ Deno.serve((req) => syncRuntime.run({ database_budget: { deadline_at: Date.now()
     return json({ error: "unauthorized" }, 401);
   }
 
+  if (config.spree_pause_until && Date.parse(config.spree_pause_until) > Date.now()) {
+    return json({ ok: true, skipped: "spree_paused", retry_at: config.spree_pause_until });
+  }
+
+  const runtime = syncRuntime.getStore()!;
   const lockToken = crypto.randomUUID();
   const { data: lock, error: lockError } = await supabase.rpc(
     "devir_sync_acquire_lock",
@@ -12635,6 +12656,7 @@ Deno.serve((req) => syncRuntime.run({ database_budget: { deadline_at: Date.now()
     }
 
     const dailyMaintenance = await dueDailyOfferMaintenanceTick(config);
+    if (runtime.spreePaused) throw syncDeferred();
     const dailyDeferred = dailyMaintenance?.status === "deferred";
     if (dailyDeferred && !canStartSyncWork(config)) {
       return json({ ok: true, status: "deferred", reason: "request_budget", maintenance: dailyMaintenance });
@@ -12666,7 +12688,7 @@ Deno.serve((req) => syncRuntime.run({ database_budget: { deadline_at: Date.now()
           );
         }
       }
-      if (!canStartSyncWork(config)) throw syncDeferred();
+      if (runtime.spreePaused || !canStartSyncWork(config)) throw syncDeferred();
       // Persist the turn before work: a long request or timeout must still
       // leave the other distributor the next unlocked invocation.
       const recordSupplierTurn = async (code: string) => {
@@ -12677,6 +12699,7 @@ Deno.serve((req) => syncRuntime.run({ database_budget: { deadline_at: Date.now()
       if (config.last_supplier_tick !== "tcgfactory") {
         await recordSupplierTurn("tcgfactory");
         const tcgFactoryResult = await scheduledTcgFactoryTick(config);
+        if (runtime.spreePaused) throw syncDeferred();
         if (typeof tcgFactoryResult.skipped !== "string" && tcgFactoryResult.status !== "error") {
           return json({ ok: true, tcgfactory: tcgFactoryResult });
         }
@@ -12686,7 +12709,9 @@ Deno.serve((req) => syncRuntime.run({ database_budget: { deadline_at: Date.now()
     }
 
     const maintenance = dailyDeferred ? dailyMaintenance : await runtimeMaintenanceTick(config);
+    if (runtime.spreePaused) throw syncDeferred();
     const tcgFactoryResult = await scheduledTcgFactoryTick(config);
+    if (runtime.spreePaused) throw syncDeferred();
 
     if (!config.enabled) {
       return json({
@@ -12720,7 +12745,9 @@ Deno.serve((req) => syncRuntime.run({ database_budget: { deadline_at: Date.now()
       tcgfactory: tcgFactoryResult,
     });
   } catch (error) {
-    if (isSyncDeferred(error)) return json({ ok: true, status: "deferred", reason: "request_budget" });
+    if (runtime.spreePaused || isSyncDeferred(error)) {
+      return json({ ok: true, status: "deferred", reason: runtime.spreePaused ? "spree_paused" : "request_budget" });
+    }
     const message = error instanceof Error ? error.message : String(error);
     await supabase
       .from("devir_sync_config")
@@ -12742,6 +12769,16 @@ Deno.serve((req) => syncRuntime.run({ database_budget: { deadline_at: Date.now()
     }
     return json({ ok: false, error: message }, 500);
   } finally {
-    await supabase.rpc("devir_sync_release_lock", { p_token: lockToken });
+    try {
+      if (runtime.spreePaused) {
+        const spreePauseUntil = new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString();
+        const { error } = await supabase.from("devir_sync_config")
+          .update({ spree_pause_until: spreePauseUntil })
+          .eq("id", "primary");
+        if (error) console.error("Could not save Spree pause cooldown");
+      }
+    } finally {
+      await supabase.rpc("devir_sync_release_lock", { p_token: lockToken });
+    }
   }
 }));

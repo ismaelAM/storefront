@@ -20,7 +20,7 @@ vi.mock("@sentry/nextjs", () => ({
 }));
 
 import nextConfig from "../../../next.config";
-import { cachedListProducts } from "./products";
+import { cachedListProducts, getProductSearchSuggestions } from "./products";
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -29,6 +29,24 @@ beforeEach(() => {
 });
 
 describe("catalogue cache economy", () => {
+  it("queries only TCG suggestions, with stable whitespace and narrow card fields", async () => {
+    const products = [{ id: "card-game-box" }];
+    mocks.list.mockResolvedValue({ data: products });
+    expect(await getProductSearchSuggestions("  Magic   Play Booster  ")).toBe(products);
+    expect(mocks.list).toHaveBeenCalledExactlyOnceWith({
+      search: "Magic Play Booster",
+      fields: ["id", "name", "slug", "price", "thumbnail_url"],
+      limit: 6,
+      tags_name_in: ["bison-tcg-catalog"],
+    }, { country: "es", locale: "es" });
+  });
+
+  it("rejects whitespace and single-character suggestions without a catalog call", async () => {
+    expect(await getProductSearchSuggestions("  x  ")).toEqual([]);
+    expect(await getProductSearchSuggestions("   ")).toEqual([]);
+    expect(mocks.list).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["catalogGuestProducts", { stale: 120, revalidate: 1200, expire: 3600 }],
     ["catalogProducts", { stale: 30, revalidate: 60, expire: 300 }],

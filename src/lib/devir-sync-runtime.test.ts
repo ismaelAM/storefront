@@ -163,6 +163,33 @@ describe("Worker invocation budget", () => {
     expect(outcome).toBe("SyncDeferred");
     await request;
   });
+  it.each(["header", "body"])("stops on Vercel's pause marker in the %s without retrying", async (marker) => {
+    const fetch = vi.fn(async () => new Response(
+      marker === "body" ? "503: DEPLOYMENT_PAUSED" : "Service Unavailable",
+      { status: 503, headers: marker === "header" ? { "x-vercel-error": "DEPLOYMENT_PAUSED" } : {} },
+    ));
+    const api = fixture({ fetch });
+    await api.runtime.run({ database_budget: { deadline_at: Infinity } }, async () => {
+      const requestConfig = { ...config, request_budget: undefined };
+      await expect(api.spreeRequest(requestConfig, "GET", "/products")).rejects.toMatchObject({ name: "SyncDeferred" });
+      await expect(api.spreeRequest(requestConfig, "PATCH", "/products/1", {})).rejects.toMatchObject({ name: "SyncDeferred" });
+    });
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+
+  it("still retries a generic transient 503", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(new Response("Service Unavailable", { status: 503 }))
+      .mockResolvedValueOnce(Response.json({ healthy: true }));
+    const api = fixture({ fetch });
+    const request = api.spreeRequest({ ...config, request_budget: undefined }, "GET", "/products");
+    await vi.advanceTimersByTimeAsync(750);
+    await expect(request).resolves.toEqual({ healthy: true });
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
   it("keeps concurrent request budgets independent", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(0);
@@ -238,7 +265,7 @@ describe("Worker invocation budget", () => {
 });
 
 describe("Fair maintenance and checkpoint cleanup", () => {
-  it("gives only the daily lane 70 seconds and persists the next turn before deferral", async () => {
+  it("keeps a 25-second limit for general maintenance and normalizes the retired daily turn", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(1_000);
     const deadlines: number[] = [];
@@ -269,15 +296,15 @@ describe("Fair maintenance and checkpoint cleanup", () => {
         maintenance_turn: turn,
         request_budget: { deadline_at: 95_000 },
       });
-    expect(deadlines).toEqual([26_000, 26_000, 26_000, 71_000]);
-    expect(turns).toEqual([1, 2, 3, 0]);
+    expect(deadlines).toEqual([26_000, 26_000, 26_000, 26_000]);
+    expect(turns).toEqual([1, 2, 0, 1]);
     expect(
       await api.maintenance({
         maintenance_turn: 3,
-        request_budget: { deadline_at: 50_000 },
+        request_budget: { deadline_at: 20_000 },
       }),
-    ).toEqual({ lane: "daily", result: {} });
-    expect(deadlines.at(-1)).toBe(50_000);
+    ).toEqual({ lane: "stale", result: {} });
+    expect(deadlines.at(-1)).toBe(20_000);
   });
   it("rotates exactly one bounded maintenance lane before supplier work", async () => {
     const calls: string[] = [];
@@ -310,8 +337,8 @@ describe("Fair maintenance and checkpoint cleanup", () => {
     });
     for (let i = 0; i < 4; i++)
       await api.maintenance({ maintenance_turn: turn });
-    expect(calls).toEqual(["stale", "physical", "review", "daily"]);
-    expect(turn).toBe(0);
+    expect(calls).toEqual(["stale", "physical", "review", "stale"]);
+    expect(turn).toBe(1);
   });
   it("releases a product lock when reconciliation exhausts the budget", async () => {
     const calls: string[] = [];
@@ -346,6 +373,7 @@ describe("Fair maintenance and checkpoint cleanup", () => {
 function activeWorkerFixture(
   overrides: Record<string, unknown> = {},
   enabled = true,
+  spreePauseUntil?: string,
 ) {
   const trace: string[] = [];
   const writes: Record<string, unknown>[] = [];
@@ -360,6 +388,7 @@ function activeWorkerFixture(
       data: {
         ...config,
         enabled,
+        spree_pause_until: spreePauseUntil,
         phase: "products",
         active_cycle_id: "cycle",
         session_state: {},
@@ -408,6 +437,39 @@ function activeWorkerFixture(
       ),
   };
 }
+
+describe("Scheduled Spree outage cooldown", () => {
+  it("does no work before the stored cooldown ends", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const f = activeWorkerFixture({}, false, "1970-01-01T06:00:00.000Z");
+    expect(await (await f.invoke()).json()).toMatchObject({
+      skipped: "spree_paused",
+      retry_at: "1970-01-01T06:00:00.000Z",
+    });
+    expect(f.trace).toEqual([]);
+    expect(f.writes).toEqual([]);
+  });
+
+  it("records a six-hour cooldown and releases the lock after the first observed pause", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const dailyOfferState = async () => ({ day_key: "2026-11-16", active_products: [] });
+    const fetch = vi.fn(async () => new Response("DEPLOYMENT_PAUSED", { status: 503 }));
+    const f = activeWorkerFixture({
+      fetch,
+      dailyOfferState,
+      rotateDailyOffers: (cfg: typeof config) => f.api.spreeRequest(cfg, "GET", "/products"),
+    });
+    expect(await (await f.invoke()).json()).toMatchObject({
+      status: "deferred",
+      reason: "spree_paused",
+    });
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(f.trace).toEqual(["devir_sync_acquire_lock", "devir_sync_release_lock"]);
+    expect(f.writes).toEqual([{ spree_pause_until: "1970-01-01T06:00:00.000Z" }]);
+  });
+});
 
 describe("Due daily offers during an active supplier crawl", () => {
   it.each([

@@ -12,6 +12,7 @@
  * filters/sort/query change.
  */
 
+import { normalizeProductSearch } from "./product-search";
 import type { ActiveFilters, AvailabilityStatus } from "@/types/filters";
 import { isAvailabilityStatus } from "@/types/filters";
 
@@ -67,7 +68,7 @@ export function parseListingSearchParams(
   params: RawSearchParams,
 ): ListingSearchParams {
   const query =
-    readFirst(params, LISTING_PARAM_KEYS.query)?.trim() || undefined;
+    normalizeProductSearch(readFirst(params, LISTING_PARAM_KEYS.query)) || undefined;
 
   const availabilityRaw = readFirst(params, LISTING_PARAM_KEYS.availability);
   const availability: AvailabilityStatus | undefined =

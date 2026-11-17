@@ -1,8 +1,7 @@
 import type { Product } from "@spree/sdk";
 import type { Metadata } from "next";
 import { TcgGameDirectory } from "@/components/layout/TcgGameDirectory";
-import { tcgNavigation } from "@/lib/catalog/tcg-navigation";
-import { getCategories } from "@/lib/data/categories";
+import { getStorefrontGames } from "@/lib/data/storefront-games";
 import { HomePuckRenderer } from "@/components/puck/HomePuckRenderer";
 import { JsonLd } from "@/components/seo/JsonLd";
 import { PRODUCT_CARD_FIELDS } from "@/lib/data/cached";
@@ -36,10 +35,7 @@ export default async function HomePage({ params }: HomePageProps) {
   const { country, locale } = await params;
   const basePath = `/${country}/${locale}`;
   const dataPromise = getHomePageData(locale);
-  const gamesPromise = getCategories(
-    { depth_eq: 0, expand: ["children.children"] },
-    { country, locale },
-  ).then(({ data }) => tcgNavigation(data)).catch(() => []);
+  const gamesPromise = getStorefrontGames(country, locale);
   const userToken = await getAccessToken();
   const now = new Date();
   const dayKey = madridDailyOfferDay(now).dayKey;

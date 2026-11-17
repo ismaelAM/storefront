@@ -5,6 +5,8 @@ import { type ProductListParams, SpreeError } from "@spree/sdk";
 const CATALOG_CACHE_VERSION = "2026-09-23-customer-pricing-v6";
 
 import { cacheLife, cacheTag } from "next/cache";
+import { normalizeProductSearch } from "@/lib/utils/product-search";
+import { TCG_CATALOG_TAG } from "../../../supabase/functions/_shared/tcg-shop";
 import {
   cacheTagSuffix,
   DEFAULT_SURFACE,
@@ -68,6 +70,18 @@ export async function getProducts(
     userToken,
     CATALOG_CACHE_VERSION,
   );
+}
+
+export async function getProductSearchSuggestions(query: string) {
+  const search = normalizeProductSearch(query);
+  if (search.length < 2) return [];
+  const { data } = await getProducts({
+    search,
+    fields: ["id", "name", "slug", "price", "thumbnail_url"],
+    limit: 6,
+    tags_name_in: [TCG_CATALOG_TAG],
+  });
+  return data;
 }
 
 /**

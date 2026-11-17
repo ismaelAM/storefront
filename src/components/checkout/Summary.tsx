@@ -26,6 +26,7 @@ export function Summary({ cart }: SummaryProps) {
                   src={item.thumbnail_url}
                   alt={item.name}
                   fill
+                  sizes="64px"
                   className="object-cover"
                   iconClassName="w-6 h-6"
                 />
