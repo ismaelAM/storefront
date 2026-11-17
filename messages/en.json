@@ -53,7 +53,7 @@
     "updatePreferencesFailed": "We couldn't update your region preferences. Please try again."
   },
   "footer": {
-    "description": "TCGs, board games, manga and collectibles selected with care. Straightforward shopping, helpful support and carefully prepared orders.",
+    "description": "Booster boxes, packs, decks and accessories for your favourite trading card games.",
     "shop": "Shop",
     "allProducts": "All Products",
     "categories": "Categories",
@@ -67,7 +67,7 @@
   },
   "home": {
     "welcome": "{storeName}",
-    "heroDescription": "TCGs, board games, manga and collectibles for your next game night, collection or read.",
+    "heroDescription": "Booster boxes, packs, decks and accessories for your favourite trading card games.",
     "shopNow": "Shop All",
     "featuredProducts": "Featured Products",
     "viewAll": "View all",
@@ -677,5 +677,17 @@
     "tariffExpired": "The 2026 rates are not valid for the current date. They must be updated before calculating.",
     "invalidRequest": "The parcel details could not be read.",
     "networkError": "The estimate failed. Please try again."
+  },
+  "tcgShop": {
+    "catalogName": "Trading card games",
+    "games": "Pick your game",
+    "allProducts": "Browse the full catalogue",
+    "catalogName": "Trading card games",
+    "allFormats": "All formats",
+    "boosters": "Booster boxes and packs",
+    "decks": "Decks",
+    "sets": "Sets and collections",
+    "accessories": "Game accessories",
+    "description": "Booster boxes, packs, decks and accessories for your favourite trading card games."
   }
 }

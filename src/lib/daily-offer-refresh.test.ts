@@ -22,24 +22,24 @@ const plan = (offers: selection.DailyOfferRefreshCandidate[]) =>
 describe("balanced daily supplier refresh", () => {
   it("revalidates the most recently observed cohort before old dead catalog URLs", () => {
     const offers = [
-      ...Array.from({ length: 40 }, (_, i) => candidate(`old${i}`, "accesorios", {
+      ...Array.from({ length: 40 }, (_, i) => candidate(`old${i}`, "yugioh", {
         lastSeenAt: "2026-09-01T00:00:00Z",
       })),
-      ...Array.from({ length: 3 }, (_, i) => candidate(`recent${i}`, "accesorios", {
+      ...Array.from({ length: 3 }, (_, i) => candidate(`recent${i}`, "yugioh", {
         lastSeenAt: "2026-10-28T19:00:00Z",
       })),
     ];
     expect(plan(offers).offers.map((o) => o.id)).toEqual(["recent0", "recent1", "recent2"]);
   });
   it("refreshes the missing category before an oversized general catalog", () => {
-    const ready = (["tcg", "juegos-de-mesa", "accesorios"] as const).flatMap(
+    const ready = (["tcg", "one-piece", "yugioh"] as const).flatMap(
       (c) =>
         Array.from({ length: 3 }, (_, i) =>
           candidate(`${c}${i}`, c, { lastSeenAt: "2026-10-29T01:00:00Z" }),
         ),
     );
     const merch = Array.from({ length: 5 }, (_, i) =>
-      candidate(`merch${i}`, "merchandising", { priceReady: false }),
+      candidate(`merch${i}`, "otros-tcg", { priceReady: false }),
     );
     const result = plan([
       ...Array.from({ length: 100 }, (_, i) => candidate(`tcg-old${i}`, "tcg")),
@@ -70,14 +70,14 @@ describe("balanced daily supplier refresh", () => {
   });
   it("does not retry a recently failed/manual price or trust future timestamps", () => {
     const offers = [
-      candidate("recent", "merchandising", {
+      candidate("recent", "otros-tcg", {
         priceReady: false,
         lastSeenAt: "2026-10-29T01:55:00Z",
       }),
-      candidate("future", "merchandising", {
+      candidate("future", "otros-tcg", {
         lastSeenAt: "2026-10-30T00:00:00Z",
       }),
-      candidate("due", "merchandising"),
+      candidate("due", "otros-tcg"),
     ];
     expect(plan(offers).offers.map((o: { id: string }) => o.id)).toEqual([
       "due",
@@ -85,7 +85,7 @@ describe("balanced daily supplier refresh", () => {
   });
   it("leaves the ordinary crawl alone when all four quotas are fresh and priced", () => {
     const offers = (
-      ["tcg", "juegos-de-mesa", "accesorios", "merchandising"] as const
+      ["tcg", "one-piece", "yugioh", "otros-tcg"] as const
     ).flatMap((c) =>
       Array.from({ length: 3 }, (_, i) =>
         candidate(`${c}${i}`, c, { lastSeenAt: "2026-10-29T01:00:00Z" }),
@@ -122,7 +122,7 @@ it("moves past failed attempts without pretending their supplier observation is 
 });
 
 it("shares repeated hourly attempts across categories when one category never becomes price-ready", () => {
-  let offers = ["tcg", "merchandising"].flatMap((category) =>
+  let offers = ["tcg", "otros-tcg"].flatMap((category) =>
     Array.from({ length: 3 }, (_, i) =>
       candidate(`${category}${i}`, category as selection.DailyOfferCategory, {
         priceReady: false,
@@ -138,8 +138,8 @@ it("shares repeated hourly attempts across categories when one category never be
   const second = selection.planDailyOfferRefresh(offers, now + 60 * 60 * 1000);
   expect(first.offers).toHaveLength(3);
   expect(second.offers.map((o) => o.id)).toEqual([
-    "merchandising0",
-    "merchandising1",
-    "merchandising2",
+    "otros-tcg0",
+    "otros-tcg1",
+    "otros-tcg2",
   ]);
 });

@@ -73,11 +73,12 @@ describe("StorefrontLayout", () => {
       depth: 0,
       parent_id: null,
     };
+    const game = { id: "cat_mtg", name: "Magic: The Gathering", permalink: "tcg/mtg", children: [] };
     vi.mocked(getCategories)
       .mockResolvedValueOnce({ data: [] } as never)
-      .mockResolvedValueOnce({ data: [root] } as never);
+      .mockResolvedValueOnce({ data: [{ ...root, children: [game] }] } as never);
     const result = await loadFooterCategories();
-    expect(result.props).toMatchObject({ rootCategories: [root] });
+    expect(result.props).toMatchObject({ rootCategories: [game] });
     expect(getCategories).toHaveBeenCalledTimes(2);
   });
 

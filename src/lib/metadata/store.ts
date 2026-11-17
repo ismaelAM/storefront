@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
+import { getTranslations } from "next-intl/server";
 import {
   findMarketForCountry,
   getDefaultMarketLocaleTarget,
@@ -9,9 +10,7 @@ import { getMarkets } from "@/lib/data/markets";
 import { validateMetadataRoute } from "@/lib/metadata/validate-route";
 import { normalizeOpenGraphLocale, SOCIAL_IMAGE_PATH } from "@/lib/seo";
 import {
-  getStoreMetaDescription,
   getStoreName,
-  getStoreSeoTitle,
   getStoreUrl,
 } from "@/lib/store";
 
@@ -80,9 +79,10 @@ export async function generateStoreMetadata({
   country,
 }: StoreMetadataParams): Promise<Metadata> {
   validateMetadataRoute(country, locale);
-  const storeName = getStoreSeoTitle();
+  const t = await getTranslations({ locale: locale as Locale, namespace: "tcgShop" });
+  const storeName = `${getStoreName()} | ${t("catalogName")}`;
   const storeUrl = getStoreUrl();
-  const metaDescription = getStoreMetaDescription();
+  const metaDescription = t("description");
   const metaKeywords = process.env.STORE_META_KEYWORDS;
   const twitter = process.env.STORE_TWITTER;
   const googleVerification = process.env.GOOGLE_SITE_VERIFICATION?.trim();

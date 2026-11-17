@@ -1,3 +1,4 @@
+vi.mock("next-intl/server", () => ({ getTranslations: async () => (key: string) => key }));
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ headers: vi.fn(), markets: vi.fn() }));
@@ -30,7 +31,7 @@ describe("store search and sharing metadata", () => {
       locale: "es",
     });
     expect(metadata.title).toEqual({
-      default: "BisonTCG | TCG y juegos de mesa",
+      default: "BisonTCG | catalogName",
       template: "%s | BisonTCG",
     });
   });

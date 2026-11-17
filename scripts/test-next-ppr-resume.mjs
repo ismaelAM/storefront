@@ -123,6 +123,7 @@ before(async () => {
   await writeFile(join(fixture, "package.json"), JSON.stringify({ private: true }));
   const serverImport = /@\/lib\/supabase\/server/g;
   await writeFile(join(fixture, "app/published-data.ts"), (await readFile(join(root, "src/lib/puck/get-site-page-data.ts"), "utf8")).replace(serverImport, "./supabase"));
+  await cp(join(root, "src/lib/puck/published-fallback.json"), join(fixture, "app/published-fallback.json"));
   await cp(join(root, "src/lib/supabase/server.ts"), join(fixture, "app/supabase.ts"));
   await mkdir(join(fixture, "app/api/pages/home"), { recursive: true });
   await writeFile(join(fixture, "app/api/pages/home/route.ts"), (await readFile(join(root, "src/app/api/pages/home/route.ts"), "utf8")).replace(serverImport, "../../../supabase"));

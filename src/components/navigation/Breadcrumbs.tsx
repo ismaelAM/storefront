@@ -26,6 +26,7 @@ export async function Breadcrumbs({
   // Add ancestors (they come from the API in order from root to parent)
   if (category.ancestors && category.ancestors.length > 0) {
     category.ancestors.forEach((ancestor) => {
+      if (ancestor.permalink === "tcg") return;
       items.push({
         name: ancestor.name,
         href: `${basePath}/c/${ancestor.permalink}`,

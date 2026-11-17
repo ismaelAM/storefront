@@ -37,7 +37,7 @@ const rows = [0, 1, 2, 3].map((i) => ({
     product: {
       id: `p${i}`,
       name: `Game ${i}`,
-      category_key: "juegos-de-mesa/general",
+      category_key: "tcg/one-piece",
       spree_product_id: `native${i}`,
       requires_review: false,
       review_decision: "approved",

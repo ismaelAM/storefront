@@ -1,4 +1,5 @@
 // @vitest-environment node
+import * as tcgShop from "../../supabase/functions/_shared/tcg-shop";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
@@ -75,6 +76,8 @@ function fixture(
     failed_items: 0,
   };
   const product = {
+    categoryKey: "tcg/one-piece",
+    productName: "Fundas One Piece",
     sourceUrl: "https://tcgfactory.com/es/distribucion/fundas.html",
     externalVariantId: "ean_1",
     availability: "unavailable",
@@ -144,6 +147,7 @@ function fixture(
     },
   };
   const tick = runInNewContext(`${code}; tcgFactoryTick`, {
+    ...tcgShop,
     supabase,
     console,
     URL,

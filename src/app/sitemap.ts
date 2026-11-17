@@ -1,3 +1,4 @@
+import { tcgGameForPath } from "../../supabase/functions/_shared/tcg-shop";
 import type { MetadataRoute } from "next";
 import {
   DEFAULT_LOCALE,
@@ -359,6 +360,7 @@ function appendCategoryEntries(
   categories: SitemapCategory[],
 ): void {
   for (const category of categories) {
+    if (!tcgGameForPath(category.permalink)) continue;
     entries.push({
       url: `${basePath}/c/${category.permalink}`,
       ...(category.updated_at

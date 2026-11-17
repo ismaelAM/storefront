@@ -53,7 +53,7 @@
     "updatePreferencesFailed": "Impossible de mettre à jour vos préférences régionales. Veuillez réessayer."
   },
   "footer": {
-    "description": "TCG, jeux de société, mangas et objets de collection sélectionnés avec soin. Achat simple, service attentif et commandes préparées avec soin.",
+    "description": "Boîtes, boosters, decks et accessoires pour vos jeux de cartes préférés.",
     "shop": "Boutique",
     "allProducts": "Tous les produits",
     "categories": "Categories",
@@ -67,7 +67,7 @@
   },
   "home": {
     "welcome": "{storeName}",
-    "heroDescription": "TCG, jeux de société, mangas et objets de collection pour votre prochaine partie, collection ou lecture.",
+    "heroDescription": "Boîtes, boosters, decks et accessoires pour vos jeux de cartes préférés.",
     "shopNow": "Tout parcourir",
     "featuredProducts": "Produits en vedette",
     "viewAll": "Voir tout",
@@ -677,5 +677,17 @@
     "tariffExpired": "Les tarifs 2026 ne sont pas valables à la date actuelle. Ils doivent être actualisés avant le calcul.",
     "invalidRequest": "Les données du colis n’ont pas pu être lues.",
     "networkError": "Le calcul a échoué. Veuillez réessayer."
+  },
+  "tcgShop": {
+    "catalogName": "Jeux de cartes à collectionner",
+    "games": "Choisissez votre jeu",
+    "allProducts": "Voir tout le catalogue",
+    "catalogName": "Jeux de cartes à collectionner",
+    "allFormats": "Tous les formats",
+    "boosters": "Boîtes et boosters",
+    "decks": "Decks",
+    "sets": "Coffrets et collections",
+    "accessories": "Accessoires de jeu",
+    "description": "Boîtes, boosters, decks et accessoires pour vos jeux de cartes préférés."
   }
 }

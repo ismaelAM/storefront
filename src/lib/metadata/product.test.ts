@@ -39,6 +39,7 @@ const initialProduct = {
   name: "Fundas",
   slug: "fundas",
   price,
+  tags: ["bison-tcg-catalog"],
   purchasable: true,
   in_stock: true,
   preorder: false,

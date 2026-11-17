@@ -53,7 +53,7 @@
     "updatePreferencesFailed": "Die regionalen Einstellungen konnten nicht aktualisiert werden. Bitte versuchen Sie es erneut."
   },
   "footer": {
-    "description": "TCGs, Brettspiele, Manga und Sammlerstücke, sorgfältig ausgewählt. Einfach einkaufen, persönliche Hilfe und sorgfältig verpackte Bestellungen.",
+    "description": "Displays, Booster, Decks und Zubehör für deine Lieblingskartenspiele.",
     "shop": "Shop",
     "allProducts": "Alle Produkte",
     "categories": "Kategorien",
@@ -67,7 +67,7 @@
   },
   "home": {
     "welcome": "{storeName}",
-    "heroDescription": "TCGs, Brettspiele, Manga und Sammlerstücke für den nächsten Spieleabend, die Sammlung oder die nächste Lektüre.",
+    "heroDescription": "Displays, Booster, Decks und Zubehör für deine Lieblingskartenspiele.",
     "shopNow": "Alle Produkte",
     "featuredProducts": "Ausgewählte Produkte",
     "viewAll": "Alle ansehen",
@@ -677,5 +677,17 @@
     "tariffExpired": "Die Tarife für 2026 gelten nicht für das aktuelle Datum und müssen aktualisiert werden.",
     "invalidRequest": "Die Paketdaten konnten nicht gelesen werden.",
     "networkError": "Die Berechnung ist fehlgeschlagen. Bitte erneut versuchen."
+  },
+  "tcgShop": {
+    "catalogName": "Sammelkartenspiele",
+    "games": "Wähle dein Spiel",
+    "allProducts": "Zum gesamten Sortiment",
+    "catalogName": "Sammelkartenspiele",
+    "allFormats": "Alle Formate",
+    "boosters": "Displays und Booster",
+    "decks": "Decks",
+    "sets": "Sets und Kollektionen",
+    "accessories": "Spielzubehör",
+    "description": "Displays, Booster, Decks und Zubehör für deine Lieblingskartenspiele."
   }
 }

@@ -1,3 +1,4 @@
+import { TCG_CATALOG_TAG, tcgGameForPath } from "../../../../../../../supabase/functions/_shared/tcg-shop";
 import type { Data } from "@puckeditor/core";
 import type { Category } from "@spree/sdk";
 import type { Metadata } from "next";
@@ -56,6 +57,7 @@ function findBreadcrumbCategory(
   categories: Category[],
   categoryId?: string,
 ): Category | undefined {
+  categories = categories.filter((category) => tcgGameForPath(category.permalink));
   if (categories.length === 0) return undefined;
   if (categoryId) {
     const match = categories.find((c) => c.id === categoryId);
@@ -117,6 +119,8 @@ export default async function ProductPage({
     notFound();
   }
 
+  if (!product.tags?.includes(TCG_CATALOG_TAG)) notFound();
+
   const storeUrl = getStoreUrl();
   const shortDescription = buildProductShortDescription(product, locale);
   const canonicalUrl = storeUrl
@@ -135,7 +139,8 @@ export default async function ProductPage({
   let breadcrumbCategory: Category | undefined;
   if (category_id) {
     try {
-      breadcrumbCategory = await getCachedCategory(category_id, ["ancestors"]);
+      const category = await getCachedCategory(category_id, ["ancestors"]);
+      breadcrumbCategory = tcgGameForPath(category.permalink) ? category : undefined;
     } catch {
       breadcrumbCategory = undefined;
     }

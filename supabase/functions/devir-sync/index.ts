@@ -1,3 +1,4 @@
+import { isTcgShopProduct, tcgFormatForName, TCG_CATALOG_TAG, TCG_FORMAT_TAG_PREFIX } from "../_shared/tcg-shop.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
@@ -3602,8 +3603,10 @@ async function syncProductToSpree(
   const managedTag = catalogContext ? "catalog-managed" : "devir";
   const readyTag = catalogContext ? "catalog-ready" : "devir-ready";
   const reviewTag = catalogContext ? "catalog-review" : "devir-review";
+  const tcgFormat = tcgFormatForName(spreeProductName);
   const sourceTags = [
     managedTag,
+    ...(isTcgShopProduct(spreeProductName, key) ? [TCG_CATALOG_TAG, ...(tcgFormat ? [TCG_FORMAT_TAG_PREFIX + tcgFormat] : [])] : []),
     ...(sourceCode === "devir" ? ["devir"] : []),
     review ? reviewTag : readyTag,
     ...(review ? ["REVISION-HUMANA", "NECESITA-TU-AYUDA"] : []),
@@ -3694,6 +3697,7 @@ async function syncProductToSpree(
         ...(existing.product.tags ?? []).filter(
           (tag) =>
             !tag.startsWith("sourced:") &&
+            !tag.startsWith(TCG_FORMAT_TAG_PREFIX) && tag !== TCG_CATALOG_TAG &&
             ![
               "catalog-ready",
               "catalog-review",
@@ -8740,7 +8744,7 @@ async function rotateDailyOffersUnlocked(
       }
       const name = String(row.product_name ?? productRow.name ?? "");
       const key = String(productRow.category_key ?? "").trim();
-      const category = dailyOfferCategory(key);
+      const category = dailyOfferCategory(key, name);
       if (!category || isBookProduct({ sku: String(row.canonical_sku ?? ""), name }, key)) return [];
       const profile = commercialPricingProfile({
         name,
@@ -10001,7 +10005,7 @@ async function tcgFactoryDiscoverPublicBatch(
     try {
       const detail = await tcgFactoryTextFetch(url);
       const product = parseTcgFactoryPublicProduct(detail.html, url, section);
-      if (isExcludedCatalogLanguage(product)) continue;
+      if (isExcludedCatalogLanguage(product) || !isTcgShopProduct(product.productName, product.categoryKey)) continue;
       await upsertTcgFactoryDiscovery(supplier.id, product, runId);
       discovered += 1;
     } catch (error) {
@@ -10321,7 +10325,7 @@ async function loadDailyOfferRefresh(supplier: CatalogSupplierRow): Promise<Arra
     for (const row of rows) {
       const variant = row.variant;
       const product = variant.product;
-      const category = dailyOfferCategory(product.category_key);
+      const category = dailyOfferCategory(product.category_key, product.name);
       if (!category || !variant.spree_variant_id || !product.spree_product_id ||
         rejectedProductIds.has(product.spree_product_id) ||
         variant.fulfillment_mode !== "supplier_or_physical" || product.review_decision === "rejected" ||
@@ -10539,7 +10543,7 @@ async function tcgFactoryTick(
         url,
         refreshingOffers ? undefined : state.section,
       );
-      if (isExcludedCatalogLanguage(publicProduct)) return;
+      if (isExcludedCatalogLanguage(publicProduct) || !isTcgShopProduct(publicProduct.productName, publicProduct.categoryKey)) return;
       await upsertTcgFactoryDiscovery(supplier.id, publicProduct, itemRunId);
       outcome.discovered = 1;
 

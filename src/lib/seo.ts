@@ -402,7 +402,7 @@ export function buildBreadcrumbJsonLd(
 
   if (category.ancestors) {
     for (const ancestor of category.ancestors) {
-      if (!ancestor.is_root) {
+      if (!ancestor.is_root && ancestor.permalink !== "tcg") {
         items.push({
           name: ancestor.name,
           url: buildCanonicalUrl(

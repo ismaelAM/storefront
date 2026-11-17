@@ -74,7 +74,7 @@ describe("private daily offer images", () => {
     ]);
     expect(render).toHaveBeenCalledWith({
       dayKey: "2026-10-11",
-      categoryLabel: "TCG",
+      categoryLabel: "Magic: The Gathering",
       offers: [offer],
       logoUrl: "https://example.test/logo.png",
       storeUrl: "https://example.test",
@@ -87,7 +87,7 @@ describe("private daily offer images", () => {
     );
   });
   it("does not render an empty category", async () => {
-    expect((await GET(request("category=accesorios"))).status).toBe(404);
+    expect((await GET(request("category=yugioh"))).status).toBe(404);
     expect(render).not.toHaveBeenCalled();
   });
   it("sanitizes rendering failures", async () => {

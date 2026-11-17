@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { getTranslations } from "next-intl/server";
 import { buildHreflangLanguages } from "@/lib/metadata/alternates";
 import { validateMetadataRoute } from "@/lib/metadata/validate-route";
 import {
@@ -7,9 +8,7 @@ import {
   SOCIAL_IMAGE_PATH,
 } from "@/lib/seo";
 import {
-  getStoreMetaDescription,
   getStoreName,
-  getStoreSeoTitle,
   getStoreUrl,
 } from "@/lib/store";
 
@@ -23,8 +22,9 @@ export async function generateHomeMetadata({
   locale,
 }: HomeMetadataParams): Promise<Metadata> {
   validateMetadataRoute(country, locale);
-  const storeName = getStoreSeoTitle();
-  const description = getStoreMetaDescription();
+  const t = await getTranslations({ locale: locale as Locale, namespace: "tcgShop" });
+  const storeName = `${getStoreName()} | ${t("catalogName")}`;
+  const description = t("description");
   const storeUrl = getStoreUrl();
   const canonicalUrl = storeUrl
     ? buildCanonicalUrl(storeUrl, `/${country}/${locale}`)

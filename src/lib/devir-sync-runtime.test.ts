@@ -1,4 +1,5 @@
 // @vitest-environment node
+import * as tcgShop from "../../supabase/functions/_shared/tcg-shop";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
@@ -62,6 +63,7 @@ function fixture(overrides: Record<string, unknown> = {}, entry = false) {
   const api = runInNewContext(
     `${code}; Object.assign(globalThis, __overrides); ${entryCode}; ({ handler: globalThis.__handler, runtime: syncRuntime, syncDatabaseFetch: typeof syncDatabaseFetch === "function" ? syncDatabaseFetch : undefined, spreeRequest, processCategories, scheduledTcgFactoryTick, maintenance: typeof runtimeMaintenanceTick === 'function' ? runtimeMaintenanceTick : undefined, tcgFactoryTick, tcgFactoryTextFetch, tcgFactoryLogin, reconcileCatalogVariant, processProducts, retireMissingDevirOffers, validateSpreeAdminKey, completeCatalogSupplierRun, rotateDailyOffersUnlocked })`,
     {
+      ...tcgShop,
       isExcludedCatalogLanguage,
       normalizeSupplierCode: (value: string) => value,
       dailyOfferSelectionComplete,
@@ -609,6 +611,8 @@ function discoveryFixture(stalledUrl?: string, failure = "budget") {
     }),
     parseTcgFactoryPublicProduct: (_html: string, url: string) => ({
       sourceUrl: url,
+      categoryKey: "tcg/mtg",
+      productName: "Magic Booster",
       availability: "available",
       reference: url,
       referencePriceNet: 20,

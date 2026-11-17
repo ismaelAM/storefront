@@ -1,3 +1,4 @@
+import { TCG_CATALOG_TAG } from "../../../supabase/functions/_shared/tcg-shop";
 import type { Metadata } from "next";
 import { getCachedProduct, PRODUCT_METADATA_EXPAND } from "@/lib/data/cached";
 import { getProductTranslation } from "@/lib/data/product-translation";
@@ -43,6 +44,9 @@ export async function generateProductMetadata({
     return { title: "Product Not Found" };
   }
 
+  if (!product.tags?.includes(TCG_CATALOG_TAG)) {
+    return { robots: { index: false, follow: false } };
+  }
   const title = product.meta_title || product.name;
   const description = buildProductShortDescription(product, locale);
 

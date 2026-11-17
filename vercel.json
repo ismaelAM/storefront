@@ -3,6 +3,7 @@
   "regions": ["dub1"],
   "git": {
     "deploymentEnabled": {
+      "feat/tcg-store": false,
       "fix/budget-stability": false,
       "main": false,
       "chore/retire-devir": false,

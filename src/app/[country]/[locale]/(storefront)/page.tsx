@@ -1,5 +1,8 @@
 import type { Product } from "@spree/sdk";
 import type { Metadata } from "next";
+import { TcgGameDirectory } from "@/components/layout/TcgGameDirectory";
+import { tcgNavigation } from "@/lib/catalog/tcg-navigation";
+import { getCategories } from "@/lib/data/categories";
 import { HomePuckRenderer } from "@/components/puck/HomePuckRenderer";
 import { JsonLd } from "@/components/seo/JsonLd";
 import { PRODUCT_CARD_FIELDS } from "@/lib/data/cached";
@@ -11,6 +14,7 @@ import { buildHomeMerchandisingProducts } from "@/lib/puck/home-merchandising";
 import { buildCanonicalUrl, buildWebSiteJsonLd } from "@/lib/seo";
 import { getAccessToken } from "@/lib/spree";
 import { getStoreUrl } from "@/lib/store";
+import { TCG_CATALOG_TAG } from "../../../../../supabase/functions/_shared/tcg-shop";
 import { madridDailyOfferDay } from "../../../../../supabase/functions/_shared/daily-offer-scheduling";
 
 interface HomePageProps {
@@ -31,7 +35,11 @@ export async function generateMetadata({
 export default async function HomePage({ params }: HomePageProps) {
   const { country, locale } = await params;
   const basePath = `/${country}/${locale}`;
-  const dataPromise = getHomePageData();
+  const dataPromise = getHomePageData(locale);
+  const gamesPromise = getCategories(
+    { depth_eq: 0, expand: ["children.children"] },
+    { country, locale },
+  ).then(({ data }) => tcgNavigation(data)).catch(() => []);
   const userToken = await getAccessToken();
   const now = new Date();
   const dayKey = madridDailyOfferDay(now).dayKey;
@@ -42,7 +50,7 @@ export default async function HomePage({ params }: HomePageProps) {
       const params = getHomeCatalogParams(data);
       return params.limit === 0
         ? { data: [] as Product[] }
-        : cachedListProducts(params, { locale, country }, "dtc", userToken);
+        : cachedListProducts({ ...params, tags_name_in: [TCG_CATALOG_TAG] }, { locale, country }, "dtc", userToken);
     })
     .catch((error) => {
       console.error("HomePuckRenderer: failed to load catalog", error);
@@ -74,8 +82,8 @@ export default async function HomePage({ params }: HomePageProps) {
     ]);
 
     products = buildHomeMerchandisingProducts(
-      saleResponse.data ?? [],
-      preorderResponse.data ?? [],
+      (saleResponse.data ?? []).filter((product) => product.tags?.includes(TCG_CATALOG_TAG)),
+      (preorderResponse.data ?? []).filter((product) => product.tags?.includes(TCG_CATALOG_TAG)),
       now,
     );
   } catch (error) {
@@ -97,6 +105,7 @@ export default async function HomePage({ params }: HomePageProps) {
       {canonicalUrl && (
         <JsonLd data={buildWebSiteJsonLd(canonicalUrl, locale)} />
       )}
+      <TcgGameDirectory games={await gamesPromise} basePath={basePath} locale={locale as Locale} />
       <HomePuckRenderer
         products={products}
         catalogProducts={catalogResponse.data ?? []}

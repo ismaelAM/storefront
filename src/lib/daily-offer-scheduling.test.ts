@@ -28,9 +28,9 @@ const code = ts.transpileModule(
 ).outputText;
 const completeProducts = [
   "tcg",
-  "juegos-de-mesa",
-  "accesorios",
-  "merchandising",
+  "one-piece",
+  "yugioh",
+  "otros-tcg",
 ].flatMap((category) =>
   Array.from({ length: 3 }, (_, i) => ({
     productId: category + i,

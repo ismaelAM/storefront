@@ -9,7 +9,7 @@ import {
 
 function setup() {
   const offers = (
-    ["tcg", "juegos-de-mesa", "accesorios", "merchandising"] as const
+    ["tcg", "one-piece", "yugioh", "otros-tcg"] as const
   ).flatMap((category) =>
     [1, 2, 3].map((n) => ({
       productId: `${category}${n}`,

@@ -28,7 +28,7 @@ const product = {
   slug: "caja-real",
   purchasable: true,
   thumbnail_url: "https://console.spree.sh/rails/active_storage/caja.jpg",
-  tags: ["daily-offer", "offer-date:2026-10-11"],
+  tags: ["bison-tcg-catalog", "daily-offer", "offer-date:2026-10-11"],
   default_variant_id: "variant_1",
   price: { amount: "9", currency: "EUR", price_list_id: "pl_other" },
   variants: [
@@ -51,7 +51,7 @@ describe("public daily offer snapshot", () => {
     const previous = { ...state, day_key: "2026-10-10" };
     const yesterday = {
       ...product,
-      tags: ["daily-offer", "offer-date:2026-10-10"],
+      tags: ["bison-tcg-catalog", "daily-offer", "offer-date:2026-10-10"],
     };
     expect(
       buildSocialOffers(
@@ -183,7 +183,7 @@ describe("automatic Instagram hashtags", () => {
 
   it("adds five stable, unique brand/category hashtags to a complete daily carousel", () => {
     const offers = (
-      ["tcg", "juegos-de-mesa", "accesorios", "merchandising"] as const
+      ["tcg", "one-piece", "yugioh", "otros-tcg"] as const
     ).flatMap((category) =>
       [1, 2, 3].map((n) => ({
         ...offer,
@@ -196,7 +196,7 @@ describe("automatic Instagram hashtags", () => {
       "https://www.bisontcg.com",
     );
     expect(caption.split("\n").at(-1)).toBe(
-      "#BisonTCG #TCG #JuegosDeMesa #AccesoriosTCG #Merchandising",
+      "#BisonTCG #MagicTheGathering #OnePieceCardGame #YuGiOh #TCG",
     );
     const tags = caption.match(/#[A-Za-z]+/g) ?? [];
     expect(tags).toHaveLength(5);
@@ -208,12 +208,12 @@ describe("automatic Instagram hashtags", () => {
       { ...snapshot, offers: [offer, { ...offer, productId: "p2" }] },
       "https://www.bisontcg.com",
     );
-    expect(caption.split("\n").at(-1)).toBe("#BisonTCG #TCG");
+    expect(caption.split("\n").at(-1)).toBe("#BisonTCG #MagicTheGathering");
   });
 
   it("keeps the complete twelve-offer caption within the publishing character budget", () => {
     const offers = (
-      ["tcg", "juegos-de-mesa", "accesorios", "merchandising"] as const
+      ["tcg", "one-piece", "yugioh", "otros-tcg"] as const
     ).flatMap((category) =>
       [1, 2, 3].map((n) => ({
         ...offer,
@@ -227,6 +227,6 @@ describe("automatic Instagram hashtags", () => {
       "https://www.bisontcg.com",
     );
     expect([...caption].length).toBeLessThanOrEqual(2200);
-    expect(caption).toContain("#Merchandising");
+    expect(caption).toContain("#TCG");
   });
 });

@@ -1,5 +1,6 @@
 "use server";
 
+import { TCG_CATALOG_TAG } from "../../../supabase/functions/_shared/tcg-shop";
 import type { Category, Media, Product } from "@spree/sdk";
 import { cacheLife, cacheTag } from "next/cache";
 import { getClient } from "@/lib/spree";
@@ -60,7 +61,7 @@ export async function getSitemapResourceCount(
   const response =
     resource === "products"
       ? await getClient().products.list(
-          { page: 1, limit: 1, fields: ["id"] },
+          { page: 1, limit: 1, fields: ["id"], tags_name_in: [TCG_CATALOG_TAG] },
           options,
         )
       : await getClient().categories.list(
@@ -84,6 +85,7 @@ export async function getSitemapProductPage(
       page,
       limit,
       expand: ["media"],
+      tags_name_in: [TCG_CATALOG_TAG],
       fields: ["id", "slug", "updated_at", "media", ...TRANSLATED_FIELDS],
     },
     options,
