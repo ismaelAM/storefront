@@ -86,8 +86,8 @@ const nextConfig: NextConfig = {
     // Anonymous browsing tolerates a longer snapshot; carts still validate live.
     catalogGuestProducts: {
       stale: 120,
-      revalidate: 600,
-      expire: 1800,
+      revalidate: 1200,
+      expire: 3600,
     },
     // A date-tagged selection may be briefly empty while the 05:00 rotation runs.
     catalogDailyOffers: {

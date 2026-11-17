@@ -30,7 +30,7 @@ beforeEach(() => {
 
 describe("catalogue cache economy", () => {
   it.each([
-    ["catalogGuestProducts", { stale: 120, revalidate: 600, expire: 1800 }],
+    ["catalogGuestProducts", { stale: 120, revalidate: 1200, expire: 3600 }],
     ["catalogProducts", { stale: 30, revalidate: 60, expire: 300 }],
     ["catalogDailyOffers", { stale: 15, revalidate: 60, expire: 120 }],
   ] as const)("configures %s with the approved freshness budget", (profile, lifetime) => {

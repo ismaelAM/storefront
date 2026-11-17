@@ -3,6 +3,7 @@
   "regions": ["dub1"],
   "git": {
     "deploymentEnabled": {
+      "fix/budget-stability": false,
       "main": false,
       "chore/retire-devir": false,
       "fix/daily-offers": false,
