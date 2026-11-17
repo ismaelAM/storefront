@@ -96,6 +96,7 @@ export const ProductCard = memo(function ProductCard({
               without wrapping the content in an <a> — HiddenPricePrompt renders
               its own link, and anchors can't nest. */}
           <Link
+            prefetch={false}
             href={`${basePath}/products/${product.slug}${categoryId ? `?category_id=${categoryId}` : ""}`}
             className="after:absolute after:inset-0"
             onClick={handleClick}

@@ -28,7 +28,10 @@ const getRootCategories = cache(async (country: string, locale: string) => {
     return null;
   });
 
-  if (filteredResponse?.data?.length) return filteredResponse.data;
+  // A failed backend read is not an empty catalogue. Retrying a wider query
+  // during the same render only adds load to an unavailable service.
+  if (!filteredResponse) return EMPTY_CATEGORIES;
+  if (filteredResponse.data?.length) return filteredResponse.data;
 
   const fallbackResponse = await getCategories(
     { expand: ["children.children"] },

@@ -2,6 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "git": {
     "deploymentEnabled": {
+      "fix/budget-stability": false,
       "main": false,
       "chore/retire-devir": false,
       "fix/daily-offers": false,

@@ -1,8 +1,11 @@
 import { Children, type ReactElement, type ReactNode, Suspense } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("next/server", () => ({ connection: vi.fn() }));
 vi.mock("@/lib/data/categories", () => ({ getCategories: vi.fn() }));
+vi.mock("@/lib/puck/get-site-appearance", () => ({
+  getSiteAppearance: async () => ({}),
+}));
 vi.mock("@/components/layout/Header", () => ({
   Header: () => null,
   HeaderMobileMenu: () => null,
@@ -14,6 +17,7 @@ vi.mock("@/components/layout/Footer", () => ({
 
 import { Footer } from "@/components/layout/Footer";
 import { Header } from "@/components/layout/Header";
+import { getCategories } from "@/lib/data/categories";
 import StorefrontLayout from "./layout";
 
 interface LayoutElementProps {
@@ -25,6 +29,58 @@ interface LayoutElementProps {
 }
 
 describe("StorefrontLayout", () => {
+  beforeEach(() => {
+    vi.mocked(getCategories).mockReset();
+  });
+
+  async function loadFooterCategories() {
+    const layout = await StorefrontLayout({
+      children: null,
+      params: Promise.resolve({ country: "es", locale: "es" }),
+    });
+    const footer = Children.toArray(layout.props.children).at(
+      -1,
+    ) as ReactElement<{
+      categoryLinks: ReactElement<{ children: ReactElement }>;
+    }>;
+    const loader = footer.props.categoryLinks.props.children;
+    return (loader.type as (props: unknown) => Promise<ReactElement>)(
+      loader.props,
+    );
+  }
+
+  it("does not issue a second catalogue query when the root-category request fails", async () => {
+    vi.mocked(getCategories).mockRejectedValue(
+      new Error("Backend unavailable"),
+    );
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    try {
+      const result = await loadFooterCategories();
+      expect(result.props).toMatchObject({ rootCategories: [] });
+      expect(getCategories).toHaveBeenCalledTimes(1);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it("still falls back when the API successfully returns no root categories", async () => {
+    const root = {
+      id: "cat_real",
+      name: "TCG",
+      permalink: "tcg",
+      depth: 0,
+      parent_id: null,
+    };
+    vi.mocked(getCategories)
+      .mockResolvedValueOnce({ data: [] } as never)
+      .mockResolvedValueOnce({ data: [root] } as never);
+    const result = await loadFooterCategories();
+    expect(result.props).toMatchObject({ rootCategories: [root] });
+    expect(getCategories).toHaveBeenCalledTimes(2);
+  });
+
   it("keeps page chrome outside the category navigation Suspense boundaries", async () => {
     const content = <section>Storefront content</section>;
     const layout = (await StorefrontLayout({

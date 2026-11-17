@@ -1,5 +1,6 @@
 import { type Client, createClient } from "@spree/sdk";
 import type { Surface } from "./surface";
+import { spreeFetch } from "./transport";
 import type { SpreeNextConfig } from "./types";
 
 let _client: Client | null = null;
@@ -16,6 +17,7 @@ export function initSpreeNext(config: SpreeNextConfig): void {
   _client = createClient({
     baseUrl: config.baseUrl,
     publishableKey: config.publishableKey,
+    fetch: spreeFetch,
   });
 }
 
@@ -101,6 +103,7 @@ export function getWholesaleClient(): Client {
     baseUrl: config.baseUrl,
     publishableKey,
     channel,
+    fetch: spreeFetch,
   });
   return _wholesaleClient;
 }

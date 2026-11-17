@@ -21,7 +21,7 @@ export interface PuckProductCardProps {
 
 export function ProductCard({ name, description, image = "", price, comparePrice, url, badge, cardBackgroundColor = "var(--surface)", titleColor = "var(--text)", textColor = "var(--text-muted)", priceColor = "var(--text)", radiusClass = "rounded-lg", aspectClass = "aspect-square" }: PuckProductCardProps) {
   return (
-    <Link href={url} className={`group block overflow-hidden shadow-sm ring-1 ring-border/70 transition-[box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:shadow-md ${radiusClass}`} style={{ backgroundColor: cardBackgroundColor }}>
+    <Link href={url} prefetch={false} className={`group block overflow-hidden shadow-sm ring-1 ring-border/70 transition-[box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:shadow-md ${radiusClass}`} style={{ backgroundColor: cardBackgroundColor }}>
       <article>
         <div className={`relative w-full overflow-hidden bg-muted ${aspectClass}`}>
           {image ? (
