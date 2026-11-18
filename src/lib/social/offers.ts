@@ -1,20 +1,23 @@
+import { TCG_CATALOG_TAG } from "../../../supabase/functions/_shared/tcg-shop";
 import { madridDailyOfferDay } from "../../../supabase/functions/_shared/daily-offer-scheduling";
 import {
   type DailyOfferCategory,
   dailyOfferCategory,
+  isDailyOfferCategory,
+  DAILY_OFFERS_PER_CATEGORY,
 } from "../../../supabase/functions/_shared/daily-offer-selection";
 
 export const OFFER_CATEGORIES: Record<DailyOfferCategory, string> = {
-  tcg: "TCG",
-  "juegos-de-mesa": "Juegos de mesa y rol",
-  accesorios: "Accesorios",
-  merchandising: "Merchandising",
+  tcg: "Magic: The Gathering",
+  "one-piece": "One Piece Card Game",
+  yugioh: "Yu-Gi-Oh!",
+  "otros-tcg": "Más juegos de cartas",
 };
 const CATEGORY_HASHTAGS: Record<DailyOfferCategory, string> = {
-  tcg: "#TCG",
-  "juegos-de-mesa": "#JuegosDeMesa",
-  accesorios: "#AccesoriosTCG",
-  merchandising: "#Merchandising",
+  tcg: "#MagicTheGathering",
+  "one-piece": "#OnePieceCardGame",
+  yugioh: "#YuGiOh",
+  "otros-tcg": "#TCG",
 };
 export interface DailyOfferState {
   day_key: string | null;
@@ -102,17 +105,21 @@ export function buildSocialOffers(
   const seen = new Set<string>();
   for (const selected of state.active_products) {
     const product = products.find((p) => p.id === selected.productId);
-    const category = dailyOfferCategory(
-      selected.category ?? categoryKeys[selected.productId],
-    );
+    const storedCategory = selected.category;
+    const nativeCategory = categoryKeys[selected.productId];
+    // Recheck merchandising eligibility against the native source on publish.
+    const category = nativeCategory
+      ? dailyOfferCategory(nativeCategory, product?.name)
+      : isDailyOfferCategory(storedCategory) ? storedCategory : null;
     if (
       !category ||
       seen.has(selected.productId) ||
-      offers.filter((o) => o.category === category).length >= 3
+      offers.filter((o) => o.category === category).length >= DAILY_OFFERS_PER_CATEGORY
     )
       continue;
     if (
       !product?.purchasable ||
+      !product.tags.includes(TCG_CATALOG_TAG) ||
       !product.tags.includes(`offer-date:${dayKey}`) ||
       !product.tags.some(
         (t) => t === "daily-offer" || t === "saturday-special",

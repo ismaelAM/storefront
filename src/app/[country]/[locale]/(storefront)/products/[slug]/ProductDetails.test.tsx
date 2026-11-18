@@ -1,6 +1,7 @@
 import type { Product } from "@spree/sdk";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { getProductDetailsData } from "@/lib/data/product-details-data";
 import { PRODUCT_PAGE_EXPAND } from "@/lib/data/cached";
 import { ProductDetails } from "./ProductDetails";
 
@@ -89,7 +90,7 @@ describe("ProductDetails", () => {
     };
     render(
       <ProductDetails
-        product={product}
+        product={getProductDetailsData(product)}
         basePath="/es/es"
         shortDescription=""
       />,
@@ -123,7 +124,7 @@ describe("ProductDetails", () => {
     };
     render(
       <ProductDetails
-        product={product}
+        product={getProductDetailsData(product)}
         basePath="/es/es"
         shortDescription=""
       />,
@@ -140,7 +141,7 @@ describe("ProductDetails", () => {
   it("shows the master SKU when a product has no custom variants", () => {
     render(
       <ProductDetails
-        product={productWithoutCustomVariants}
+        product={getProductDetailsData(productWithoutCustomVariants)}
         basePath="/us/en"
         shortDescription="A concise product description."
       />,
@@ -153,7 +154,7 @@ describe("ProductDetails", () => {
   it("shows the concise product description near the title", () => {
     render(
       <ProductDetails
-        product={productWithoutCustomVariants}
+        product={getProductDetailsData(productWithoutCustomVariants)}
         basePath="/us/en"
         shortDescription="A concise product description."
       />,
@@ -162,5 +163,74 @@ describe("ProductDetails", () => {
     expect(
       screen.getByText("A concise product description."),
     ).toBeInTheDocument();
+  });
+});
+
+describe("product data sent to the browser", () => {
+  it("keeps stock, prices, options and the two usable image URLs without server-only fields", () => {
+    const nativeVariant = {
+      ...productWithoutCustomVariants.default_variant!,
+      dimensions_unit: "cm",
+      weight: 1,
+      price: {
+        ...productWithoutCustomVariants.default_variant!.price,
+        amount: "25.00",
+        currency: "USD",
+        amount_in_cents: 2500,
+      },
+      option_values: [{
+        id: "unused-id",
+        option_type_id: "language",
+        option_type_label: "Idioma",
+        name: "es",
+        label: "Español",
+      }],
+    };
+    const product = {
+      ...productWithoutCustomVariants,
+      description_html: "<p>Cartas en español.</p>",
+      description: "SEO plain description",
+      meta_keywords: "seo-keywords",
+      tags: ["bison-tcg-catalog"],
+      default_variant: nativeVariant,
+      variants: [nativeVariant],
+      media: [{
+        id: "art",
+        alt: "Caja",
+        variant_ids: [nativeVariant.id],
+        xlarge_url: "/main.webp",
+        large_url: "/large.webp",
+        original_url: "/original.png",
+        small_url: "/thumb.webp",
+        mini_url: "/mini.webp",
+        og_image_url: "/seo-image.webp",
+      }],
+      custom_fields: [
+        { id: "lang", key: "language", label: "Idioma", field_type: "short_text", value: "Español" },
+        { id: "private", key: "sourcing.variant_provenance", label: "Proveedor", field_type: "json", value: "internal-only" },
+      ],
+    } as unknown as Product;
+
+    const details = getProductDetailsData(product);
+    expect(details).toMatchObject({
+      default_variant: { id: "variant-master", sku: "MASTER-SKU-001" },
+      variants: [{
+        purchasable: true,
+        in_stock: true,
+        price: { amount: "25.00", amount_in_cents: 2500 },
+        option_values: [{
+          option_type_id: "language", option_type_label: "Idioma", name: "es", label: "Español",
+        }],
+      }],
+      custom_fields: [{ id: "lang", label: "Idioma", field_type: "short_text", value: "Español" }],
+      media: [{ id: "art", alt: "Caja", variant_ids: [nativeVariant.id], src: "/main.webp", thumbnail: "/thumb.webp" }],
+    });
+    expect(details).not.toHaveProperty("description");
+    expect(details).not.toHaveProperty("meta_keywords");
+    expect(details).not.toHaveProperty("tags");
+    expect(details.custom_fields).toHaveLength(1);
+    expect(details.variants[0]).not.toHaveProperty("weight");
+    expect(details.media[0]).not.toHaveProperty("original_url");
+    expect(details.description_html).toBe(product.description_html);
   });
 });

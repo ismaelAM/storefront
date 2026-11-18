@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { tcgGameForPath } from "../../../supabase/functions/_shared/tcg-shop";
 import { getCachedCategory } from "@/lib/data/cached";
 import { cachedGetCategory } from "@/lib/data/categories";
 import {
@@ -43,7 +44,7 @@ export async function generateCategoryMetadata({
     return { title: "Category Not Found" };
   }
 
-  const title = category.meta_title || category.name;
+  const title = tcgGameForPath(category.permalink)?.[1] ?? (category.meta_title || category.name);
   const description =
     category.meta_description ||
     category.description ||

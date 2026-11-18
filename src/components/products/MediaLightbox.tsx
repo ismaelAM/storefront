@@ -1,6 +1,6 @@
 "use client";
 
-import type { Media } from "@spree/sdk";
+import type { ProductGalleryImage } from "@/lib/data/product-details-data";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import Image from "next/image";
 import { useTranslations } from "next-intl";
@@ -10,7 +10,7 @@ const SWIPE_THRESHOLD_PX = 50;
 const SWIPE_MAX_VERTICAL_PX = 75;
 
 interface MediaLightboxProps {
-  images: Media[];
+  images: ProductGalleryImage[];
   activeIndex: number;
   productName: string;
   onClose: () => void;
@@ -36,8 +36,7 @@ export function MediaLightbox({
 }: MediaLightboxProps): React.ReactElement | null {
   const t = useTranslations("products");
   const current = images[activeIndex];
-  const src =
-    current?.xlarge_url || current?.large_url || current?.original_url || null;
+  const src = current?.src;
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   // Tracks whether a pointerdown happened on the backdrop itself (vs.

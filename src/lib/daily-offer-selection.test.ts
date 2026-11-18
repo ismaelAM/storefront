@@ -218,7 +218,7 @@ function fixture(products: ProductFixture[], saturday = false, latencyMs = 0) {
                           id: `catalog-product-${product.id}`,
                           spree_product_id: product.id,
                           name: product.name ?? product.id,
-                          category_key: product.category,
+                          category_key: fixturePath(product.category),
                         }))
                       : [],
               }),
@@ -246,20 +246,33 @@ function productsFor(category: string, count: number): ProductFixture[] {
     category,
   }));
 }
+function fixturePath(category: string | null) {
+  switch (category) {
+    case "tcg": return "tcg/mtg";
+    case "one-piece": return "tcg/one-piece";
+    case "yugioh": return "tcg/yugioh";
+    case "otros-tcg": return "tcg/digimon";
+    default: return category;
+  }
+}
 const balanced = () => [
   ...productsFor("tcg/mtg", 6),
-  ...productsFor("juegos-de-mesa/general", 6),
-  ...productsFor("accesorios/fundas-standard", 6),
-  ...productsFor("merchandising", 6),
+  ...productsFor("tcg/one-piece", 6),
+  ...productsFor("tcg/yugioh", 6),
+  ...productsFor("otros-tcg", 6),
 ];
 
 describe("Pure daily offer category selection", () => {
   it.each([
-    ["tcg/pokemon", "tcg"],
-    ["juegos-de-mesa/expansiones", "juegos-de-mesa"],
-    ["rol/otros", "juegos-de-mesa"],
-    ["accesorios/fundas-standard", "accesorios"],
-    ["merchandising/figuras", "merchandising"],
+    ["tcg/mtg", "tcg"],
+    ["tcg/pokemon", "otros-tcg"],
+    ["tcg/one-piece", "one-piece"],
+    ["tcg/yugioh", "yugioh"],
+    ["juegos-de-mesa/expansiones", null],
+    ["rol/otros", null],
+    ["accesorios/fundas-standard", null],
+    ["merchandising/figuras", null],
+    ["tcg/panini", null],
     ["manga-comic", null],
     ["pinturas", null],
     ["unknown", null],
@@ -275,9 +288,9 @@ describe("Pure daily offer category selection", () => {
         id,
         category: "tcg" as const,
       })),
-      { id: 200, category: "merchandising" as const },
-      { id: 300, category: "accesorios" as const },
-      { id: 400, category: "juegos-de-mesa" as const },
+      { id: 200, category: "otros-tcg" as const },
+      { id: 300, category: "yugioh" as const },
+      { id: 400, category: "one-piece" as const },
     ];
     const candidates = selection.interleaveDailyOfferCandidates(ranked);
     expect(candidates).toHaveLength(120);
@@ -428,7 +441,7 @@ describe("Daily offer category rotation", () => {
       {
         id: "uncapped",
         name: "Manual-priced figure",
-        category: "merchandising",
+        category: "otros-tcg",
         price: 39.99,
         lastAutoPrice: null,
         cost: null,
@@ -555,26 +568,26 @@ describe("Daily offer category rotation", () => {
         .map((offer: { category: string }) => offer.category)
         .sort(),
     ).toEqual([
-      "accesorios",
-      "accesorios",
-      "accesorios",
-      "juegos-de-mesa",
-      "juegos-de-mesa",
-      "juegos-de-mesa",
-      "merchandising",
-      "merchandising",
-      "merchandising",
+      "one-piece",
+      "one-piece",
+      "one-piece",
+      "otros-tcg",
+      "otros-tcg",
+      "otros-tcg",
       "tcg",
       "tcg",
       "tcg",
+      "yugioh",
+      "yugioh",
+      "yugioh",
     ]);
   });
   it("gives scarce categories room before the 120 candidate inspection limit", async () => {
     const f = fixture([
       ...productsFor("tcg/mtg", 130),
-      ...productsFor("juegos-de-mesa/general", 3),
-      ...productsFor("accesorios", 3),
-      ...productsFor("merchandising", 3),
+      ...productsFor("tcg/one-piece", 3),
+      ...productsFor("yugioh", 3),
+      ...productsFor("otros-tcg", 3),
     ]);
     expect((await f.api.rotateDailyOffersUnlocked({})).selected).toHaveLength(
       12,
@@ -583,8 +596,8 @@ describe("Daily offer category rotation", () => {
   it("leaves missing category slots empty instead of borrowing from other categories", async () => {
     const f = fixture([
       ...productsFor("tcg/mtg", 20),
-      ...productsFor("juegos-de-mesa/general", 1),
-      ...productsFor("accesorios", 4),
+      ...productsFor("tcg/one-piece", 1),
+      ...productsFor("yugioh", 4),
       { id: "unknown", category: null },
       { id: "paint", category: "pinturas" },
     ]);
@@ -602,16 +615,16 @@ describe("Daily offer category rotation", () => {
       [
         ...balanced(),
         { id: "manual", category: "tcg/mtg", price: 29 },
-        { id: "review", category: "merchandising", tags: ["catalog-review"] },
+        { id: "review", category: "otros-tcg", tags: ["catalog-review"] },
         { id: "book", category: "rol/otros", name: "Manual del jugador" },
-        { id: "isbn", category: "merchandising", sku: "9781234567890" },
+        { id: "isbn", category: "otros-tcg", sku: "9781234567890" },
         { id: "manga", category: "manga-comic" },
         {
           id: "disabled",
-          category: "merchandising",
+          category: "otros-tcg",
           fulfillmentMode: "disabled",
         },
-        { id: "unavailable", category: "accesorios", purchasable: false },
+        { id: "unavailable", category: "yugioh", purchasable: false },
       ].reverse(),
     );
     const ids = (await f.api.rotateDailyOffersUnlocked({})).selected.map(
@@ -674,17 +687,17 @@ describe("Daily offer category rotation", () => {
   });
   it("does not fill quotas with discounts that cannot meet the contribution floor", async () => {
     const f = fixture([
-      ...productsFor("merchandising", 4).map((product) => ({
+      ...productsFor("otros-tcg", 4).map((product) => ({
         ...product,
         cost: 23,
       })),
-      ...productsFor("accesorios", 3),
+      ...productsFor("yugioh", 3),
     ]);
     const offers = (await f.api.rotateDailyOffersUnlocked({}, true)).selected;
     expect(offers).toHaveLength(3);
     expect(
       offers.every(
-        (offer: { category: string }) => offer.category === "accesorios",
+        (offer: { category: string }) => offer.category === "yugioh",
       ),
     ).toBe(true);
   });
@@ -709,7 +722,7 @@ describe("Daily offer category rotation", () => {
     const offers = (await f.api.rotateDailyOffersUnlocked({}, true)).selected;
     expect(
       offers.map((offer: { productId: string }) => offer.productId).sort(),
-    ).toEqual(["clearance", "rpg-starter"]);
+    ).toEqual(["clearance"]);
     const physical = offers.find(
       (offer: { productId: string }) => offer.productId === "clearance",
     );
@@ -762,18 +775,18 @@ describe("complete automatic daily rotations", () => {
   });
   it("keeps the existing price list when live guards reject a category", async () => {
     const products = balanced().map((p) =>
-      p.category === "merchandising" ? { ...p, purchasable: false } : p,
+      p.category === "otros-tcg" ? { ...p, purchasable: false } : p,
     );
     const f = fixture(products);
     f.setState({ day_key: "2026-10-10", spree_price_list_id: "previous", active_products: [{ productId: "old" }], last_rotated_at: "done" });
     const result = await f.api.rotateDailyOffersUnlocked({});
     expect(result.status).toBe("waiting_catalog");
     expect(f.requests.some((r) => r.method !== "GET")).toBe(false);
-    expect(f.state()).toMatchObject({ day_key: "2026-10-10", spree_price_list_id: "previous", active_products: [{ productId: "old" }], pending_rotation: { dayKey: "2026-10-11", rejectedProductIds: expect.arrayContaining(["merchandising-0"]) } });
+    expect(f.state()).toMatchObject({ day_key: "2026-10-10", spree_price_list_id: "previous", active_products: [{ productId: "old" }], pending_rotation: { dayKey: "2026-10-11", rejectedProductIds: expect.arrayContaining(["otros-tcg-0"]) } });
   });
   it("records an excluded manual price so the next refresh replaces it without editing it", async () => {
     const products = selection.DAILY_OFFER_CATEGORIES.flatMap(category => productsFor(category, 3));
-    const manual = products.find(p => p.category === "juegos-de-mesa")!;
+    const manual = products.find(p => p.category === "one-piece")!;
     const f = fixture(products.map(p => p === manual ? { ...p, price: 35, lastAutoPrice: 30 } : p));
     expect((await f.api.rotateDailyOffersUnlocked({})).status).toBe("waiting_catalog");
     expect(f.state()).toMatchObject({ pending_rotation: { dayKey: "2026-10-11", rejectedProductIds: [manual.id] } });

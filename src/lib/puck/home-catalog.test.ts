@@ -1,6 +1,6 @@
 import type { Data } from "@puckeditor/core";
 import { describe, expect, it } from "vitest";
-import { getHomeCatalogParams } from "./home-catalog";
+import { getHomeProductReadPlan } from "./home-catalog";
 
 const page = (props: Record<string, unknown>): Data => ({
   root: {},
@@ -9,9 +9,9 @@ const page = (props: Record<string, unknown>): Data => ({
 
 describe("home catalog request budget", () => {
   it("loads twelve card summaries for the published twelve-card catalog", () => {
-    const params = getHomeCatalogParams(
+    const params = getHomeProductReadPlan(
       page({ productCount: "12", productFilter: "all" }),
-    );
+    ).catalog;
     expect(params.limit).toBe(12);
     expect(params.expand).toBeUndefined();
     expect(params.fields).not.toContain("variants");
@@ -23,7 +23,7 @@ describe("home catalog request budget", () => {
     { productFilter: "available" },
   ])("retains the full selection pool for a filtered grid: %j", (filter) => {
     expect(
-      getHomeCatalogParams(page({ productCount: "12", ...filter })).limit,
+      getHomeProductReadPlan(page({ productCount: "12", ...filter })).catalog.limit,
     ).toBe(100);
   });
 
@@ -31,7 +31,7 @@ describe("home catalog request budget", () => {
     { selectedVariantIds: ["variant-80"] },
     { variantFilter: "English" },
   ])("loads variants only when an editor selection needs them: %j", (filter) => {
-    expect(getHomeCatalogParams(page(filter))).toMatchObject({
+    expect(getHomeProductReadPlan(page(filter)).catalog).toMatchObject({
       limit: 100,
       expand: ["variants"],
     });
@@ -47,14 +47,32 @@ describe("home catalog request budget", () => {
         { type: "ProductGrid", props: { id: "nested", productCount: "20" } },
       ],
     };
-    expect(getHomeCatalogParams(data).limit).toBe(20);
+    expect(getHomeProductReadPlan(data).catalog.limit).toBe(20);
   });
 
-  it("does not fetch a general catalog for an offer-only page", () => {
-    expect(getHomeCatalogParams(page({ productFilter: "sale" })).limit).toBe(0);
+  it.each(["sale", "preorder"] as const)(
+    "only reads the merchandising lane requested by an editorial grid: %s",
+    (productFilter) => {
+      expect(getHomeProductReadPlan(page({ productFilter }))).toMatchObject({
+        catalog: { limit: 0 },
+        sale: productFilter === "sale",
+        preorder: productFilter === "preorder",
+      });
+    },
+  );
+
+  it("keeps both lanes available to a product showcase", () => {
+    expect(getHomeProductReadPlan({
+      root: {},
+      content: [{ type: "RealProductShowcase", props: { id: "showcase" } }],
+    })).toMatchObject({ catalog: { limit: 0 }, sale: true, preorder: true });
   });
 
   it("honors the grid's default of eight cards", () => {
-    expect(getHomeCatalogParams(page({})).limit).toBe(8);
+    expect(getHomeProductReadPlan(page({}))).toMatchObject({
+      catalog: { limit: 8 },
+      sale: false,
+      preorder: false,
+    });
   });
 });

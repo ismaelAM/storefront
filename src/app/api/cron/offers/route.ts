@@ -1,5 +1,4 @@
 import { timingSafeEqual } from "node:crypto";
-import { runDailySocialPublication } from "@/lib/social/publication";
 
 export const maxDuration = 300;
 export async function GET(request: Request) {
@@ -21,14 +20,16 @@ export async function GET(request: Request) {
     hourCycle: "h23",
   }).format(now);
   // Keep recovery later in the day if a supplier or Meta is unavailable at 05h.
+  const minute = now.getUTCMinutes();
   const recovery =
-    [8, 12, 16, 20].includes(now.getUTCHours()) && now.getUTCMinutes() === 15;
+    [8, 12, 16, 20].includes(now.getUTCHours()) && minute >= 15 && minute < 20;
   if (hour !== "05" && !recovery)
     return Response.json(
       { status: "outside_window" },
       { headers: { "Cache-Control": "no-store" } },
     );
   try {
+    const { runDailySocialPublication } = await import("@/lib/social/publication");
     return Response.json(await runDailySocialPublication(), {
       headers: { "Cache-Control": "no-store" },
     });

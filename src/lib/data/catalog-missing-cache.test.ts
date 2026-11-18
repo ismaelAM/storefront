@@ -90,6 +90,20 @@ describe.each([
 });
 
 describe("catalogue cache policy and customer pricing", () => {
+  it("forwards sparse detail fields and relation expansions together", async () => {
+    const resource = { id: "sample", name: "Cards" };
+    api.product.mockResolvedValue(resource);
+    await expect(getProduct("sample", {
+      expand: ["variants"],
+      fields: ["id", "name", "price"],
+    })).resolves.toBe(resource);
+    expect(api.product).toHaveBeenCalledExactlyOnceWith(
+      "sample",
+      { expand: ["variants"], fields: ["id", "name", "price"] },
+      { country: "es", locale: "es" },
+    );
+  });
+
   it.each([
     {
       surface: "dtc" as const,

@@ -1,3 +1,4 @@
+vi.mock("next-intl/server", () => ({ getTranslations: async () => (key: string) => key }));
 import { SpreeError } from "@spree/sdk";
 import type { ReactElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -21,6 +22,7 @@ vi.mock("@/lib/data/cached", () => ({
   getCachedProduct: mocks.product,
   getCachedCategory: mocks.category,
   PRODUCT_PAGE_EXPAND: [],
+  PRODUCT_PAGE_FIELDS: [],
   PRODUCT_METADATA_EXPAND: [],
 }));
 vi.mock("@/lib/data/categories", () => ({
@@ -91,7 +93,7 @@ const productParams = { country: "es", locale: "es", slug: "retired-product" };
 const categoryParams = {
   country: "es",
   locale: "es",
-  permalink: ["retired-category"],
+  permalink: ["tcg", "mtg"],
 };
 
 async function renderWholesaleProduct() {

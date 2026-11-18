@@ -35,39 +35,28 @@ export async function getDailySocialOffers() {
     : { data: [], error: null };
   if (categoryError)
     throw new Error("No se pudieron comprobar las categorías.");
-  // Fresh guest DTC requests: never use a customer token or cached account prices.
-  // Keep below the native session-pool limit even while web traffic is active.
-  // A failed read is an upstream failure, not proof an offer is unavailable.
-  const products: PublicOfferProduct[] = [];
-  for (let offset = 0; offset < ids.length; offset += 2) {
-    const batch = await Promise.allSettled(
-      ids.slice(offset, offset + 2).map((id) =>
-        getClient().products.get(
-          id,
-          {
-            expand: ["variants", "default_variant"],
-            fields: [
-              "id",
-              "name",
-              "slug",
-              "purchasable",
-              "tags",
-              "default_variant_id",
-              "thumbnail_url",
-              "price",
-              "original_price",
-              "variants",
-              "default_variant",
-            ],
-          },
-          { country: "es", locale: "es" },
-        ),
-      ),
-    );
-    if (batch.some((result) => result.status === "rejected"))
+  // Recheck prices and shipping eligibility in one fresh DTC request.
+  // The storefront's ID filter decodes native prefixed product IDs.
+  let products: PublicOfferProduct[] = [];
+  if (ids.length) {
+    try {
+      const response = await getClient().products.list(
+        {
+          id_in: ids,
+          limit: ids.length,
+          expand: ["variants", "default_variant"],
+          fields: ["id", "name", "slug", "purchasable", "tags", "default_variant_id", "thumbnail_url"],
+        },
+        { country: "es", locale: "es", headers: { "Cache-Control": "no-cache" } },
+      );
+      products = response.data;
+    } catch {
       throw new Error("No se pudo comprobar el catálogo para la publicación.");
-    for (const result of batch) {
-      if (result.status === "fulfilled") products.push(result.value);
+    }
+    // A missing or unexpected row must never stand in for a verified set.
+    const returnedIds = new Set(products.map((product) => product.id));
+    if (products.length !== ids.length || !ids.every((id) => returnedIds.has(id))) {
+      throw new Error("No se pudo comprobar el catálogo para la publicación.");
     }
   }
   return buildSocialOffers(

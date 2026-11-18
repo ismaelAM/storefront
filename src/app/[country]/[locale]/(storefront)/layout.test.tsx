@@ -2,7 +2,8 @@ import { Children, type ReactElement, type ReactNode, Suspense } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("next/server", () => ({ connection: vi.fn() }));
-vi.mock("@/lib/data/categories", () => ({ getCategories: vi.fn() }));
+vi.mock("@/lib/data/categories", () => ({ cachedGetCategory: vi.fn() }));
+vi.mock("@/lib/puck/get-site-page-data", () => ({ getSitePageData: vi.fn() }));
 vi.mock("@/lib/puck/get-site-appearance", () => ({
   getSiteAppearance: async () => ({}),
 }));
@@ -17,7 +18,8 @@ vi.mock("@/components/layout/Footer", () => ({
 
 import { Footer } from "@/components/layout/Footer";
 import { Header } from "@/components/layout/Header";
-import { getCategories } from "@/lib/data/categories";
+import { cachedGetCategory } from "@/lib/data/categories";
+import { getSitePageData } from "@/lib/puck/get-site-page-data";
 import StorefrontLayout from "./layout";
 
 interface LayoutElementProps {
@@ -30,7 +32,9 @@ interface LayoutElementProps {
 
 describe("StorefrontLayout", () => {
   beforeEach(() => {
-    vi.mocked(getCategories).mockReset();
+    vi.mocked(cachedGetCategory).mockReset();
+    vi.mocked(getSitePageData).mockReset();
+    vi.mocked(getSitePageData).mockResolvedValue({ content: [], root: {} });
   });
 
   async function loadFooterCategories() {
@@ -50,7 +54,7 @@ describe("StorefrontLayout", () => {
   }
 
   it("does not issue a second catalogue query when the root-category request fails", async () => {
-    vi.mocked(getCategories).mockRejectedValue(
+    vi.mocked(cachedGetCategory).mockRejectedValue(
       new Error("Backend unavailable"),
     );
     const consoleError = vi
@@ -59,26 +63,41 @@ describe("StorefrontLayout", () => {
     try {
       const result = await loadFooterCategories();
       expect(result.props).toMatchObject({ rootCategories: [] });
-      expect(getCategories).toHaveBeenCalledTimes(1);
+      expect(cachedGetCategory).toHaveBeenCalledTimes(1);
     } finally {
       consoleError.mockRestore();
     }
   });
 
-  it("still falls back when the API successfully returns no root categories", async () => {
-    const root = {
-      id: "cat_real",
-      name: "TCG",
-      permalink: "tcg",
-      depth: 0,
-      parent_id: null,
-    };
-    vi.mocked(getCategories)
-      .mockResolvedValueOnce({ data: [] } as never)
-      .mockResolvedValueOnce({ data: [root] } as never);
+  it("loads just the TCG root and retains the configured labels and visibility", async () => {
+    const game = { id: "cat_mtg", name: "Magic: The Gathering", permalink: "tcg/mtg", children: [] };
+    const hidden = { id: "cat_pkm", name: "Pokémon", permalink: "tcg/pokemon", children: [] };
+    vi.mocked(cachedGetCategory).mockResolvedValue({
+      id: "cat_tcg", name: "TCG", permalink: "tcg", children: [game, hidden],
+    } as never);
+    vi.mocked(getSitePageData).mockResolvedValue({
+      content: [{
+        type: "Navigation",
+        props: { id: "navigation", items: [
+          { categoryPermalink: "tcg/pokemon", visible: false },
+          { categoryPermalink: "tcg/mtg", visible: true, labelOverride: "Magic" },
+          { categoryPermalink: "board_games", visible: true },
+        ] },
+      }],
+      root: {},
+    });
     const result = await loadFooterCategories();
-    expect(result.props).toMatchObject({ rootCategories: [root] });
-    expect(getCategories).toHaveBeenCalledTimes(2);
+    expect(result.props).toMatchObject({ rootCategories: [{ ...game, name: "Magic" }] });
+    expect(cachedGetCategory).toHaveBeenCalledExactlyOnceWith(
+      "tcg", { expand: ["children"] }, { country: "es", locale: "es" },
+    );
+  });
+
+  it("skips the editor lookup when the TCG root is missing", async () => {
+    vi.mocked(cachedGetCategory).mockResolvedValue(null);
+    const result = await loadFooterCategories();
+    expect(result.props).toMatchObject({ rootCategories: [] });
+    expect(getSitePageData).not.toHaveBeenCalled();
   });
 
   it("keeps page chrome outside the category navigation Suspense boundaries", async () => {

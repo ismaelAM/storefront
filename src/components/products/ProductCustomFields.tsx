@@ -1,33 +1,8 @@
-import type { CustomField } from "@spree/sdk";
+import { isCustomerVisibleField, type PresentedCustomField } from "@/lib/data/product-details-data";
 import { useTranslations } from "next-intl";
 
 interface ProductCustomFieldsProps {
-  customFields?: Array<CustomField>;
-}
-
-function isCustomerVisibleField(field: CustomField): boolean {
-  const metadata = field as CustomField & {
-    key?: string | null;
-    namespace?: string | null;
-  };
-  const key = (metadata.key ?? "").toLowerCase();
-  const namespace = (metadata.namespace ?? "").toLowerCase();
-  const label = (field.label ?? "").toLowerCase();
-
-  if (
-    namespace === "devir" ||
-    namespace === "pricing" ||
-    key.startsWith("devir.") ||
-    key.startsWith("pricing.")
-  ) {
-    return false;
-  }
-
-  if (/\bisbn\b/i.test(key) || /\bisbn\b/i.test(label)) {
-    return false;
-  }
-
-  return true;
+  customFields?: PresentedCustomField[];
 }
 
 function renderBooleanValue(
@@ -38,7 +13,7 @@ function renderBooleanValue(
 }
 
 function renderValue(
-  field: CustomField,
+  field: PresentedCustomField,
   t: ReturnType<typeof useTranslations<"products">>,
 ): React.ReactNode {
   switch (field.field_type) {

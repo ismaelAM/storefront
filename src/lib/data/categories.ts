@@ -35,7 +35,8 @@ export async function cachedGetCategory(
   options: { locale?: string; country?: string },
 ) {
   "use cache: remote";
-  cacheLife("tenMinutes");
+  if (idOrPermalink === "tcg") cacheLife("hours");
+  else cacheLife("tenMinutes");
   cacheTag("category");
   // The remote cache serializes thrown errors without their custom status.
   // Carry a confirmed absence as data and restore the SDK error outside it.

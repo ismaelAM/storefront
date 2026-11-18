@@ -1,4 +1,5 @@
 // @vitest-environment node
+import * as tcgShop from "../../supabase/functions/_shared/tcg-shop";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
@@ -181,7 +182,7 @@ it.each([
   const product = {
     id: "prod1",
     status: "active",
-    tags: managed ? ["catalog-managed", "catalog-ready"] : [],
+    tags: managed ? ["catalog-managed", "catalog-ready", tcgShop.TCG_CATALOG_TAG] : [],
   };
   const currentFields = [
     { id: "manual", key: "manual.keep", value: "operator value" },
@@ -192,6 +193,7 @@ it.each([
   const run = runInNewContext(
     `${production("syncProductToSpree", "upsertProductFields", "upsertVariantProvenance", "catalogProvenanceSignature", "nativePatchMatches", "variantPrice", "checkpointCatalogSpreeMapping")}; syncProductToSpree`,
     {
+      ...tcgShop,
       isExcludedCatalogLanguage,
       productFields: read,
       spreeRequest: write,

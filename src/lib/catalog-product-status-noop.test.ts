@@ -1,4 +1,5 @@
 // @vitest-environment node
+import * as tcgShop from "../../supabase/functions/_shared/tcg-shop";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
@@ -60,6 +61,7 @@ function fixture(
     return 1;
   });
   const run = runInNewContext(`${code}; syncProductToSpree`, {
+    ...tcgShop,
     ...publication,
     isExcludedCatalogLanguage: () => false,
     categoryKey: () => "games",
@@ -159,7 +161,7 @@ describe("product status reconciliation avoids redundant native writes", () => {
       "offer-date:2026-11-10",
       "devir-preorder",
     ]);
-    expect(f.repairChannel).toHaveBeenCalledExactlyOnceWith({}, ["product"]);
+    expect(f.repairChannel).toHaveBeenCalledExactlyOnceWith({}, ["product"], undefined);
     expect(f.reconcileFulfillment).toHaveBeenCalledOnce();
   });
 

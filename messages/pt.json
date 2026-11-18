@@ -53,7 +53,7 @@
     "updatePreferencesFailed": "Não foi possível atualizar as suas preferências regionais. Tente novamente."
   },
   "footer": {
-    "description": "TCG, jogos de tabuleiro, manga e colecionáveis selecionados com cuidado. Compra simples, atendimento próximo e encomendas preparadas com atenção.",
+    "description": "Caixas, boosters, baralhos e acessórios para os teus jogos de cartas favoritos.",
     "shop": "Loja",
     "allProducts": "Todos os produtos",
     "categories": "Categorias",
@@ -67,7 +67,7 @@
   },
   "home": {
     "welcome": "{storeName}",
-    "heroDescription": "TCG, jogos de tabuleiro, manga e colecionáveis para a próxima partida, coleção ou leitura.",
+    "heroDescription": "Caixas, boosters, baralhos e acessórios para os teus jogos de cartas favoritos.",
     "shopNow": "Ver tudo",
     "featuredProducts": "Produtos em destaque",
     "viewAll": "Ver tudo",
@@ -677,5 +677,17 @@
     "tariffExpired": "A tarifa de 2026 não é válida para a data atual. É necessário atualizá-la antes de calcular.",
     "invalidRequest": "Não foi possível ler os dados do pacote.",
     "networkError": "Não foi possível calcular. Tente novamente."
+  },
+  "tcgShop": {
+    "catalogName": "Jogos de cartas colecionáveis",
+    "games": "Escolhe o teu jogo",
+    "allProducts": "Ver todo o catálogo",
+    "catalogName": "Jogos de cartas colecionáveis",
+    "allFormats": "Todos os formatos",
+    "boosters": "Caixas e boosters",
+    "decks": "Baralhos",
+    "sets": "Conjuntos e coleções",
+    "accessories": "Acessórios do jogo",
+    "description": "Caixas, boosters, baralhos e acessórios para os teus jogos de cartas favoritos."
   }
 }

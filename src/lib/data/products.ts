@@ -5,6 +5,8 @@ import { type ProductListParams, SpreeError } from "@spree/sdk";
 const CATALOG_CACHE_VERSION = "2026-09-23-customer-pricing-v6";
 
 import { cacheLife, cacheTag } from "next/cache";
+import { normalizeProductSearch } from "@/lib/utils/product-search";
+import { TCG_CATALOG_TAG } from "../../../supabase/functions/_shared/tcg-shop";
 import {
   cacheTagSuffix,
   DEFAULT_SURFACE,
@@ -70,6 +72,18 @@ export async function getProducts(
   );
 }
 
+export async function getProductSearchSuggestions(query: string) {
+  const search = normalizeProductSearch(query);
+  if (search.length < 2) return [];
+  const { data } = await getProducts({
+    search,
+    fields: ["id", "name", "slug", "price", "thumbnail_url"],
+    limit: 6,
+    tags_name_in: [TCG_CATALOG_TAG],
+  });
+  return data;
+}
+
 /**
  * Persistent cached product detail fetch. Cache key is derived from:
  *
@@ -87,6 +101,7 @@ export async function cachedGetProduct(
   surface: Surface,
   userToken?: string,
   cacheVersion = CATALOG_CACHE_VERSION,
+  fields?: string[],
 ) {
   "use cache: remote";
   void cacheVersion;
@@ -102,7 +117,7 @@ export async function cachedGetProduct(
   try {
     return await getClientForSurface(surface).products.get(
       slugOrId,
-      { expand },
+      { expand, ...(fields ? { fields } : {}) },
       {
         ...options,
         ...(userToken ? { token: userToken } : undefined),
@@ -116,7 +131,7 @@ export async function cachedGetProduct(
 
 export async function getProduct(
   slugOrId: string,
-  params?: { expand?: string[] },
+  params?: { expand?: string[]; fields?: string[] },
   surface: Surface = DEFAULT_SURFACE,
 ) {
   const options = await getLocaleOptions();
@@ -128,6 +143,7 @@ export async function getProduct(
     surface,
     userToken,
     CATALOG_CACHE_VERSION,
+    params?.fields,
   );
   if (!product)
     throw new SpreeError(

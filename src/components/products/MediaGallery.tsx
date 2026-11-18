@@ -1,6 +1,6 @@
 "use client";
 
-import type { Media } from "@spree/sdk";
+import type { ProductGalleryImage } from "@/lib/data/product-details-data";
 import { ZoomIn } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useTranslations } from "next-intl";
@@ -31,23 +31,13 @@ const LazyMediaLightbox = dynamic(
 );
 
 interface MediaGalleryProps {
-  images: Media[];
+  images: ProductGalleryImage[];
   productName: string;
   activeIndex?: number | null;
 }
 
 /** Prefer pre-sized Spree media URLs over the full-resolution original,
  * so the Next.js image optimizer doesn't have to fetch the source file. */
-function getMainImageUrl(media: Media | undefined): string | null {
-  if (!media) return null;
-  return media.xlarge_url || media.large_url || media.original_url || null;
-}
-
-function getThumbImageUrl(media: Media | undefined): string | null {
-  if (!media) return null;
-  return media.small_url || media.mini_url || media.original_url || null;
-}
-
 export function MediaGallery(props: MediaGalleryProps) {
   // Reset internal state when the parent changes activeIndex by rekeying.
   // Avoids the useEffect-to-sync-prop antipattern.
@@ -126,7 +116,7 @@ function MediaGalleryInner({
   };
 
   const selectedImage = images[safeIndex];
-  const mainImageUrl = getMainImageUrl(selectedImage);
+  const mainImageUrl = selectedImage?.src;
   const showMainImage = mainImageUrl && mainImageErrorUrl !== mainImageUrl;
 
   return (
@@ -176,7 +166,7 @@ function MediaGalleryInner({
       {images.length > 1 && (
         <div className="flex gap-2 overflow-x-auto pb-2">
           {images.map((image, index) => {
-            const thumbUrl = getThumbImageUrl(image);
+            const thumbUrl = image.thumbnail;
             return (
               <button
                 type="button"

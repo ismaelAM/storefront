@@ -1,3 +1,4 @@
+import { isTcgShopProduct, tcgFormatForName, TCG_CATALOG_TAG, TCG_FORMAT_TAG_PREFIX } from "../_shared/tcg-shop.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
@@ -85,6 +86,7 @@ interface ConfigRow {
   // Transient, owned by this invocation. Never persisted with configuration.
   request_budget?: { deadline_at: number };
   maintenance_turn?: number;
+  spree_pause_until?: string | null;
   last_supplier_tick?: string | null;
   id: string;
   enabled: boolean;
@@ -119,6 +121,9 @@ interface JobRow {
 }
 
 interface SpreeProduct {
+  channels?: SpreeChannel[];
+  custom_fields?: SpreeCustomField[];
+  thumbnail_url?: string | null;
   metadata?: Record<string, unknown>;
   preorder?: boolean;
   purchasable?: boolean;
@@ -129,14 +134,16 @@ interface SpreeProduct {
 }
 
 interface SpreeVariant {
-  original_price?: {amount?: string | number | null; currency?: string | null; price_list_id?: string | null} | null;
+  track_inventory?: boolean;
+  stock_items?: SpreeStockItem[];
+  original_price?: Partial<SpreePrice> | null;
   available_stock?: number;
   id: string;
   sku?: string | null;
   cost_price?: string | number | null;
   cost_currency?: string | null;
   price?:
-    | { amount?: string | number | null; currency?: string | null; price_list_id?: string | null }
+    | Partial<SpreePrice>
     | string
     | number
     | null;
@@ -328,7 +335,11 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 // Async context is local to one HTTP invocation, including concurrent groups.
 // Database checkpoints/releases have a separate reserve after external work.
-const syncRuntime = new AsyncLocalStorage<{ database_budget: { deadline_at: number } }>();
+const syncRuntime = new AsyncLocalStorage<{
+  database_budget: { deadline_at: number };
+  spreePaused?: boolean;
+  channels?: Promise<SpreeChannel[]>;
+}>();
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE, {
   auth: { persistSession: false, autoRefreshToken: false },
   global: { fetch: syncDatabaseFetch },
@@ -1154,6 +1165,8 @@ async function spreeRequest<T>(
     throw new Error(
       "Falta la Secret API Key de Spree en la configuración cloud.",
     );
+  const runtime = syncRuntime.getStore();
+  if (runtime?.spreePaused) throw syncDeferred();
   const { response, text } = await fetchSyncText(
     config.spree_api_url.replace(/\/$/, "") + "/api/v3/admin" + path,
     {
@@ -1166,6 +1179,17 @@ async function spreeRequest<T>(
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     }, config.request_budget,
   );
+
+  if (
+    response.status === 503 &&
+    (response.headers.get("x-vercel-error") === "DEPLOYMENT_PAUSED" ||
+      /\bDEPLOYMENT_PAUSED\b/.test(text))
+  ) {
+    if (runtime) runtime.spreePaused = true;
+    // Treat this as deferred work so a paused deployment cannot consume the
+    // retry budget, fail a catalog item or advance a supplier checkpoint.
+    throw syncDeferred();
+  }
 
   if (
     (response.status === 429 ||
@@ -1220,14 +1244,25 @@ async function ensureProductsInCategories(
 async function ensureProductsInDefaultChannel(
   config: ConfigRow,
   productIds: string[],
+  knownChannels?: SpreeChannel[],
 ): Promise<void> {
   if (productIds.length === 0) return;
-  const channels = await spreeList<SpreeChannel>(config, "/channels");
+  // Only callers holding the product's own native association may skip the
+  // lookup. Re-adding an existing member still touches it and queues reindexing.
+  if (productIds.length === 1 && knownChannels?.some((channel) => channel.active === true && channel.default === true)) return;
+  const runtime = syncRuntime.getStore();
+  const pending = runtime?.channels ?? spreeList<SpreeChannel>(config, "/channels");
+  if (runtime) runtime.channels = pending;
+  const channels = await pending.catch((error) => {
+    if (runtime?.channels === pending) delete runtime.channels;
+    throw error;
+  });
   const channel =
     channels.find((item) => item.active && item.default) ??
     channels.find((item) => item.active) ??
     channels[0];
   if (!channel) throw new Error("No hay canal de venta activo en Spree");
+  if (productIds.length === 1 && knownChannels?.some((member) => member.id === channel.id)) return;
   await spreeRequest(
     config,
     "POST",
@@ -1325,7 +1360,15 @@ async function upsertBasePrice(
   variantId: string,
   amount: number,
   compareAtAmount?: number | null,
-): Promise<void> {
+  observedPrice?: Partial<SpreePrice> | null,
+): Promise<boolean> {
+  const expected = {
+    amount,
+    ...(compareAtAmount !== undefined ? { compare_at_amount: compareAtAmount } : {}),
+  };
+  if (observedPrice?.id && observedPrice.price_list_id === null &&
+      observedPrice.currency?.toUpperCase() === "EUR" && nativePatchMatches(observedPrice, expected)) return false;
+
   const prices = await spreeList<SpreePrice>(
     config,
     "/prices?q[variant_id_eq]=" +
@@ -1340,10 +1383,7 @@ async function upsertBasePrice(
     ) ?? prices.find((price) => !price.price_list_id);
 
   if (basePrice) {
-    if ((basePrice.currency ?? "EUR").toUpperCase() === "EUR" && nativePatchMatches(basePrice, {
-      amount,
-      ...(compareAtAmount !== undefined ? { compare_at_amount: compareAtAmount } : {}),
-    })) return;
+    if ((basePrice.currency ?? "EUR").toUpperCase() === "EUR" && nativePatchMatches(basePrice, expected)) return false;
     await spreeRequest(
       config,
       "PATCH",
@@ -1360,7 +1400,7 @@ async function upsertBasePrice(
           : {}),
       },
     );
-    return;
+    return true;
   }
 
   await spreeRequest(config, "POST", "/prices", {
@@ -1371,6 +1411,7 @@ async function upsertBasePrice(
       ? { compare_at_amount: compareAtAmount }
       : {}),
   });
+  return true;
 }
 
 async function upsertBasePrices(
@@ -2008,7 +2049,13 @@ async function setVariantBackorderability(
   productId: string | null,
   variantId: string,
   desired: boolean,
+  observedItems?: SpreeStockItem[],
 ): Promise<number> {
+  // Skip only a verified no-op. A missing row, changed flag or ambiguous
+  // identity still requires the ordinary inventory read and verification.
+  if (observedItems?.length &&
+      new Set(observedItems.map((item) => item.id)).size === observedItems.length &&
+      observedItems.every((item) => item.id && item.variant_id === variantId && item.backorderable === desired)) return 0;
   const items = await stockItemsForVariant(config, variantId);
   if (!items.length) {
     // No row plus no supplier backorder is already a safe non-sellable state.
@@ -2054,6 +2101,7 @@ async function syncBackorderability(
   variantId: string | null,
   availability: DevirProduct["availability"],
   fulfillmentMode: CatalogFulfillmentMode = "supplier_or_physical",
+  observedItems?: SpreeStockItem[],
 ): Promise<number> {
   if (!variantId) return 0;
   const desired = shouldAllowSupplierBackorder({
@@ -2065,6 +2113,7 @@ async function syncBackorderability(
     productId,
     variantId,
     desired,
+    observedItems,
   );
 }
 
@@ -2074,6 +2123,7 @@ async function enforceVariantFulfillmentFlags(
   variantId: string | null,
   availability: DevirProduct["availability"],
   fulfillmentMode: CatalogFulfillmentMode,
+  observedVariant?: SpreeVariant | null,
 ): Promise<number> {
   const changed = await syncBackorderability(
     config,
@@ -2081,13 +2131,20 @@ async function enforceVariantFulfillmentFlags(
     variantId,
     availability,
     fulfillmentMode,
+    observedVariant?.id === variantId && observedVariant?.track_inventory === true
+      ? observedVariant.stock_items : undefined,
   );
   if (!productId || !variantId) return changed;
 
   const supplierPreorderable =
     fulfillmentMode === "supplier_or_physical" &&
     availability === "preorder";
-  if (!supplierPreorderable) {
+  const disabledPreorder = {
+    track_inventory: true,
+    preorderable: false,
+    preorder_ships_at: null,
+  };
+  if (!supplierPreorderable && (observedVariant?.id !== variantId || !nativePatchMatches(observedVariant, disabledPreorder))) {
     await spreeRequest(
       config,
       "PATCH",
@@ -2095,11 +2152,7 @@ async function enforceVariantFulfillmentFlags(
         encodeURIComponent(productId) +
         "/variants/" +
         encodeURIComponent(variantId),
-      {
-        track_inventory: true,
-        preorderable: false,
-        preorder_ships_at: null,
-      },
+      disabledPreorder,
     );
   }
   return changed;
@@ -3088,7 +3141,7 @@ async function catalogSpreeMapping(
   const spreeProduct = await spreeRequest<SpreeProduct>(
     config,
     "GET",
-    "/products/" + encodeURIComponent(product.spree_product_id),
+    "/products/" + encodeURIComponent(product.spree_product_id) + "?expand=channels,custom_fields&fields=id,name,status,tags,thumbnail_url,preorder,purchasable",
   );
   if (!variant.spree_variant_id) {
     return { product: spreeProduct, variant: null };
@@ -3099,7 +3152,7 @@ async function catalogSpreeMapping(
     "/products/" +
       encodeURIComponent(product.spree_product_id) +
       "/variants/" +
-      encodeURIComponent(variant.spree_variant_id),
+      encodeURIComponent(variant.spree_variant_id) + "?expand=stock_items&fields=id,sku,cost_price,cost_currency,price,original_price,total_on_hand,track_inventory,backorder_limit,backorderable,preorderable,preorder_ships_at,weight,height,width,depth,weight_unit,dimensions_unit",
   );
   return { product: spreeProduct, variant: spreeVariant };
 }
@@ -3247,6 +3300,7 @@ async function reconcileCatalogVariantUnlocked(
         resolution.variant.spree_variant_id,
         "unavailable",
         resolution.variant.fulfillment_mode ?? "supplier_or_physical",
+        mapping.variant,
       );
     }
     await syncApprovedSupplierPackChildren(
@@ -3271,6 +3325,7 @@ async function reconcileCatalogVariantUnlocked(
         resolution.variant.option_values ?? {},
         null,
         selection.offers,
+        mapping.product.custom_fields,
       );
     }
     if (mapping.product?.tags?.includes("devir-preorder")) {
@@ -3583,7 +3638,9 @@ async function syncProductToSpree(
     );
   }
 
-  const currentFields = existing ? await productFields(config, existing.product.id) : undefined;
+  const currentFields = existing
+    ? existing.product.custom_fields ?? await productFields(config, existing.product.id)
+    : undefined;
   if (existing && catalogContext) {
     const adopted = await adoptPublishedCatalogReview(config, existing.product, reasons, currentFields);
     if (adopted) {
@@ -3598,12 +3655,16 @@ async function syncProductToSpree(
   let currentProduct: SpreeProduct;
   let variantId: string | null = null;
   let manualPrice = false;
+  let refreshAggregate = !existing || createdVariant;
+  let currentVariant = existing?.variant;
   const sourceCode = catalogContext?.supplier.code ?? "devir";
   const managedTag = catalogContext ? "catalog-managed" : "devir";
   const readyTag = catalogContext ? "catalog-ready" : "devir-ready";
   const reviewTag = catalogContext ? "catalog-review" : "devir-review";
+  const tcgFormat = tcgFormatForName(spreeProductName);
   const sourceTags = [
     managedTag,
+    ...(isTcgShopProduct(spreeProductName, key) ? [TCG_CATALOG_TAG, ...(tcgFormat ? [TCG_FORMAT_TAG_PREFIX + tcgFormat] : [])] : []),
     ...(sourceCode === "devir" ? ["devir"] : []),
     review ? reviewTag : readyTag,
     ...(review ? ["REVISION-HUMANA", "NECESITA-TU-AYUDA"] : []),
@@ -3694,6 +3755,7 @@ async function syncProductToSpree(
         ...(existing.product.tags ?? []).filter(
           (tag) =>
             !tag.startsWith("sourced:") &&
+            !tag.startsWith(TCG_FORMAT_TAG_PREFIX) && tag !== TCG_CATALOG_TAG &&
             ![
               "catalog-ready",
               "catalog-review",
@@ -3736,11 +3798,17 @@ async function syncProductToSpree(
         preorder_ships_at: supplierPreorderable ? product.releaseDate : null,
     };
     if (!nativePatchMatches(existing.variant, variantPatch)) {
-      await spreeRequest(config, "PATCH", "/products/" + encodeURIComponent(productId) +
+      currentVariant = await spreeRequest<SpreeVariant>(config, "PATCH", "/products/" + encodeURIComponent(productId) +
         "/variants/" + encodeURIComponent(existing.variant.id), variantPatch);
+      refreshAggregate = true;
     }
     if (canWritePrice) {
-      await upsertBasePrice(config, existing.variant.id, pricing.retail);
+      const observedPrice = existing.variant.original_price ??
+        (typeof existing.variant.price === "object" ? existing.variant.price : undefined);
+      const priceChanged = await upsertBasePrice(
+        config, existing.variant.id, pricing.retail, undefined, observedPrice,
+      );
+      refreshAggregate ||= priceChanged;
     }
   }
 
@@ -3827,6 +3895,7 @@ async function syncProductToSpree(
     variantId,
     product.availability,
     fulfillmentMode,
+    existing?.variant.track_inventory === true ? existing.variant.stock_items : undefined,
   );
   if (catalogContext && packRequiresSplit) {
     backorderItems += await syncApprovedSupplierPackChildren(
@@ -3847,31 +3916,26 @@ async function syncProductToSpree(
     (product.availability === "available" ||
       product.availability === "preorder")
   ) {
-    const current = await spreeRequest<SpreeVariant>(
-      config,
-      "GET",
-      "/products/" +
-        encodeURIComponent(productId) +
-        "/variants/" +
-        encodeURIComponent(variantId),
-    );
-    await patchVariantInventory(
-      config,
-      productId,
-      variantId,
-      Number(current.total_on_hand ?? 0),
-      shouldAllowSupplierBackorder({
-        availability: product.availability,
-        fulfillmentMode,
-      }),
-      supplierPreorderable,
-      supplierPreorderable ? product.releaseDate : null,
-      false,
-      current,
-    );
-    backorderItems += 1;
+    const desiredFlags = {
+      track_inventory: true,
+      backorderable: supplierSellable,
+      preorderable: supplierPreorderable,
+      preorder_ships_at: supplierPreorderable ? product.releaseDate : null,
+    };
+    if (backorderItems > 0 || currentVariant?.id !== variantId || !nativePatchMatches(currentVariant, desiredFlags)) {
+      const current = await spreeRequest<SpreeVariant>(
+        config,
+        "GET",
+        "/products/" + encodeURIComponent(productId) + "/variants/" + encodeURIComponent(variantId),
+      );
+      await patchVariantInventory(
+        config, productId, variantId, Number(current.total_on_hand ?? 0), supplierSellable,
+        supplierPreorderable, desiredFlags.preorder_ships_at, false, current,
+      );
+      backorderItems += 1;
+    }
   }
-  const images = await syncImages(config, productId, product);
+  const images = currentProduct.thumbnail_url ? 0 : await syncImages(config, productId, product);
 
   const physicalStockOnHand = existing
     ? Number(existing.variant.total_on_hand ?? 0)
@@ -3887,16 +3951,20 @@ async function syncProductToSpree(
       ? shouldListCatalogProduct({ review, fulfillmentMode })
       : autoPublish;
   if (shouldList) {
-    // Fulfillment writes can change native aggregate preorder/purchasable flags.
-    // Refresh them even when activation itself is already a verified no-op.
-    const published = await spreeRequest<SpreeProduct>(
-      config,
-      currentProduct.status === "active" ? "GET" : "PATCH",
-      "/products/" + encodeURIComponent(productId),
-      currentProduct.status === "active" ? undefined : { status: "active" },
-    );
+    // Read native aggregate flags again only after a possible change.
+    const activate = currentProduct.status !== "active";
+    const needsReadback = refreshAggregate || backorderItems > 0 ||
+      typeof currentProduct.preorder !== "boolean" || typeof currentProduct.purchasable !== "boolean";
+    const published = activate || needsReadback
+      ? await spreeRequest<SpreeProduct>(
+          config,
+          activate ? "PATCH" : "GET",
+          "/products/" + encodeURIComponent(productId),
+          activate ? { status: "active" } : undefined,
+        )
+      : currentProduct;
     await syncHomePreorderMembership(config, published);
-    await ensureProductsInDefaultChannel(config, [productId]);
+    await ensureProductsInDefaultChannel(config, [productId], existing?.product.channels);
   } else if (review || fulfillmentMode === "disabled") {
     const drafted = await spreeRequest<SpreeProduct>(
       config,
@@ -8740,7 +8808,7 @@ async function rotateDailyOffersUnlocked(
       }
       const name = String(row.product_name ?? productRow.name ?? "");
       const key = String(productRow.category_key ?? "").trim();
-      const category = dailyOfferCategory(key);
+      const category = dailyOfferCategory(key, name);
       if (!category || isBookProduct({ sku: String(row.canonical_sku ?? ""), name }, key)) return [];
       const profile = commercialPricingProfile({
         name,
@@ -10001,7 +10069,7 @@ async function tcgFactoryDiscoverPublicBatch(
     try {
       const detail = await tcgFactoryTextFetch(url);
       const product = parseTcgFactoryPublicProduct(detail.html, url, section);
-      if (isExcludedCatalogLanguage(product)) continue;
+      if (isExcludedCatalogLanguage(product) || !isTcgShopProduct(product.productName, product.categoryKey)) continue;
       await upsertTcgFactoryDiscovery(supplier.id, product, runId);
       discovered += 1;
     } catch (error) {
@@ -10321,7 +10389,7 @@ async function loadDailyOfferRefresh(supplier: CatalogSupplierRow): Promise<Arra
     for (const row of rows) {
       const variant = row.variant;
       const product = variant.product;
-      const category = dailyOfferCategory(product.category_key);
+      const category = dailyOfferCategory(product.category_key, product.name);
       if (!category || !variant.spree_variant_id || !product.spree_product_id ||
         rejectedProductIds.has(product.spree_product_id) ||
         variant.fulfillment_mode !== "supplier_or_physical" || product.review_decision === "rejected" ||
@@ -10539,7 +10607,7 @@ async function tcgFactoryTick(
         url,
         refreshingOffers ? undefined : state.section,
       );
-      if (isExcludedCatalogLanguage(publicProduct)) return;
+      if (isExcludedCatalogLanguage(publicProduct) || !isTcgShopProduct(publicProduct.productName, publicProduct.categoryKey)) return;
       await upsertTcgFactoryDiscovery(supplier.id, publicProduct, itemRunId);
       outcome.discovered = 1;
 
@@ -12525,19 +12593,18 @@ async function scheduledTcgFactoryTick(config: ConfigRow): Promise<Record<string
 }
 
 async function runtimeMaintenanceTick(config: ConfigRow): Promise<Record<string, unknown>> {
-  const turn = Number(config.maintenance_turn ?? 0) % 4;
+  const turn = Number(config.maintenance_turn ?? 0) % 3;
   const { error } = await supabase.from("devir_sync_config")
-    .update({ maintenance_turn: (turn + 1) % 4 }).eq("id", "primary");
+    .update({ maintenance_turn: (turn + 1) % 3 }).eq("id", "primary");
   if (error) throw error;
   const maintenanceConfig = { ...config, request_budget: {
-    deadline_at: Math.min(config.request_budget?.deadline_at ?? Infinity, Date.now() + (turn === 3 ? 70_000 : 25_000)),
+    deadline_at: Math.min(config.request_budget?.deadline_at ?? Infinity, Date.now() + 25_000),
   } };
-  const lane = ["stale", "physical", "review", "daily"][turn];
+  const lane = ["stale", "physical", "review"][turn];
   try {
     const result = turn === 0 ? await reconcileStaleCatalogBatch(maintenanceConfig, 10)
       : turn === 1 ? await reconcilePhysicalOnlyCatalogBatch(maintenanceConfig, 10)
-      : turn === 2 ? await refreshHumanReviewMarkersBatch(maintenanceConfig, 3)
-      : await rotateDailyOffers(maintenanceConfig);
+      : await refreshHumanReviewMarkersBatch(maintenanceConfig, 3);
     return { lane, result };
   } catch (error) {
     if (isSyncDeferred(error)) return { lane, status: "deferred", reason: "request_budget" };
@@ -12617,6 +12684,11 @@ Deno.serve((req) => syncRuntime.run({ database_budget: { deadline_at: Date.now()
     return json({ error: "unauthorized" }, 401);
   }
 
+  if (config.spree_pause_until && Date.parse(config.spree_pause_until) > Date.now()) {
+    return json({ ok: true, skipped: "spree_paused", retry_at: config.spree_pause_until });
+  }
+
+  const runtime = syncRuntime.getStore()!;
   const lockToken = crypto.randomUUID();
   const { data: lock, error: lockError } = await supabase.rpc(
     "devir_sync_acquire_lock",
@@ -12631,6 +12703,7 @@ Deno.serve((req) => syncRuntime.run({ database_budget: { deadline_at: Date.now()
     }
 
     const dailyMaintenance = await dueDailyOfferMaintenanceTick(config);
+    if (runtime.spreePaused) throw syncDeferred();
     const dailyDeferred = dailyMaintenance?.status === "deferred";
     if (dailyDeferred && !canStartSyncWork(config)) {
       return json({ ok: true, status: "deferred", reason: "request_budget", maintenance: dailyMaintenance });
@@ -12662,7 +12735,7 @@ Deno.serve((req) => syncRuntime.run({ database_budget: { deadline_at: Date.now()
           );
         }
       }
-      if (!canStartSyncWork(config)) throw syncDeferred();
+      if (runtime.spreePaused || !canStartSyncWork(config)) throw syncDeferred();
       // Persist the turn before work: a long request or timeout must still
       // leave the other distributor the next unlocked invocation.
       const recordSupplierTurn = async (code: string) => {
@@ -12673,6 +12746,7 @@ Deno.serve((req) => syncRuntime.run({ database_budget: { deadline_at: Date.now()
       if (config.last_supplier_tick !== "tcgfactory") {
         await recordSupplierTurn("tcgfactory");
         const tcgFactoryResult = await scheduledTcgFactoryTick(config);
+        if (runtime.spreePaused) throw syncDeferred();
         if (typeof tcgFactoryResult.skipped !== "string" && tcgFactoryResult.status !== "error") {
           return json({ ok: true, tcgfactory: tcgFactoryResult });
         }
@@ -12682,7 +12756,9 @@ Deno.serve((req) => syncRuntime.run({ database_budget: { deadline_at: Date.now()
     }
 
     const maintenance = dailyDeferred ? dailyMaintenance : await runtimeMaintenanceTick(config);
+    if (runtime.spreePaused) throw syncDeferred();
     const tcgFactoryResult = await scheduledTcgFactoryTick(config);
+    if (runtime.spreePaused) throw syncDeferred();
 
     if (!config.enabled) {
       return json({
@@ -12716,7 +12792,9 @@ Deno.serve((req) => syncRuntime.run({ database_budget: { deadline_at: Date.now()
       tcgfactory: tcgFactoryResult,
     });
   } catch (error) {
-    if (isSyncDeferred(error)) return json({ ok: true, status: "deferred", reason: "request_budget" });
+    if (runtime.spreePaused || isSyncDeferred(error)) {
+      return json({ ok: true, status: "deferred", reason: runtime.spreePaused ? "spree_paused" : "request_budget" });
+    }
     const message = error instanceof Error ? error.message : String(error);
     await supabase
       .from("devir_sync_config")
@@ -12738,6 +12816,16 @@ Deno.serve((req) => syncRuntime.run({ database_budget: { deadline_at: Date.now()
     }
     return json({ ok: false, error: message }, 500);
   } finally {
-    await supabase.rpc("devir_sync_release_lock", { p_token: lockToken });
+    try {
+      if (runtime.spreePaused) {
+        const spreePauseUntil = new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString();
+        const { error } = await supabase.from("devir_sync_config")
+          .update({ spree_pause_until: spreePauseUntil })
+          .eq("id", "primary");
+        if (error) console.error("Could not save Spree pause cooldown");
+      }
+    } finally {
+      await supabase.rpc("devir_sync_release_lock", { p_token: lockToken });
+    }
   }
 }));

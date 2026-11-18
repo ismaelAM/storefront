@@ -1,8 +1,10 @@
+import { isTcgShopProduct, tcgGameForPath } from "./tcg-shop.ts";
+
 export const DAILY_OFFER_CATEGORIES = [
   "tcg",
-  "juegos-de-mesa",
-  "accesorios",
-  "merchandising",
+  "one-piece",
+  "yugioh",
+  "otros-tcg",
 ] as const;
 export type DailyOfferCategory = (typeof DAILY_OFFER_CATEGORIES)[number];
 export const DAILY_OFFERS_PER_CATEGORY = 3;
@@ -41,13 +43,23 @@ export function dailyOfferSelectionComplete(
   );
 }
 
-/** Only explicit catalog taxonomy can occupy a daily offer quota. */
+/** Only an eligible card game can occupy today's four carousel groups. */
 export function dailyOfferCategory(
   categoryKey: string | null | undefined,
+  name = "",
 ): DailyOfferCategory | null {
-  const root = categoryKey?.trim().toLowerCase().split("/")[0];
-  if (root === "rol") return "juegos-de-mesa";
-  return DAILY_OFFER_CATEGORIES.find((category) => category === root) ?? null;
+  if (!isTcgShopProduct(name, categoryKey)) return null;
+  const game = tcgGameForPath(categoryKey)?.[0];
+  switch (game) {
+    case "mtg": return "tcg";
+    case "one-piece":
+    case "yugioh": return game;
+    default: return "otros-tcg";
+  }
+}
+
+export function isDailyOfferCategory(value: unknown): value is DailyOfferCategory {
+  return DAILY_OFFER_CATEGORIES.some((category) => category === value);
 }
 
 /** Preserve ranking within each category while sharing a bounded inspection budget. */

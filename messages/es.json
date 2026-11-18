@@ -53,7 +53,7 @@
     "updatePreferencesFailed": "No pudimos actualizar tus preferencias regionales. Inténtalo de nuevo."
   },
   "footer": {
-    "description": "TCG, juegos de mesa, manga y coleccionables seleccionados con cuidado. Compra sencilla, atención cercana y envíos preparados con mimo.",
+    "description": "Cajas, sobres, mazos y accesorios de tus juegos de cartas favoritos.",
     "shop": "Tienda",
     "allProducts": "Todos los productos",
     "categories": "Categorías",
@@ -67,7 +67,7 @@
   },
   "home": {
     "welcome": "{storeName}",
-    "heroDescription": "TCG, juegos de mesa, manga y coleccionables para encontrar tu próxima partida, colección o lectura.",
+    "heroDescription": "Cajas, sobres, mazos y accesorios de tus juegos de cartas favoritos.",
     "shopNow": "Ver todo",
     "featuredProducts": "Productos destacados",
     "viewAll": "Ver todo",
@@ -677,5 +677,17 @@
     "tariffExpired": "La tarifa de 2026 no es válida para la fecha actual. Hay que actualizarla antes de calcular.",
     "invalidRequest": "No se han podido leer los datos del paquete.",
     "networkError": "No se pudo calcular. Inténtalo de nuevo."
+  },
+  "tcgShop": {
+    "catalogName": "Juegos de cartas coleccionables",
+    "games": "Elige tu juego",
+    "allProducts": "Ver todo el catálogo",
+    "catalogName": "Juegos de cartas coleccionables",
+    "allFormats": "Todos los formatos",
+    "boosters": "Cajas y sobres",
+    "decks": "Mazos",
+    "sets": "Sets y colecciones",
+    "accessories": "Accesorios del juego",
+    "description": "Cajas, sobres, mazos y accesorios de tus juegos de cartas favoritos."
   }
 }

@@ -19,9 +19,9 @@ export function ProductImage({
   fetchPriority,
   ...rest
 }: ProductImageProps): React.JSX.Element {
-  const [hasError, setHasError] = useState(false);
+  const [failedSrc, setFailedSrc] = useState<string>();
 
-  if (!src || hasError) {
+  if (!src || src === failedSrc) {
     return (
       <div className="absolute inset-0 flex items-center justify-center bg-gray-100 text-gray-300">
         <Icon className={iconClassName} />
@@ -33,7 +33,7 @@ export function ProductImage({
     <Image
       src={src}
       onError={(e) => {
-        setHasError(true);
+        setFailedSrc(src);
         onError?.(e);
       }}
       fetchPriority={fetchPriority}

@@ -1,3 +1,4 @@
+vi.mock("next-intl/server", () => ({ getTranslations: async () => (key: string) => key }));
 import type { Data } from "@puckeditor/core";
 import type { ReactElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -92,6 +93,7 @@ describe("category Puck product request budget", () => {
     expect(await pageProducts()).toBe(products);
     expect(mocks.products).toHaveBeenCalledExactlyOnceWith("category-1", {
       limit: 8,
+      tags_name_in: ["bison-tcg-catalog"],
       fields: PRODUCT_CARD_FIELDS,
     });
   });
@@ -103,6 +105,7 @@ describe("category Puck product request budget", () => {
     expect(await pageProducts()).toBe(products);
     expect(mocks.products).toHaveBeenCalledExactlyOnceWith("category-1", {
       limit: 8,
+      tags_name_in: ["bison-tcg-catalog"],
       fields: [...PRODUCT_CARD_FIELDS, "variants"],
       expand: ["variants"],
     });
@@ -123,6 +126,7 @@ describe("category Puck product request budget", () => {
     expect(await pageProducts()).toBe(products);
     expect(mocks.products).toHaveBeenCalledExactlyOnceWith("category-1", {
       limit: 8,
+      tags_name_in: ["bison-tcg-catalog"],
       fields: [...PRODUCT_CARD_FIELDS, "variants"],
       expand: ["variants"],
     });
@@ -139,6 +143,7 @@ describe("category Puck product request budget", () => {
     await pageProducts();
     expect(mocks.products).toHaveBeenCalledExactlyOnceWith("category-1", {
       limit: 8,
+      tags_name_in: ["bison-tcg-catalog"],
       fields: PRODUCT_CARD_FIELDS,
     });
   });

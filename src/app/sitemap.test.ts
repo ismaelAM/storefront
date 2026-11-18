@@ -82,7 +82,7 @@ function mockCatalog(productCount: number, categoryCount: number): void {
       return {
         data: Array.from({ length: limit }, (_, index) => ({
           id: `category-${(page - 1) * limit + index}`,
-          permalink: `c-${(page - 1) * limit + index}`,
+          permalink: index === 0 ? "tcg/mtg" : `legacy-${(page - 1) * limit + index}`,
           is_root: false,
         })),
         meta: { count: categoryCount },
@@ -131,7 +131,9 @@ describe("localized sitemap generation", () => {
     const urls = (await sitemap({ id: Promise.resolve("0") })).map(
       ({ url }) => url,
     );
-    expect(urls).toHaveLength(2450);
+    expect(urls).toHaveLength(2421);
+    expect(urls).toContain("https://store.example/us/en/c/tcg/mtg");
+    expect(urls).not.toContain("https://store.example/us/en/c/legacy-1");
     expect(urls).toContain("https://store.example/us/en/products/p-0");
     for (const locale of ["es", "fr", "de", "pl", "pt"]) {
       expect(urls).toContain(`https://store.example/us/${locale}`);
@@ -181,8 +183,8 @@ describe("localized sitemap generation", () => {
       expect.arrayContaining([
         "https://store.example/us/en/products/p-0",
         "https://store.example/ca/en/products/p-0",
-        "https://store.example/us/en/c/c-0",
-        "https://store.example/ca/en/c/c-0",
+        "https://store.example/us/en/c/tcg/mtg",
+        "https://store.example/ca/en/c/tcg/mtg",
       ]),
     );
     expect(entries.map((entry) => entry.url)).not.toContain(
@@ -224,7 +226,8 @@ describe("localized sitemap generation", () => {
     api.categoriesList.mockImplementation(list);
     const { default: sitemap } = await import("@/app/sitemap");
     const entries = await sitemap({ id: Promise.resolve("0") });
-    expect(entries).toHaveLength(801);
+    expect(entries).toHaveLength(401);
+    expect(api.categoriesList.mock.calls.filter(([params]) => params.limit === 100)).toHaveLength(4);
     expect(peak).toBeLessThanOrEqual(2);
   });
 
@@ -338,7 +341,7 @@ describe("localized sitemap generation", () => {
         data:
           limit === 1
             ? []
-            : [{ id: "category-1", permalink: "coffee", is_root: false }],
+            : [{ id: "category-1", permalink: "tcg/mtg", is_root: false }],
         meta: { count: 1 },
       }),
     );
@@ -347,7 +350,7 @@ describe("localized sitemap generation", () => {
     const entries = await sitemap({ id: Promise.resolve("0") });
 
     expect(entries.map((entry) => entry.url)).toContain(
-      "https://store.example/us/en/c/coffee",
+      "https://store.example/us/en/c/tcg/mtg",
     );
     expect(entries.some((entry) => entry.url.includes("/products/p-"))).toBe(
       false,
@@ -364,20 +367,20 @@ describe("localized sitemap generation", () => {
     expect(api.marketsList).not.toHaveBeenCalled();
   });
 
-  it("includes public top-level category landing pages", async () => {
+  it("includes game landing pages regardless of taxonomy depth", async () => {
     api.marketsList.mockResolvedValue({ data: marketCountries("US") });
     mockCatalog(0, 1);
     api.categoriesList.mockImplementation(async ({ limit }) => ({
       data:
         limit === 1
           ? []
-          : [{ id: "category-1", permalink: "games", is_root: true }],
+          : [{ id: "category-1", permalink: "tcg/digimon", is_root: true }],
       meta: { count: 1 },
     }));
     const { default: sitemap } = await import("@/app/sitemap");
     expect(
       (await sitemap({ id: Promise.resolve("0") })).map(({ url }) => url),
-    ).toContain("https://store.example/us/en/c/games");
+    ).toContain("https://store.example/us/en/c/tcg/digimon");
   });
 
   it("omits untranslated fallback resources but keeps real translations by stable ID", async () => {
@@ -394,7 +397,7 @@ describe("localized sitemap generation", () => {
         id: `${kind}-fallback`,
         name: "Coffee",
         slug: "coffee",
-        permalink: "coffee",
+        permalink: "tcg/mtg",
         description: "",
         description_html: "",
         meta_title: null,
@@ -405,7 +408,7 @@ describe("localized sitemap generation", () => {
         id: `${kind}-translated`,
         name: locale === "es" ? "Té" : "Tea",
         slug: locale === "es" ? "te" : "tea",
-        permalink: locale === "es" ? "te" : "tea",
+        permalink: "tcg/one-piece",
         description: "",
         description_html: "",
         meta_title: null,
@@ -433,11 +436,11 @@ describe("localized sitemap generation", () => {
       ({ url }) => url,
     );
     expect(urls).toContain("https://store.example/us/en/products/coffee");
-    expect(urls).toContain("https://store.example/us/en/c/coffee");
+    expect(urls).toContain("https://store.example/us/en/c/tcg/mtg");
     expect(urls).not.toContain("https://store.example/us/es/products/coffee");
-    expect(urls).not.toContain("https://store.example/us/es/c/coffee");
+    expect(urls).not.toContain("https://store.example/us/es/c/tcg/mtg");
     expect(urls).toContain("https://store.example/us/es/products/te");
-    expect(urls).toContain("https://store.example/us/es/c/te");
+    expect(urls).toContain("https://store.example/us/es/c/tcg/one-piece");
     expect(
       api.fallbackIndex.mock.calls.filter(
         ([resource, marketId, options]) =>

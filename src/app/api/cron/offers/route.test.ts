@@ -35,7 +35,7 @@ describe("secured daily offer cron", () => {
   });
   it("prepares daily images with the configured bearer and disables caching", async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-11-07T04:01:00Z"));
+    vi.setSystemTime(new Date("2026-11-07T04:00:00Z"));
     vi.stubEnv("CRON_SECRET", "internal-secret");
     const result = await GET(
       new Request("https://www.bisontcg.com/api/cron/offers", {
@@ -47,8 +47,8 @@ describe("secured daily offer cron", () => {
     expect(result.headers.get("Cache-Control")).toBe("no-store");
   });
   it.each([
-    "2026-11-07T03:01:00Z",
-    "2026-07-07T04:01:00Z",
+    "2026-11-07T03:00:00Z",
+    "2026-07-07T04:00:00Z",
   ])("skips the unused DST slot without touching the catalogue: %s", async (now) => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(now));
@@ -61,9 +61,9 @@ describe("secured daily offer cron", () => {
     expect(await result.json()).toMatchObject({ status: "outside_window" });
     expect(runDailySocialPublication).not.toHaveBeenCalled();
   });
-  it("uses the summer slot at 05:01 Madrid", async () => {
+  it("uses the summer slot at 05:00 Madrid", async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-07-07T03:01:00Z"));
+    vi.setSystemTime(new Date("2026-07-07T03:00:00Z"));
     vi.stubEnv("CRON_SECRET", "internal-secret");
     await GET(
       new Request("https://www.bisontcg.com/api/cron/offers", {
@@ -72,9 +72,9 @@ describe("secured daily offer cron", () => {
     );
     expect(runDailySocialPublication).toHaveBeenCalledOnce();
   });
-  it("retains later recovery when the 05h attempts could not finish", async () => {
+  it.each([15, 17])("accepts recovery at minute %i, including delayed delivery", async (minute) => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-11-07T08:15:00Z"));
+    vi.setSystemTime(new Date(`2026-11-07T08:${minute}:00Z`));
     vi.stubEnv("CRON_SECRET", "internal-secret");
     await GET(
       new Request("https://www.bisontcg.com/api/cron/offers", {

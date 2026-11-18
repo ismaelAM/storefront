@@ -1,19 +1,15 @@
 "use client";
 
-import type { OptionType, Variant } from "@spree/sdk";
+import type { ProductPageOptionType, ProductPageVariant } from "@/lib/data/product-details-data";
 import { useTranslations } from "next-intl";
 import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
 
-type PickerOptionType = Pick<OptionType, "id" | "label"> & {
-  kind?: OptionType["kind"];
-};
-
-interface VariantPickerProps {
-  variants: Variant[];
-  optionTypes: PickerOptionType[];
-  selectedVariant: Variant | null;
-  onVariantChange: (variant: Variant | null) => void;
+interface VariantPickerProps<T extends ProductPageVariant> {
+  variants: T[];
+  optionTypes: ProductPageOptionType[];
+  selectedVariant: T | null;
+  onVariantChange: (variant: T | null) => void;
 }
 
 const TECHNICAL_STANDARD_VALUE = "__spree_standard_edition__";
@@ -30,27 +26,27 @@ function normalizeOptionValue(value: string): string {
   return trimmed;
 }
 
-function variantRank(variant: Variant): number {
+function variantRank(variant: ProductPageVariant): number {
   if (variant.purchasable && variant.in_stock) return 0;
   if (variant.purchasable && variant.preorder) return 1;
   if (variant.purchasable) return 2;
   return 3;
 }
 
-export function VariantPicker({
+export function VariantPicker<T extends ProductPageVariant>({
   variants,
   optionTypes,
   selectedVariant,
   onVariantChange,
-}: VariantPickerProps) {
+}: VariantPickerProps<T>) {
   const t = useTranslations("products");
 
-  const effectiveOptionTypes = useMemo<PickerOptionType[]>(() => {
+  const effectiveOptionTypes = useMemo<ProductPageOptionType[]>(() => {
     if (optionTypes.length > 0) {
       return optionTypes;
     }
 
-    const derived = new Map<string, PickerOptionType>();
+    const derived = new Map<string, ProductPageOptionType>();
 
     for (const variant of variants) {
       for (const optionValue of variant.option_values || []) {
@@ -158,7 +154,7 @@ export function VariantPicker({
     return options;
   }, [selectedVariant, visibleOptionTypeIds]);
 
-  const findVariant = (options: Record<string, string>): Variant | null => {
+  const findVariant = (options: Record<string, string>): T | null => {
     const matches = variantOptionMaps
       .filter(({ optionsMap }) =>
         Object.entries(options).every(
@@ -226,11 +222,11 @@ export function VariantPicker({
   const getOptionValueDetails = (
     optionTypeId: string,
     optionValueName: string,
-  ): Variant["option_values"][0] | null =>
+  ): T["option_values"][0] | null =>
     optionValueDetailsMap[`${optionTypeId}:${optionValueName}`] || null;
 
   const displayOptionValue = (
-    optionType: PickerOptionType,
+    optionType: ProductPageOptionType,
     optionValueName: string,
   ): string => {
     if (optionValueName === TECHNICAL_STANDARD_VALUE) {

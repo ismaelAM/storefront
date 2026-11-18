@@ -53,7 +53,7 @@
     "updatePreferencesFailed": "Nie udało się zaktualizować preferencji regionalnych. Spróbuj ponownie."
   },
   "footer": {
-    "description": "TCG, gry planszowe, manga i kolekcjonalia starannie wybrane. Proste zakupy, pomocna obsługa i starannie przygotowane zamówienia.",
+    "description": "Pudełka, boostery, talie i akcesoria do Twoich ulubionych gier karcianych.",
     "shop": "Sklep",
     "allProducts": "Wszystkie produkty",
     "categories": "Kategorie",
@@ -67,7 +67,7 @@
   },
   "home": {
     "welcome": "{storeName}",
-    "heroDescription": "TCG, gry planszowe, manga i kolekcjonalia na kolejną rozgrywkę, do kolekcji lub do czytania.",
+    "heroDescription": "Pudełka, boostery, talie i akcesoria do Twoich ulubionych gier karcianych.",
     "shopNow": "Wszystkie produkty",
     "featuredProducts": "Polecane produkty",
     "viewAll": "Zobacz wszystkie",
@@ -677,5 +677,17 @@
     "tariffExpired": "Cennik na 2026 rok nie obowiązuje w bieżącej dacie. Przed obliczeniem należy go zaktualizować.",
     "invalidRequest": "Nie udało się odczytać danych paczki.",
     "networkError": "Nie udało się obliczyć ceny. Spróbuj ponownie."
+  },
+  "tcgShop": {
+    "catalogName": "Kolekcjonerskie gry karciane",
+    "games": "Wybierz swoją grę",
+    "allProducts": "Zobacz cały katalog",
+    "catalogName": "Kolekcjonerskie gry karciane",
+    "allFormats": "Wszystkie formaty",
+    "boosters": "Pudełka i boostery",
+    "decks": "Talie",
+    "sets": "Zestawy i kolekcje",
+    "accessories": "Akcesoria do gry",
+    "description": "Pudełka, boostery, talie i akcesoria do Twoich ulubionych gier karcianych."
   }
 }

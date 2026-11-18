@@ -15,11 +15,22 @@ interface GA4Item {
   coupon?: string;
 }
 
+type AnalyticsPrice = { amount?: string | null };
+type AnalyticsProduct = Pick<Product, "id" | "name" | "default_variant_id"> & {
+  price?: AnalyticsPrice | null;
+  original_price?: AnalyticsPrice | null;
+  categories?: Array<{ name: string }> | null;
+};
+type AnalyticsVariant = Pick<Variant, "id" | "sku" | "options_text"> & {
+  price?: AnalyticsPrice | null;
+  original_price?: AnalyticsPrice | null;
+};
+
 interface ItemMappingOptions {
   index?: number;
   listId?: string;
   listName?: string;
-  variant?: Variant | null;
+  variant?: AnalyticsVariant | null;
 }
 
 function safeParseFloat(value: string | undefined | null): number {
@@ -28,7 +39,7 @@ function safeParseFloat(value: string | undefined | null): number {
 }
 
 export function mapProductToGA4Item(
-  product: Product,
+  product: AnalyticsProduct,
   options: ItemMappingOptions = {},
 ): GA4Item {
   const { index, listId, listName, variant } = options;
@@ -166,7 +177,7 @@ export function trackSelectItem(
 }
 
 export function trackViewItem(
-  product: Product,
+  product: AnalyticsProduct,
   currency: string,
   variant?: Variant | null,
 ): void {
@@ -179,8 +190,8 @@ export function trackViewItem(
 }
 
 export function trackAddToCart(
-  product: Product,
-  variant: Variant | null,
+  product: AnalyticsProduct,
+  variant: AnalyticsVariant | null,
   quantity: number,
   currency: string,
 ): void {

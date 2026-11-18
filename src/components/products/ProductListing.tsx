@@ -11,7 +11,7 @@ import { InfiniteProductList } from "@/components/products/InfiniteProductList";
 import { ListingAnalytics } from "@/components/products/ListingAnalytics";
 import { ListingFilterBar } from "@/components/products/ListingFilterBar";
 import { ProductListingSkeleton } from "@/components/products/ProductListingSkeleton";
-import { PRODUCT_CARD_FIELDS } from "@/lib/data/cached";
+import { PRODUCT_LIST_FIELDS } from "@/lib/data/cached";
 import {
   type ListingSearchParams,
   listingKey,
@@ -101,7 +101,7 @@ async function ProductListingInner({
   // The client island reuses this when fetching subsequent pages.
   //
   // `fields` is applied LAST so neither `queryParams` nor `baseParams`
-  // can accidentally override the narrowed card-fields set. This
+  // can accidentally override the listing field set. This
   // restricts the payload to what <ProductCard> and listing analytics
   // actually read — shrinking the cached entry, the RSC→client
   // serialization, and the streaming HTML.
@@ -109,7 +109,7 @@ async function ProductListingInner({
     limit: PAGE_SIZE,
     ...queryParams,
     ...baseParams,
-    fields: PRODUCT_CARD_FIELDS,
+    fields: PRODUCT_LIST_FIELDS,
   };
 
   // Filters fetch: Ransack-wrapped with the same active filter

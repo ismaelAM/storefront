@@ -1,6 +1,5 @@
 "use client";
 
-import type { Media, Product, Variant } from "@spree/sdk";
 import {
   CalendarClock,
   CircleCheckBig,
@@ -21,9 +20,10 @@ import { useCart } from "@/contexts/CartContext";
 import { useHiddenPricing } from "@/contexts/HiddenPricingContext";
 import { useStore } from "@/contexts/StoreContext";
 import { trackAddToCart, trackViewItem } from "@/lib/analytics/gtm";
+import type { ProductDetailsData, ProductPageVariant } from "@/lib/data/product-details-data";
 
 interface ProductDetailsProps {
-  product: Product;
+  product: ProductDetailsData;
   basePath: string;
   shortDescription: string;
 }
@@ -59,15 +59,13 @@ export function ProductDetails({
   const pricesHidden = hiddenPricing !== null;
 
   // Filter variants list
-  const variants = useMemo(() => {
-    return (product.variants || []).filter(Boolean);
-  }, [product.variants]);
+  const variants = product.variants;
 
   const hasVariants = variants.length > 0;
-  const optionTypes = product.option_types || [];
+  const optionTypes = product.option_types;
 
   // Initialize with default variant or first available variant
-  const [selectedVariant, setSelectedVariant] = useState<Variant | null>(() => {
+  const [selectedVariant, setSelectedVariant] = useState<ProductPageVariant | null>(() => {
     if (product.default_variant) {
       return product.default_variant;
     }
@@ -86,14 +84,12 @@ export function ProductDetails({
     trackViewItem(product, currency);
   }, [product, currency]);
 
-  const galleryImages = useMemo((): Media[] => {
-    return product.media || [];
-  }, [product.media]);
+  const galleryImages = product.media;
 
   const variantImageIndex = useMemo((): number | null => {
     if (!selectedVariant) return null;
     const index = galleryImages.findIndex((m) =>
-      m.variant_ids.includes(selectedVariant.id),
+      m.variant_ids?.includes(selectedVariant.id),
     );
     return index >= 0 ? index : null;
   }, [selectedVariant, galleryImages]);
