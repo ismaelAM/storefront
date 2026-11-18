@@ -161,7 +161,7 @@ describe("product status reconciliation avoids redundant native writes", () => {
       "offer-date:2026-11-10",
       "devir-preorder",
     ]);
-    expect(f.repairChannel).toHaveBeenCalledExactlyOnceWith({}, ["product"]);
+    expect(f.repairChannel).toHaveBeenCalledExactlyOnceWith({}, ["product"], undefined);
     expect(f.reconcileFulfillment).toHaveBeenCalledOnce();
   });
 

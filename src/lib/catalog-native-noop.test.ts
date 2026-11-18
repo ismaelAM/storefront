@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { AsyncLocalStorage } from "node:async_hooks";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
@@ -20,6 +21,9 @@ const code = ts.transpileModule(
           "nativePatchMatches",
           "upsertBasePrice",
           "patchVariantInventory",
+          "setVariantBackorderability",
+          "ensureProductsInDefaultChannel",
+          "catalogSpreeMapping",
         ].includes(node.name?.text ?? ""),
     )
     .map((node) => node.getText(source))
@@ -45,16 +49,24 @@ function fixture(prices: object[] = []) {
       _body?: Record<string, unknown>,
     ) => ({ ...current }),
   );
+  const list = vi.fn(async (_config: unknown, path: string) =>
+    path === "/channels" ? [{ id: "online", active: true, default: true }] : prices,
+  );
+  const getStock = vi.fn(async () => [
+    { id: "stock", variant_id: "variant1", backorderable: true },
+  ]);
+  const runtime = new AsyncLocalStorage();
   const run = runInNewContext(
-    `${code}; ({ variantPrice, upsertBasePrice, patchVariantInventory, matches: typeof nativePatchMatches === 'function' ? nativePatchMatches : () => false })`,
+    `${code}; ({ variantPrice, upsertBasePrice, patchVariantInventory, setVariantBackorderability, ensureProductsInDefaultChannel, catalogSpreeMapping, matches: typeof nativePatchMatches === 'function' ? nativePatchMatches : () => false })`,
     {
       spreeRequest: request,
-      spreeList: async () => prices,
+      spreeList: list,
+      syncRuntime: runtime,
       defaultStockLocationId: async () => "location1",
-      setVariantBackorderability: async () => 0,
+      stockItemsForVariant: getStock,
     },
   );
-  return { run, request, current };
+  return { run, request, current, list, getStock, runtime };
 }
 
 describe("native synchronization skips only verified no-op writes", () => {
@@ -182,6 +194,63 @@ describe("native synchronization skips only verified no-op writes", () => {
     await expect(f.run.upsertBasePrice({}, "variant1", 17)).rejects.toThrow(
       "native unavailable",
     );
+  });
+});
+
+describe("native catalogue snapshots avoid follow-up requests", () => {
+  it("needs only the two mapping GETs to confirm unchanged membership, stock flags and base price", async () => {
+    const f = fixture();
+    const product = { id: "prod1", channels: [{ id: "online", active: true, default: true }] };
+    const variant = {
+      ...f.current,
+      stock_items: [{ id: "stock", variant_id: "variant1", backorderable: true }],
+      price: { id: "base", amount: "16.50", currency: "EUR", price_list_id: null },
+    };
+    f.request.mockResolvedValueOnce(product as never).mockResolvedValueOnce(variant);
+    const mapping = await f.run.catalogSpreeMapping({}, { spree_product_id: "prod1" }, { spree_variant_id: "variant1" });
+    await f.run.ensureProductsInDefaultChannel({}, [mapping.product.id], mapping.product.channels);
+    expect(await f.run.setVariantBackorderability({}, "prod1", "variant1", true, mapping.variant.stock_items)).toBe(0);
+    expect(await f.run.upsertBasePrice({}, "variant1", 16.5, undefined, mapping.variant.price)).toBe(false);
+    expect(f.list).not.toHaveBeenCalled();
+    expect(f.getStock).not.toHaveBeenCalled();
+    expect(f.request.mock.calls.map(([, method, path]) => [method, path])).toEqual([
+      ["GET", "/products/prod1?expand=channels,custom_fields"],
+      ["GET", "/products/prod1/variants/variant1?expand=stock_items"],
+    ]);
+  });
+
+  it("continues to add missing products, sharing one channel lookup per tick", async () => {
+    const f = fixture();
+    await f.runtime.run({}, () => Promise.all([
+      f.run.ensureProductsInDefaultChannel({}, ["one"], []),
+      f.run.ensureProductsInDefaultChannel({}, ["two"], [{ id: "other", active: true, default: false }]),
+    ]));
+    expect(f.list).toHaveBeenCalledExactlyOnceWith({}, "/channels");
+    expect(f.request.mock.calls.map(([, method, path, body]) => [method, path, body])).toEqual([
+      ["POST", "/channels/online/add_products", { product_ids: ["one"] }],
+      ["POST", "/channels/online/add_products", { product_ids: ["two"] }],
+    ]);
+  });
+
+  it("checks changed or unverified stock flags again before deciding to write", async () => {
+    const f = fixture();
+    f.getStock.mockResolvedValueOnce([{ id: "stock", variant_id: "variant1", backorderable: false }]);
+    expect(await f.run.setVariantBackorderability({}, "prod1", "variant1", true, [
+      { id: "stock", variant_id: "other", backorderable: true },
+    ])).toBe(1);
+    expect(f.getStock).toHaveBeenCalledTimes(2);
+    expect(f.request).toHaveBeenCalledExactlyOnceWith({}, "PATCH", "/stock_items/stock", {
+      backorderable: true,
+    });
+  });
+
+  it("does not treat an observed promotional price as the verified base price", async () => {
+    const f = fixture([{ id: "base", amount: 15, currency: "EUR", price_list_id: null }]);
+    expect(await f.run.upsertBasePrice({}, "variant1", 16.5, undefined, {
+      id: "promotion", amount: 16.5, currency: "EUR", price_list_id: "sale",
+    })).toBe(true);
+    expect(f.list).toHaveBeenCalledOnce();
+    expect(f.request).toHaveBeenCalledExactlyOnceWith({}, "PATCH", "/prices/base", { amount: 16.5 });
   });
 });
 

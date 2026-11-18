@@ -19,6 +19,7 @@ const names = [
   "reconcileCatalogVariantUnlocked",
   "catalogSpreeMapping",
   "enforceVariantFulfillmentFlags",
+  "nativePatchMatches",
   "refreshHumanReviewMarkersBatch",
   "catalogGroupOwnerCleanupBlocked",
   "repairExistingMangaGroup",
@@ -132,12 +133,12 @@ describe("owner cleanup rejection before native catalog reconciliation", () => {
     expect(f.choose).toHaveBeenCalledExactlyOnceWith(f.resolution.variant);
     expect(f.requests).toContainEqual({
       method: "GET",
-      path: "/products/native-product",
+      path: "/products/native-product?expand=channels,custom_fields",
       body: undefined,
     });
     expect(f.requests).toContainEqual({
       method: "GET",
-      path: "/products/native-product/variants/native-variant",
+      path: "/products/native-product/variants/native-variant?expand=stock_items",
       body: undefined,
     });
     expect(f.requests).toContainEqual({

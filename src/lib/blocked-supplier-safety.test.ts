@@ -39,7 +39,7 @@ describe("Native enforcement of canonical product rejection", () => {
     ["pending", "disabled"],
   ])("drafts %s / %s products even without an eligible supplier offer", async (decision, mode) => {
     const source = ts.createSourceFile("index.ts", readFileSync("supabase/functions/devir-sync/index.ts", "utf8"), ts.ScriptTarget.Latest, true);
-    const code = ts.transpileModule(source.statements.filter(n => ts.isFunctionDeclaration(n) && ["reconcileCatalogVariantUnlocked", "enforceVariantFulfillmentFlags"].includes(n.name?.text ?? "")).map(n => n.getText(source)).join("\n"), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+    const code = ts.transpileModule(source.statements.filter(n => ts.isFunctionDeclaration(n) && ["reconcileCatalogVariantUnlocked", "enforceVariantFulfillmentFlags", "nativePatchMatches"].includes(n.name?.text ?? "")).map(n => n.getText(source)).join("\n"), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
     const requests: Array<{ path: string; body: Record<string, unknown> }> = [];
     const run = runInNewContext(`${code}; reconcileCatalogVariantUnlocked`, {
       isExcludedCatalogLanguage,

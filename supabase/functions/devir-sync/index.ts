@@ -121,6 +121,9 @@ interface JobRow {
 }
 
 interface SpreeProduct {
+  channels?: SpreeChannel[];
+  custom_fields?: SpreeCustomField[];
+  thumbnail_url?: string | null;
   metadata?: Record<string, unknown>;
   preorder?: boolean;
   purchasable?: boolean;
@@ -131,14 +134,16 @@ interface SpreeProduct {
 }
 
 interface SpreeVariant {
-  original_price?: {amount?: string | number | null; currency?: string | null; price_list_id?: string | null} | null;
+  track_inventory?: boolean;
+  stock_items?: SpreeStockItem[];
+  original_price?: Partial<SpreePrice> | null;
   available_stock?: number;
   id: string;
   sku?: string | null;
   cost_price?: string | number | null;
   cost_currency?: string | null;
   price?:
-    | { amount?: string | number | null; currency?: string | null; price_list_id?: string | null }
+    | Partial<SpreePrice>
     | string
     | number
     | null;
@@ -333,6 +338,7 @@ const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const syncRuntime = new AsyncLocalStorage<{
   database_budget: { deadline_at: number };
   spreePaused?: boolean;
+  channels?: Promise<SpreeChannel[]>;
 }>();
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE, {
   auth: { persistSession: false, autoRefreshToken: false },
@@ -1238,14 +1244,25 @@ async function ensureProductsInCategories(
 async function ensureProductsInDefaultChannel(
   config: ConfigRow,
   productIds: string[],
+  knownChannels?: SpreeChannel[],
 ): Promise<void> {
   if (productIds.length === 0) return;
-  const channels = await spreeList<SpreeChannel>(config, "/channels");
+  // Only callers holding the product's own native association may skip the
+  // lookup. Re-adding an existing member still touches it and queues reindexing.
+  if (productIds.length === 1 && knownChannels?.some((channel) => channel.active === true && channel.default === true)) return;
+  const runtime = syncRuntime.getStore();
+  const pending = runtime?.channels ?? spreeList<SpreeChannel>(config, "/channels");
+  if (runtime) runtime.channels = pending;
+  const channels = await pending.catch((error) => {
+    if (runtime?.channels === pending) delete runtime.channels;
+    throw error;
+  });
   const channel =
     channels.find((item) => item.active && item.default) ??
     channels.find((item) => item.active) ??
     channels[0];
   if (!channel) throw new Error("No hay canal de venta activo en Spree");
+  if (productIds.length === 1 && knownChannels?.some((member) => member.id === channel.id)) return;
   await spreeRequest(
     config,
     "POST",
@@ -1343,7 +1360,15 @@ async function upsertBasePrice(
   variantId: string,
   amount: number,
   compareAtAmount?: number | null,
-): Promise<void> {
+  observedPrice?: Partial<SpreePrice> | null,
+): Promise<boolean> {
+  const expected = {
+    amount,
+    ...(compareAtAmount !== undefined ? { compare_at_amount: compareAtAmount } : {}),
+  };
+  if (observedPrice?.id && observedPrice.price_list_id === null &&
+      observedPrice.currency?.toUpperCase() === "EUR" && nativePatchMatches(observedPrice, expected)) return false;
+
   const prices = await spreeList<SpreePrice>(
     config,
     "/prices?q[variant_id_eq]=" +
@@ -1358,10 +1383,7 @@ async function upsertBasePrice(
     ) ?? prices.find((price) => !price.price_list_id);
 
   if (basePrice) {
-    if ((basePrice.currency ?? "EUR").toUpperCase() === "EUR" && nativePatchMatches(basePrice, {
-      amount,
-      ...(compareAtAmount !== undefined ? { compare_at_amount: compareAtAmount } : {}),
-    })) return;
+    if ((basePrice.currency ?? "EUR").toUpperCase() === "EUR" && nativePatchMatches(basePrice, expected)) return false;
     await spreeRequest(
       config,
       "PATCH",
@@ -1378,7 +1400,7 @@ async function upsertBasePrice(
           : {}),
       },
     );
-    return;
+    return true;
   }
 
   await spreeRequest(config, "POST", "/prices", {
@@ -1389,6 +1411,7 @@ async function upsertBasePrice(
       ? { compare_at_amount: compareAtAmount }
       : {}),
   });
+  return true;
 }
 
 async function upsertBasePrices(
@@ -2026,7 +2049,13 @@ async function setVariantBackorderability(
   productId: string | null,
   variantId: string,
   desired: boolean,
+  observedItems?: SpreeStockItem[],
 ): Promise<number> {
+  // Skip only a verified no-op. A missing row, changed flag or ambiguous
+  // identity still requires the ordinary inventory read and verification.
+  if (observedItems?.length &&
+      new Set(observedItems.map((item) => item.id)).size === observedItems.length &&
+      observedItems.every((item) => item.id && item.variant_id === variantId && item.backorderable === desired)) return 0;
   const items = await stockItemsForVariant(config, variantId);
   if (!items.length) {
     // No row plus no supplier backorder is already a safe non-sellable state.
@@ -2072,6 +2101,7 @@ async function syncBackorderability(
   variantId: string | null,
   availability: DevirProduct["availability"],
   fulfillmentMode: CatalogFulfillmentMode = "supplier_or_physical",
+  observedItems?: SpreeStockItem[],
 ): Promise<number> {
   if (!variantId) return 0;
   const desired = shouldAllowSupplierBackorder({
@@ -2083,6 +2113,7 @@ async function syncBackorderability(
     productId,
     variantId,
     desired,
+    observedItems,
   );
 }
 
@@ -2092,6 +2123,7 @@ async function enforceVariantFulfillmentFlags(
   variantId: string | null,
   availability: DevirProduct["availability"],
   fulfillmentMode: CatalogFulfillmentMode,
+  observedVariant?: SpreeVariant | null,
 ): Promise<number> {
   const changed = await syncBackorderability(
     config,
@@ -2099,13 +2131,20 @@ async function enforceVariantFulfillmentFlags(
     variantId,
     availability,
     fulfillmentMode,
+    observedVariant?.id === variantId && observedVariant?.track_inventory === true
+      ? observedVariant.stock_items : undefined,
   );
   if (!productId || !variantId) return changed;
 
   const supplierPreorderable =
     fulfillmentMode === "supplier_or_physical" &&
     availability === "preorder";
-  if (!supplierPreorderable) {
+  const disabledPreorder = {
+    track_inventory: true,
+    preorderable: false,
+    preorder_ships_at: null,
+  };
+  if (!supplierPreorderable && (observedVariant?.id !== variantId || !nativePatchMatches(observedVariant, disabledPreorder))) {
     await spreeRequest(
       config,
       "PATCH",
@@ -2113,11 +2152,7 @@ async function enforceVariantFulfillmentFlags(
         encodeURIComponent(productId) +
         "/variants/" +
         encodeURIComponent(variantId),
-      {
-        track_inventory: true,
-        preorderable: false,
-        preorder_ships_at: null,
-      },
+      disabledPreorder,
     );
   }
   return changed;
@@ -3106,7 +3141,7 @@ async function catalogSpreeMapping(
   const spreeProduct = await spreeRequest<SpreeProduct>(
     config,
     "GET",
-    "/products/" + encodeURIComponent(product.spree_product_id),
+    "/products/" + encodeURIComponent(product.spree_product_id) + "?expand=channels,custom_fields",
   );
   if (!variant.spree_variant_id) {
     return { product: spreeProduct, variant: null };
@@ -3117,7 +3152,7 @@ async function catalogSpreeMapping(
     "/products/" +
       encodeURIComponent(product.spree_product_id) +
       "/variants/" +
-      encodeURIComponent(variant.spree_variant_id),
+      encodeURIComponent(variant.spree_variant_id) + "?expand=stock_items",
   );
   return { product: spreeProduct, variant: spreeVariant };
 }
@@ -3265,6 +3300,7 @@ async function reconcileCatalogVariantUnlocked(
         resolution.variant.spree_variant_id,
         "unavailable",
         resolution.variant.fulfillment_mode ?? "supplier_or_physical",
+        mapping.variant,
       );
     }
     await syncApprovedSupplierPackChildren(
@@ -3601,7 +3637,9 @@ async function syncProductToSpree(
     );
   }
 
-  const currentFields = existing ? await productFields(config, existing.product.id) : undefined;
+  const currentFields = existing
+    ? existing.product.custom_fields ?? await productFields(config, existing.product.id)
+    : undefined;
   if (existing && catalogContext) {
     const adopted = await adoptPublishedCatalogReview(config, existing.product, reasons, currentFields);
     if (adopted) {
@@ -3616,6 +3654,8 @@ async function syncProductToSpree(
   let currentProduct: SpreeProduct;
   let variantId: string | null = null;
   let manualPrice = false;
+  let refreshAggregate = !existing || createdVariant;
+  let currentVariant = existing?.variant;
   const sourceCode = catalogContext?.supplier.code ?? "devir";
   const managedTag = catalogContext ? "catalog-managed" : "devir";
   const readyTag = catalogContext ? "catalog-ready" : "devir-ready";
@@ -3757,11 +3797,17 @@ async function syncProductToSpree(
         preorder_ships_at: supplierPreorderable ? product.releaseDate : null,
     };
     if (!nativePatchMatches(existing.variant, variantPatch)) {
-      await spreeRequest(config, "PATCH", "/products/" + encodeURIComponent(productId) +
+      currentVariant = await spreeRequest<SpreeVariant>(config, "PATCH", "/products/" + encodeURIComponent(productId) +
         "/variants/" + encodeURIComponent(existing.variant.id), variantPatch);
+      refreshAggregate = true;
     }
     if (canWritePrice) {
-      await upsertBasePrice(config, existing.variant.id, pricing.retail);
+      const observedPrice = existing.variant.original_price ??
+        (typeof existing.variant.price === "object" ? existing.variant.price : undefined);
+      const priceChanged = await upsertBasePrice(
+        config, existing.variant.id, pricing.retail, undefined, observedPrice,
+      );
+      refreshAggregate ||= priceChanged;
     }
   }
 
@@ -3848,6 +3894,7 @@ async function syncProductToSpree(
     variantId,
     product.availability,
     fulfillmentMode,
+    existing?.variant.track_inventory === true ? existing.variant.stock_items : undefined,
   );
   if (catalogContext && packRequiresSplit) {
     backorderItems += await syncApprovedSupplierPackChildren(
@@ -3868,31 +3915,26 @@ async function syncProductToSpree(
     (product.availability === "available" ||
       product.availability === "preorder")
   ) {
-    const current = await spreeRequest<SpreeVariant>(
-      config,
-      "GET",
-      "/products/" +
-        encodeURIComponent(productId) +
-        "/variants/" +
-        encodeURIComponent(variantId),
-    );
-    await patchVariantInventory(
-      config,
-      productId,
-      variantId,
-      Number(current.total_on_hand ?? 0),
-      shouldAllowSupplierBackorder({
-        availability: product.availability,
-        fulfillmentMode,
-      }),
-      supplierPreorderable,
-      supplierPreorderable ? product.releaseDate : null,
-      false,
-      current,
-    );
-    backorderItems += 1;
+    const desiredFlags = {
+      track_inventory: true,
+      backorderable: supplierSellable,
+      preorderable: supplierPreorderable,
+      preorder_ships_at: supplierPreorderable ? product.releaseDate : null,
+    };
+    if (backorderItems > 0 || currentVariant?.id !== variantId || !nativePatchMatches(currentVariant, desiredFlags)) {
+      const current = await spreeRequest<SpreeVariant>(
+        config,
+        "GET",
+        "/products/" + encodeURIComponent(productId) + "/variants/" + encodeURIComponent(variantId),
+      );
+      await patchVariantInventory(
+        config, productId, variantId, Number(current.total_on_hand ?? 0), supplierSellable,
+        supplierPreorderable, desiredFlags.preorder_ships_at, false, current,
+      );
+      backorderItems += 1;
+    }
   }
-  const images = await syncImages(config, productId, product);
+  const images = currentProduct.thumbnail_url ? 0 : await syncImages(config, productId, product);
 
   const physicalStockOnHand = existing
     ? Number(existing.variant.total_on_hand ?? 0)
@@ -3908,16 +3950,20 @@ async function syncProductToSpree(
       ? shouldListCatalogProduct({ review, fulfillmentMode })
       : autoPublish;
   if (shouldList) {
-    // Fulfillment writes can change native aggregate preorder/purchasable flags.
-    // Refresh them even when activation itself is already a verified no-op.
-    const published = await spreeRequest<SpreeProduct>(
-      config,
-      currentProduct.status === "active" ? "GET" : "PATCH",
-      "/products/" + encodeURIComponent(productId),
-      currentProduct.status === "active" ? undefined : { status: "active" },
-    );
+    // Read native aggregate flags again only after a possible change.
+    const activate = currentProduct.status !== "active";
+    const needsReadback = refreshAggregate || backorderItems > 0 ||
+      typeof currentProduct.preorder !== "boolean" || typeof currentProduct.purchasable !== "boolean";
+    const published = activate || needsReadback
+      ? await spreeRequest<SpreeProduct>(
+          config,
+          activate ? "PATCH" : "GET",
+          "/products/" + encodeURIComponent(productId),
+          activate ? { status: "active" } : undefined,
+        )
+      : currentProduct;
     await syncHomePreorderMembership(config, published);
-    await ensureProductsInDefaultChannel(config, [productId]);
+    await ensureProductsInDefaultChannel(config, [productId], existing?.product.channels);
   } else if (review || fulfillmentMode === "disabled") {
     const drafted = await spreeRequest<SpreeProduct>(
       config,

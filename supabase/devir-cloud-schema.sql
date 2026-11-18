@@ -202,7 +202,7 @@ where jobname = 'devir-cloud-sync-tick';
 
 select cron.schedule(
   'devir-cloud-sync-tick',
-  '* * * * *',
+  '0 0,3,4,7,8,11,12,15,16,19,20,23 * * *',
   $cron$
   select net.http_post(
     url := (select worker_url from public.devir_sync_config where id = 'primary'),
@@ -213,7 +213,7 @@ select cron.schedule(
     ),
     body := jsonb_build_object('source', 'supabase-cron', 'at', now()),
     timeout_milliseconds := 120000
-  );
+  ) WHERE extract(hour FROM now() AT TIME ZONE 'Europe/Madrid')::int % 4 = 1;
   $cron$
 );
 
