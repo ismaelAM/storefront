@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
+import { getProductDetailsData } from "@/lib/data/product-details-data";
 import { ProductDetails } from "@/app/[country]/[locale]/(storefront)/products/[slug]/ProductDetails";
-import { PRODUCT_PAGE_EXPAND } from "@/lib/data/cached";
+import { PRODUCT_PAGE_EXPAND, PRODUCT_PAGE_FIELDS } from "@/lib/data/cached";
 import { getWholesaleProduct } from "@/lib/data/wholesale";
 import { buildProductShortDescription } from "@/lib/seo";
 import { WHOLESALE_MIN_QUANTITY } from "@/lib/wholesale";
@@ -50,7 +51,7 @@ async function WholesaleProductContent({
 
   let product;
   try {
-    product = await getWholesaleProduct(slug, { expand: PRODUCT_PAGE_EXPAND });
+    product = await getWholesaleProduct(slug, { expand: PRODUCT_PAGE_EXPAND, fields: PRODUCT_PAGE_FIELDS });
   } catch (error) {
     if (
       typeof error !== "object" ||
@@ -78,7 +79,7 @@ async function WholesaleProductContent({
         </p>
       </div>
       <ProductDetails
-        product={product}
+        product={getProductDetailsData(product)}
         basePath={basePath}
         shortDescription={buildProductShortDescription(product, locale)}
       />

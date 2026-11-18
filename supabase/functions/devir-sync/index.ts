@@ -3141,7 +3141,7 @@ async function catalogSpreeMapping(
   const spreeProduct = await spreeRequest<SpreeProduct>(
     config,
     "GET",
-    "/products/" + encodeURIComponent(product.spree_product_id) + "?expand=channels,custom_fields",
+    "/products/" + encodeURIComponent(product.spree_product_id) + "?expand=channels,custom_fields&fields=id,name,status,tags,thumbnail_url,preorder,purchasable",
   );
   if (!variant.spree_variant_id) {
     return { product: spreeProduct, variant: null };
@@ -3152,7 +3152,7 @@ async function catalogSpreeMapping(
     "/products/" +
       encodeURIComponent(product.spree_product_id) +
       "/variants/" +
-      encodeURIComponent(variant.spree_variant_id) + "?expand=stock_items",
+      encodeURIComponent(variant.spree_variant_id) + "?expand=stock_items&fields=id,sku,cost_price,cost_currency,price,original_price,total_on_hand,track_inventory,backorder_limit,backorderable,preorderable,preorder_ships_at,weight,height,width,depth,weight_unit,dimensions_unit",
   );
   return { product: spreeProduct, variant: spreeVariant };
 }
@@ -3325,6 +3325,7 @@ async function reconcileCatalogVariantUnlocked(
         resolution.variant.option_values ?? {},
         null,
         selection.offers,
+        mapping.product.custom_fields,
       );
     }
     if (mapping.product?.tags?.includes("devir-preorder")) {

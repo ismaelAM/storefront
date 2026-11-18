@@ -214,8 +214,8 @@ describe("native catalogue snapshots avoid follow-up requests", () => {
     expect(f.list).not.toHaveBeenCalled();
     expect(f.getStock).not.toHaveBeenCalled();
     expect(f.request.mock.calls.map(([, method, path]) => [method, path])).toEqual([
-      ["GET", "/products/prod1?expand=channels,custom_fields"],
-      ["GET", "/products/prod1/variants/variant1?expand=stock_items"],
+      ["GET", "/products/prod1?expand=channels,custom_fields&fields=id,name,status,tags,thumbnail_url,preorder,purchasable"],
+      ["GET", "/products/prod1/variants/variant1?expand=stock_items&fields=id,sku,cost_price,cost_currency,price,original_price,total_on_hand,track_inventory,backorder_limit,backorderable,preorderable,preorder_ships_at,weight,height,width,depth,weight_unit,dimensions_unit"],
     ]);
   });
 

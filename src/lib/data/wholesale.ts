@@ -51,7 +51,7 @@ export async function getWholesaleProductFilters(
 
 export async function getWholesaleProduct(
   slugOrId: string,
-  params?: { expand?: string[] },
+  params?: { expand?: string[]; fields?: string[] },
 ) {
   return getProductBySurface(slugOrId, params, "wholesale");
 }

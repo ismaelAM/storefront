@@ -101,6 +101,7 @@ export async function cachedGetProduct(
   surface: Surface,
   userToken?: string,
   cacheVersion = CATALOG_CACHE_VERSION,
+  fields?: string[],
 ) {
   "use cache: remote";
   void cacheVersion;
@@ -116,7 +117,7 @@ export async function cachedGetProduct(
   try {
     return await getClientForSurface(surface).products.get(
       slugOrId,
-      { expand },
+      { expand, ...(fields ? { fields } : {}) },
       {
         ...options,
         ...(userToken ? { token: userToken } : undefined),
@@ -130,7 +131,7 @@ export async function cachedGetProduct(
 
 export async function getProduct(
   slugOrId: string,
-  params?: { expand?: string[] },
+  params?: { expand?: string[]; fields?: string[] },
   surface: Surface = DEFAULT_SURFACE,
 ) {
   const options = await getLocaleOptions();
@@ -142,6 +143,7 @@ export async function getProduct(
     surface,
     userToken,
     CATALOG_CACHE_VERSION,
+    params?.fields,
   );
   if (!product)
     throw new SpreeError(

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  get: vi.fn(),
+  list: vi.fn(),
   build: vi.fn(),
   state: {
     day_key: "2026-11-07",
@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 vi.mock("@/lib/spree/config", () => ({
-  getClient: () => ({ products: { get: mocks.get } }),
+  getClient: () => ({ products: { list: mocks.list } }),
 }));
 vi.mock("./offers", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./offers")>()),
@@ -54,32 +54,36 @@ describe("fresh publication catalogue reads", () => {
     if (status === "pending") mocks.state.last_rotated_at = null;
     if (status === "failed") mocks.state.last_error = "rotation unavailable";
     await expect(getDailySocialOffers()).rejects.toThrow("rotación");
-    expect(mocks.get).not.toHaveBeenCalled();
+    expect(mocks.list).not.toHaveBeenCalled();
     expect(mocks.build).not.toHaveBeenCalled();
   });
-  it("bounds simultaneous Spree reads to two while retaining all twelve offers", async () => {
-    vi.useFakeTimers();
-    let active = 0;
-    let peak = 0;
-    mocks.get.mockImplementation(async (id) => {
-      active++;
-      peak = Math.max(peak, active);
-      await new Promise((resolve) => setTimeout(resolve, 10));
-      active--;
-      return { id };
-    });
-    const result = getDailySocialOffers();
-    await vi.runAllTimersAsync();
-    await result;
-    expect(peak).toBeLessThanOrEqual(2);
-    expect(mocks.build.mock.calls[0][1]).toHaveLength(12);
-    expect(mocks.get).toHaveBeenCalledWith("p0", expect.anything(), {
-      country: "es",
-      locale: "es",
-    });
+  it("reads precisely the twelve selected products in one fresh Spree request", async () => {
+    const ids = mocks.state.active_products.map(({ productId }) => productId);
+    const products = ids.map((id) => ({ id }));
+    mocks.list.mockResolvedValue({ data: products });
+    await getDailySocialOffers();
+    expect(mocks.build.mock.calls[0][1]).toBe(products);
+    expect(mocks.list).toHaveBeenCalledExactlyOnceWith({
+      id_in: ids,
+      limit: 12,
+      expand: ["variants", "default_variant"],
+      fields: ["id", "name", "slug", "purchasable", "tags", "default_variant_id", "thumbnail_url"],
+    }, { country: "es", locale: "es", headers: { "Cache-Control": "no-cache" } });
   });
+
+  it.each(["missing", "unexpected", "duplicate"])(
+    "stops before publication if the response has a %s product", async (mismatch) => {
+      const products = mocks.state.active_products.map(({ productId }) => ({ id: productId }));
+      if (mismatch === "missing") products.pop();
+      if (mismatch === "unexpected") products[0] = { id: "unknown" };
+      if (mismatch === "duplicate") products[0] = products[1];
+      mocks.list.mockResolvedValue({ data: products });
+      await expect(getDailySocialOffers()).rejects.toThrow("catálogo");
+      expect(mocks.build).not.toHaveBeenCalled();
+    },
+  );
   it("does not turn an unavailable backend into an incomplete offer selection", async () => {
-    mocks.get.mockRejectedValue(new Error("upstream unavailable"));
+    mocks.list.mockRejectedValue(new Error("upstream unavailable"));
     await expect(getDailySocialOffers()).rejects.toThrow("catálogo");
     expect(mocks.build).not.toHaveBeenCalled();
   });

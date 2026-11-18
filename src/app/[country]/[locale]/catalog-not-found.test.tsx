@@ -22,6 +22,7 @@ vi.mock("@/lib/data/cached", () => ({
   getCachedProduct: mocks.product,
   getCachedCategory: mocks.category,
   PRODUCT_PAGE_EXPAND: [],
+  PRODUCT_PAGE_FIELDS: [],
   PRODUCT_METADATA_EXPAND: [],
 }));
 vi.mock("@/lib/data/categories", () => ({

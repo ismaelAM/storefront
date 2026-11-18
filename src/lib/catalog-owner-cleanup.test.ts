@@ -133,12 +133,12 @@ describe("owner cleanup rejection before native catalog reconciliation", () => {
     expect(f.choose).toHaveBeenCalledExactlyOnceWith(f.resolution.variant);
     expect(f.requests).toContainEqual({
       method: "GET",
-      path: "/products/native-product?expand=channels,custom_fields",
+      path: "/products/native-product?expand=channels,custom_fields&fields=id,name,status,tags,thumbnail_url,preorder,purchasable",
       body: undefined,
     });
     expect(f.requests).toContainEqual({
       method: "GET",
-      path: "/products/native-product/variants/native-variant?expand=stock_items",
+      path: "/products/native-product/variants/native-variant?expand=stock_items&fields=id,sku,cost_price,cost_currency,price,original_price,total_on_hand,track_inventory,backorder_limit,backorderable,preorderable,preorder_ships_at,weight,height,width,depth,weight_unit,dimensions_unit",
       body: undefined,
     });
     expect(f.requests).toContainEqual({

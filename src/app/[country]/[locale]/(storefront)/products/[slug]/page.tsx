@@ -24,6 +24,7 @@ import {
 } from "@/lib/seo";
 import { getStoreUrl } from "@/lib/store";
 import { legacyGroupedProductSlug } from "@/lib/utils/product-slug";
+import { getProductDetailsData } from "@/lib/data/product-details-data";
 import { ProductDetails } from "./ProductDetails";
 
 interface ProductPageProps {
@@ -187,7 +188,7 @@ export default async function ProductPage({
 
       <ProductPuckRenderer data={productPageData} />
       <ProductDetails
-        product={product}
+        product={getProductDetailsData(product)}
         basePath={basePath}
         shortDescription={shortDescription}
       />
