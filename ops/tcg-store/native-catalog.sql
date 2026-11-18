@@ -1,10 +1,12 @@
 -- Intended for the owned Spree database, store 4. Run only as part of the
--- catalog cutover. The inventory was verified on 17 November 2026.
+-- catalog cutover, immediately after supplier-catalog.sql has verified that
+-- the supplier worker is stopped and supplier stock has expired.
 BEGIN;
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '45s';
 LOCK TABLE spree.spree_products, spree.spree_products_taxons, spree.spree_taxons,
-  spree.spree_variants, spree.spree_stock_items, spree.spree_orders, spree.spree_line_items,
+  spree.spree_variants, spree.spree_stock_items, spree.spree_stock_locations,
+  spree.spree_orders, spree.spree_line_items,
   spree.spree_tags, spree.spree_taggings IN SHARE ROW EXCLUSIVE MODE;
 
 CREATE TEMP TABLE tcg_keep (
@@ -156,11 +158,46 @@ BEGIN
   THEN RAISE EXCEPTION 'TCG data already present; inspect before retry'; END IF;
 END $guard$;
 
+-- Spree may still allow purchases based on the last supplier sync. Preserve
+-- stock and line items and clear only the stale flags for zero-stock variants.
+-- A fresh supplier reconciliation can enable the usual flags again.
+CREATE TEMP TABLE tcg_unconfirmed_stock ON COMMIT DROP AS
+SELECT v.id
+FROM spree.spree_variants v JOIN tcg_keep k ON k.id = v.product_id
+WHERE v.deleted_at IS NULL
+  AND NOT EXISTS (
+    SELECT FROM spree.spree_stock_items s JOIN spree.spree_stock_locations l ON l.id = s.stock_location_id
+    WHERE s.variant_id = v.id AND s.deleted_at IS NULL AND l.deleted_at IS NULL
+      AND l.active AND s.count_on_hand > 0
+  )
+  AND (v.preorderable OR EXISTS (
+    SELECT FROM spree.spree_stock_items s
+    WHERE s.variant_id = v.id AND s.deleted_at IS NULL AND s.backorderable
+  ));
+
 INSERT INTO bison_ops.owner_cleanup_audit(batch_key, table_name, record_id, before_row)
 SELECT 'owner-tcg-shop:2026-11-17', 'spree_products', p.id::text,
   jsonb_build_object('status', p.status, 'updated_at', p.updated_at)
 FROM spree.spree_products p
-WHERE p.id IN (SELECT id FROM tcg_retire UNION ALL SELECT id FROM tcg_keep);
+WHERE p.id IN (SELECT id FROM tcg_retire UNION ALL SELECT id FROM tcg_keep)
+UNION ALL
+SELECT 'owner-tcg-shop:2026-11-17', 'spree_variants', v.id::text,
+  jsonb_build_object('preorderable', v.preorderable, 'preorder_ships_at', v.preorder_ships_at,
+    'updated_at', v.updated_at)
+FROM spree.spree_variants v JOIN tcg_unconfirmed_stock u ON u.id = v.id
+WHERE v.preorderable
+UNION ALL
+SELECT 'owner-tcg-shop:2026-11-17', 'spree_stock_items', s.id::text,
+  jsonb_build_object('backorderable', s.backorderable, 'updated_at', s.updated_at)
+FROM spree.spree_stock_items s JOIN tcg_unconfirmed_stock u ON u.id = s.variant_id
+WHERE s.deleted_at IS NULL AND s.backorderable;
+
+UPDATE spree.spree_stock_items s SET backorderable = false, updated_at = now()
+FROM tcg_unconfirmed_stock u
+WHERE s.variant_id = u.id AND s.deleted_at IS NULL AND s.backorderable;
+UPDATE spree.spree_variants v SET preorderable = false, preorder_ships_at = NULL, updated_at = now()
+FROM tcg_unconfirmed_stock u
+WHERE v.id = u.id AND v.preorderable;
 
 INSERT INTO spree.spree_tags (name, created_at, updated_at)
 SELECT tag, now(), now() FROM (
@@ -190,6 +227,10 @@ BEGIN
   IF (SELECT count(*) FROM spree.spree_products WHERE store_id = 4 AND status = 'active' AND deleted_at IS NULL) <> 109
      OR (SELECT count(*) FROM spree.spree_taggings tg JOIN spree.spree_tags t ON t.id = tg.tag_id
         WHERE t.name = 'bison-tcg-catalog' AND tg.taggable_type = 'Spree::Product' AND tg.context = 'tags') <> 108
+     OR EXISTS (SELECT FROM spree.spree_variants v JOIN tcg_unconfirmed_stock u ON u.id = v.id
+        WHERE v.preorderable)
+     OR EXISTS (SELECT FROM spree.spree_stock_items s JOIN tcg_unconfirmed_stock u ON u.id = s.variant_id
+        WHERE s.deleted_at IS NULL AND s.backorderable)
   THEN RAISE EXCEPTION 'TCG catalog verification failed'; END IF;
 END $verify$;
 COMMIT;

@@ -1,10 +1,14 @@
--- Intended for the canonical catalog project. Preserve mappings and history.
+-- Intended for the canonical catalog project. Run before native-catalog.sql
+-- and keep the supplier worker stopped until the native cutover finishes.
 BEGIN;
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '45s';
 LOCK TABLE public.catalog_suppliers, public.catalog_supplier_crawl_state,
   public.catalog_products, public.catalog_variants, public.catalog_supplier_offers,
-  public.catalog_supplier_discovery IN SHARE ROW EXCLUSIVE MODE;
+  public.catalog_supplier_discovery, public.devir_sync_config IN SHARE ROW EXCLUSIVE MODE;
+
+CREATE TEMP TABLE tcg_games (path text PRIMARY KEY) ON COMMIT DROP;
+INSERT INTO tcg_games SELECT unnest(ARRAY['tcg/mtg', 'tcg/one-piece', 'tcg/yugioh', 'tcg/lorcana', 'tcg/pokemon', 'tcg/digimon', 'tcg/dbscg-fusion-world', 'tcg/dbscg-masters', 'tcg/gundam', 'tcg/cyberpunk', 'tcg/vanguard', 'tcg/weiss-schwarz', 'tcg/hololive', 'tcg/palworld', 'tcg/shadowverse']);
 
 DO $guard$
 BEGIN
@@ -14,10 +18,18 @@ BEGIN
   THEN RAISE EXCEPTION 'supplier configuration or crawl changed; inspect before cutover'; END IF;
   IF EXISTS (SELECT FROM bison_ops.owner_cleanup_audit WHERE batch_key = 'owner-tcg-shop:2026-11-17')
   THEN RAISE EXCEPTION 'supplier catalog already updated'; END IF;
+  IF NOT EXISTS (SELECT FROM cron.job WHERE jobname = 'devir-cloud-sync-tick' AND NOT active)
+     OR EXISTS (SELECT FROM cron.job_run_details d JOIN cron.job j USING (jobid)
+       WHERE j.jobname = 'devir-cloud-sync-tick' AND d.status = 'running')
+     OR EXISTS (SELECT FROM public.devir_sync_config WHERE id = 'primary' AND lock_until > now())
+     OR EXISTS (SELECT FROM public.catalog_selected_supply s JOIN public.catalog_products p ON p.id = s.product_id
+       JOIN tcg_games g ON g.path = lower(trim(p.category_key))
+       WHERE s.supplier_enabled AND s.fulfillment_mode = 'supplier_or_physical'
+         AND s.availability IN ('available', 'preorder')
+         AND s.last_seen_at >= now() - make_interval(hours => s.supplier_stale_after_hours))
+  THEN RAISE EXCEPTION 'supplier still running or has current stock; review before clearing native supplier flags'; END IF;
 END $guard$;
 
-CREATE TEMP TABLE tcg_games (path text PRIMARY KEY) ON COMMIT DROP;
-INSERT INTO tcg_games SELECT unnest(ARRAY['tcg/mtg', 'tcg/one-piece', 'tcg/yugioh', 'tcg/lorcana', 'tcg/pokemon', 'tcg/digimon', 'tcg/dbscg-fusion-world', 'tcg/dbscg-masters', 'tcg/gundam', 'tcg/cyberpunk', 'tcg/vanguard', 'tcg/weiss-schwarz', 'tcg/hololive', 'tcg/palworld', 'tcg/shadowverse']);
 CREATE TEMP TABLE tcg_excluded_products ON COMMIT DROP AS
 SELECT p.id FROM public.catalog_products p
 WHERE p.id <> 'c6c2830b-0318-4d14-902d-cb6beb1acde9'::uuid
